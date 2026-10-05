@@ -1,0 +1,34 @@
+import { readFileSync } from 'node:fs';
+
+import { describe, expect, it } from 'vitest';
+
+import { packageName } from '../src/index.js';
+
+/**
+ * The repository manifest is typed as `unknown` on purpose: these tests only assert on the
+ * fields that the tooling depends on.
+ */
+const manifest: unknown = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+);
+
+describe('project bootstrap', () => {
+  it('exposes a loadable entry point', () => {
+    expect(packageName).toBe('depvitals');
+  });
+
+  describe('package manifest', () => {
+    it('is an ESM package named depvitals', () => {
+      expect(manifest).toMatchObject({ name: 'depvitals', type: 'module' });
+    });
+
+    it('declares a supported Node.js engine', () => {
+      expect(manifest).toMatchObject({ engines: { node: '>=22.13.0' } });
+    });
+
+    it('pins pnpm as the package manager', () => {
+      const { packageManager } = manifest as { packageManager?: unknown };
+      expect(packageManager).toMatch(/^pnpm@/);
+    });
+  });
+});

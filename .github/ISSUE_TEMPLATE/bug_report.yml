@@ -1,0 +1,47 @@
+name: Bug report
+description: Report incorrect behavior (wrong result, crash, bad detection).
+title: '[bug]: '
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        DepVitals is pre-alpha: if you cannot run a released version yet, please open a
+        discussion instead of a bug report.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Tell us what you expected and what DepVitals reported instead.
+      placeholder: DepVitals reported `moment` as unused, but it is imported in `src/date.ts`.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: |
+        A minimal repository (or the output of running DepVitals with `--json`) that reproduces the
+        problem. Include the `package.json` and the files involved.
+    validations:
+      required: true
+  - type: input
+    id: depvitals-version
+    attributes:
+      label: DepVitals version
+      placeholder: '0.1.0'
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node.js version, package manager version.
+      placeholder: Linux, Node.js 22.13.0, pnpm 11
+    validations:
+      required: true
+  - type: textarea
+    id: ecosystem
+    attributes:
+      label: Ecosystem details
+      description: Module system, framework, monorepo layout, TypeScript version, import styles.

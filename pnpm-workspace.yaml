@@ -1,0 +1,7 @@
+# pnpm project settings. pnpm 11 reads settings from this file (package.json's "pnpm"
+# field is no longer read).
+
+# Dependencies allowed to run install scripts (blocked by default in pnpm 11).
+# esbuild is used by Vitest/Vite.
+allowBuilds:
+  esbuild: true

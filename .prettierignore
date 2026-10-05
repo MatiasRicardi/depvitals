@@ -1,0 +1,8 @@
+# Internal planning documents (not part of the published project).
+instructions/
+
+# Synthetic repositories used by integration tests keep their original formatting.
+test/fixtures/
+
+# Managed by other tools.
+pnpm-lock.yaml

@@ -1,0 +1,35 @@
+name: Feature request
+description: Propose a new capability or improvement.
+title: '[feat]: '
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        DepVitals stays intentionally small. Features that are not scheduled in the roadmap are
+        discussed here before any code is written.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the real-world scenario, not the desired implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed behavior
+      description: What should DepVitals report, and how should the evidence be explained?
+    validations:
+      required: true
+  - type: textarea
+    id: false-positives
+    attributes:
+      label: False positive / false negative risk
+      description: >-
+        How might this feature report something incorrectly? Should the result be `Needs Review`
+        instead of a definitive one?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
