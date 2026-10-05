@@ -6,7 +6,9 @@ Describe the change and the problem it solves. Link the issue this closes (`Clos
 
 - [ ] This change belongs to a scheduled roadmap release (or is a bug fix / docs / tooling change).
 - [ ] No extra abstraction was introduced "for the future".
-- [ ] No code in the target project is executed, and `package.json` is never modified.
+- [ ] Normal scanning does not execute project code or modify project files.
+- [ ] Any project mutation is explicit and limited to functionality allowed by the current roadmap
+      release.
 
 # Quality
 

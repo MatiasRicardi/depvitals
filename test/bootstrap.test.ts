@@ -13,7 +13,7 @@ const manifest: unknown = JSON.parse(
 );
 
 describe('project bootstrap', () => {
-  it('exposes a loadable entry point', () => {
+  it('loads the internal bootstrap module', () => {
     expect(packageName).toBe('depvitals');
   });
 
@@ -29,6 +29,13 @@ describe('project bootstrap', () => {
     it('pins pnpm as the package manager', () => {
       const { packageManager } = manifest as { packageManager?: unknown };
       expect(packageManager).toMatch(/^pnpm@/);
+    });
+
+    it('declares no programmatic entry point', () => {
+      const pkg = manifest as { main?: unknown; types?: unknown; exports?: unknown };
+      expect(pkg).not.toHaveProperty('main');
+      expect(pkg).not.toHaveProperty('types');
+      expect(pkg).not.toHaveProperty('exports');
     });
   });
 });

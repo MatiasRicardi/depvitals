@@ -1,8 +1,8 @@
 /**
- * DepVitals public entry point.
+ * Internal bootstrap module.
  *
- * DepVitals is a CLI-first tool: the real programmatic surface is defined by the
- * roadmap releases (v0.1.x onwards), which will replace this placeholder with the
- * public types and functions exported by the analysis engine.
+ * DepVitals is CLI-first and deliberately exposes no programmatic entry point yet: `main`,
+ * `types` and `exports` are absent from `package.json`. The public API is defined by the roadmap
+ * release that introduces it, together with the packaging fields that expose it.
  */
 export const packageName = 'depvitals';

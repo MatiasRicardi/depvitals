@@ -22,6 +22,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Lowest version declared in engines.node: catches reliance on newer runtime APIs.
+          - os: ubuntu-latest
+            node-version: '22.13.0'
           - os: ubuntu-latest
             node-version: '22'
             coverage: true
@@ -77,3 +80,23 @@ jobs:
           name: coverage-node-${{ matrix.node-version }}
           path: coverage/
           if-no-files-found: error
+
+  # Single stable check for branch protection: green only when every verify job succeeded.
+  # Branch protection requires "CI", never the per-combination "Verify (...)" names.
+  ci:
+    name: CI
+    needs: verify
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Aggregate verify result
+        env:
+          VERIFY_RESULT: ${{ needs.verify.result }}
+        run: |
+          if [ "$VERIFY_RESULT" != "success" ]; then
+            echo "::error::verify matrix did not succeed (result: $VERIFY_RESULT)"
+            exit 1
+          fi
+
+          echo "All verify jobs succeeded."

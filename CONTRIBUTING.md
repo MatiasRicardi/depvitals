@@ -11,8 +11,11 @@ an issue first instead of opening a pull request.
 
 Rules of thumb:
 
-- No automatic dependency removal, ever. DepVitals reports; it does not mutate `package.json`.
-- Never execute project code while scanning a repository.
+- Normal scanning must never mutate the analyzed project. DepVitals does not modify `package.json`,
+  lockfiles or any other project file during a scan. Mutations may only happen through an explicit
+  fix command, and only once the roadmap release that implements it actually exists.
+- Never execute project code while scanning a repository. DepVitals analyzes projects statically; it
+  does not run the files or the configurations of the project it scans.
 - Prefer marking a result as `Needs Review` over guessing.
 - Keep pull requests small: one feature, one bug fix, one refactor.
 
@@ -103,7 +106,9 @@ test/
 ## Pull requests
 
 Fill in the pull request template and make sure `pnpm run check` passes locally. CI runs lint,
-typecheck, tests (Node.js matrix plus macOS and Windows) and the build.
+typecheck, tests (Node.js matrix: lowest supported engine plus current majors, macOS and Windows)
+and the build. All matrix results are aggregated into a single `CI` check, which is the one branch
+protection on `main` requires.
 
 ## Toolchain notes
 
@@ -125,7 +130,8 @@ then, do not create version tags or bump `package.json` (`0.0.0` is a deliberate
 Before the first publish:
 
 - confirm the `LICENSE` copyright holder;
-- configure the npm automation token and enable npm provenance (`publishConfig.provenance`);
+- wire up publishing automation (GitHub Actions / npm trusted publishing) and only then enable npm
+  provenance (`publishConfig.provenance`);
 - update `README.md`, `CHANGELOG.md` and create the GitHub Release.
 
 Versioning is conservative: removing a detection capability, adding false negatives, changing

@@ -1,7 +1,7 @@
 {
   "name": "depvitals",
   "version": "0.0.0",
-  "description": "A focused, explainable dependency health checker for JavaScript and TypeScript projects.",
+  "description": "A simple, lightweight dependency health checker for Node.js projects.",
   "keywords": [
     "dependencies",
     "dependency",
@@ -30,18 +30,9 @@
     "dist",
     "README.md"
   ],
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
   "sideEffects": false,
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   },
   "scripts": {
     "clean": "node -e \"fs.rmSync('dist',{ recursive: true, force: true })\"",
