@@ -131,10 +131,12 @@ The first public npm release is `v0.0.1`.
 `0.0.0` remains the development placeholder until the `v0.0.1` release-candidate step bumps it.
 Until that step, do not create version tags or otherwise bump `package.json`.
 
-Before the first publish:
+Before the first npm publish:
 
 - confirm the `LICENSE` copyright holder;
-- update `README.md`, `CHANGELOG.md` and create the GitHub Release.
+- finalize `README.md` and `CHANGELOG.md`.
+
+After a successful and verified npm publish, create the matching version tag and GitHub Release.
 
 Publishing automation (GitHub Actions / npm trusted publishing) and npm provenance
 (`publishConfig.provenance`) are future improvements. They are not required for the first manual
