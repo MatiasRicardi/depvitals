@@ -7,6 +7,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+No unreleased changes yet.
+
+## [0.0.1] - 2026-10-06
+
 ### Added
 
 - Project scaffolding: pnpm package layout, TypeScript build, ESLint, Prettier, Vitest, CI, and
@@ -18,3 +22,4 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Cross-platform CI foundation.
 
 [Unreleased]: https://github.com/MatiasRicardi/depvitals/commits/main
+[0.0.1]: https://github.com/MatiasRicardi/depvitals/releases/tag/v0.0.1
