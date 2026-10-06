@@ -128,8 +128,8 @@ The first public npm release is `v0.0.1`.
 
 `v0.0.1` establishes the CLI and package foundation. Dependency scanning begins in `v0.1.0`.
 
-`0.0.0` remains the development placeholder until the `v0.0.1` release-candidate step bumps it.
-Until that step, do not create version tags or otherwise bump `package.json`.
+Package version changes are made only as part of an explicit release-candidate step. Do not bump
+versions, create tags, or publish packages outside the release process.
 
 Before the first npm publish:
 
