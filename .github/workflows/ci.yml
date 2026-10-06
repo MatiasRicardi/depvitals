@@ -81,22 +81,55 @@ jobs:
           path: coverage/
           if-no-files-found: error
 
-  # Single stable check for branch protection: green only when every verify job succeeded.
-  # Branch protection requires "CI", never the per-combination "Verify (...)" names.
+  # Verify the packaged CLI exactly as an npm consumer receives it: pack the real artifact,
+  # install the tarball into an isolated temporary project, and execute the installed `depvitals`
+  # executable. Runs once on Linux; the verify matrix already covers the OS/Node combinations.
+  package-smoke:
+    name: Package smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22.13.0'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify packaged CLI as a consumer
+        run: pnpm run verify:package
+
+  # Single stable check for branch protection: green only when every verify job AND the package
+  # smoke test succeeded. Branch protection requires "CI", never the per-combination "Verify (...)"
+  # or "Package smoke" names.
   ci:
     name: CI
-    needs: verify
+    needs: [verify, package-smoke]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Aggregate verify result
+      - name: Aggregate results
         env:
           VERIFY_RESULT: ${{ needs.verify.result }}
+          PACKAGE_SMOKE_RESULT: ${{ needs.package-smoke.result }}
         run: |
           if [ "$VERIFY_RESULT" != "success" ]; then
             echo "::error::verify matrix did not succeed (result: $VERIFY_RESULT)"
             exit 1
           fi
 
-          echo "All verify jobs succeeded."
+          if [ "$PACKAGE_SMOKE_RESULT" != "success" ]; then
+            echo "::error::package-smoke did not succeed (result: $PACKAGE_SMOKE_RESULT)"
+            exit 1
+          fi
+
+          echo "All verify jobs and the package smoke test succeeded."

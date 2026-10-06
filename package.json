@@ -48,6 +48,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "verify:package": "node scripts/verify-package.mjs",
     "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test",
     "prepack": "pnpm run clean && pnpm run build",
     "prepublishOnly": "pnpm run check"
