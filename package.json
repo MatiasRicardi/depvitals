@@ -30,6 +30,9 @@
     "dist",
     "README.md"
   ],
+  "bin": {
+    "depvitals": "./dist/cli/index.js"
+  },
   "sideEffects": false,
   "publishConfig": {
     "access": "public"
@@ -46,7 +49,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test",
-    "prepublishOnly": "pnpm run check && pnpm run build"
+    "prepack": "pnpm run clean && pnpm run build",
+    "prepublishOnly": "pnpm run check"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

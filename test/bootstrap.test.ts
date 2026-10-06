@@ -38,4 +38,32 @@ describe('project bootstrap', () => {
       expect(pkg).not.toHaveProperty('exports');
     });
   });
+
+  describe('cli package wiring', () => {
+    it('keeps the development version placeholder', () => {
+      expect(manifest).toMatchObject({ version: '0.0.0' });
+    });
+
+    it('exposes the depvitals binary pointing to the built CLI', () => {
+      const pkg = manifest as {
+        bin?: { depvitals?: string };
+      };
+      expect(pkg.bin?.depvitals).toBe('./dist/cli/index.js');
+    });
+
+    it('keeps the package public without provenance', () => {
+      const pkg = manifest as {
+        publishConfig?: { access?: unknown; provenance?: unknown };
+      };
+      expect(pkg.publishConfig?.access).toBe('public');
+      expect(pkg.publishConfig).not.toHaveProperty('provenance');
+    });
+
+    it('allows only the expected package files', () => {
+      const pkg = manifest as { files?: unknown };
+      const files = (pkg.files ?? []) as string[];
+      expect(files).toContain('dist');
+      expect(files).toContain('README.md');
+    });
+  });
 });
