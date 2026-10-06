@@ -47,17 +47,27 @@ const FORBIDDEN_PREFIXES = [
 ];
 
 /**
- * Exit the verifier with a clear message. Never silently ignore a failure.
+ * Signal a verification failure by throwing, so control unwinds through the caller's finally block
+ * and temporary directories are always cleaned up before the process reports a nonzero exit code.
  */
 function fail(message) {
   console.error(`\n\u2716 ${message}\n`);
-  process.exit(1);
+  throw new Error(message);
 }
 
 /**
  * Run a command and return the raw spawn result.
+ *
+ * On Windows npm and the installed CLI are `.cmd` shims, which need to be launched through a shell
+ * with quoted paths. Everywhere else the command runs directly.
  */
 function run(command, args, cwd) {
+  if (process.platform === 'win32') {
+    const shellCommand = [command, ...args].map((value) => `"${value}"`).join(' ');
+
+    return spawnSync(shellCommand, { encoding: 'utf8', cwd, shell: true });
+  }
+
   return spawnSync(command, args, { encoding: 'utf8', cwd });
 }
 
@@ -230,7 +240,7 @@ function main() {
     }
 
     const forbidden = entries.find((entry) =>
-      FORBIDDEN_PREFIXES.some((prefix) => entry.startsWith(prefix)),
+      FORBIDDEN_PREFIXES.some((prefix) => entry.startsWith(`package/${prefix}`)),
     );
 
     check('rejects development-only content', forbidden === undefined, forbidden);
@@ -295,6 +305,10 @@ function main() {
     );
 
     console.log(`\nAll ${checksPassed} checks passed.`);
+  } catch (error) {
+    // The finally block below already removed the temporary directories; just report the failure.
+    console.error(error.message);
+    process.exitCode = 1;
   } finally {
     for (const dir of tempDirs) {
       rmSync(dir, { recursive: true, force: true });
@@ -302,4 +316,10 @@ function main() {
   }
 }
 
-main();
+try {
+  main();
+} catch (error) {
+  // Any unexpected throw still cleans up via main()'s finally and reports failure.
+  console.error(error.message);
+  process.exitCode = 1;
+}
