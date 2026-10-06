@@ -11,5 +11,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Project scaffolding: pnpm package layout, TypeScript build, ESLint, Prettier, Vitest, CI, and
   contribution documentation.
+- Initial DepVitals CLI bootstrap (`src/cli`).
+- `--help`/`-h` and `--version`/`-v` CLI flags.
+- npm executable packaging (`bin` for `depvitals`).
+- Package consumer smoke verification (`verify:package`).
+- Cross-platform CI foundation.
 
 [Unreleased]: https://github.com/MatiasRicardi/depvitals/commits/main

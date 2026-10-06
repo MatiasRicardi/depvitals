@@ -124,15 +124,21 @@ protection on `main` requires.
 
 ## Releases
 
-Publishing is not wired up yet: the first publish happens with the `v0.1.0` roadmap release. Until
-then, do not create version tags or bump `package.json` (`0.0.0` is a deliberate placeholder).
+The first public npm release is `v0.0.1`.
+
+`v0.0.1` establishes the CLI and package foundation. Dependency scanning begins in `v0.1.0`.
+
+`0.0.0` remains the development placeholder until the `v0.0.1` release-candidate step bumps it.
+Until that step, do not create version tags or otherwise bump `package.json`.
 
 Before the first publish:
 
 - confirm the `LICENSE` copyright holder;
-- wire up publishing automation (GitHub Actions / npm trusted publishing) and only then enable npm
-  provenance (`publishConfig.provenance`);
 - update `README.md`, `CHANGELOG.md` and create the GitHub Release.
+
+Publishing automation (GitHub Actions / npm trusted publishing) and npm provenance
+(`publishConfig.provenance`) are future improvements. They are not required for the first manual
+publish of `v0.0.1`.
 
 Versioning is conservative: removing a detection capability, adding false negatives, changing
 evidence semantics or changing default ignore behavior are breaking changes.
