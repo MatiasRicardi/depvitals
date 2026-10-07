@@ -1,0 +1,7 @@
+{
+  "name": "manifest-scripts-not-executed",
+  "scripts": {
+    "postinstall": "touch marker.txt",
+    "build": "echo building"
+  }
+}

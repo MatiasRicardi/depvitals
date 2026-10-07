@@ -1,0 +1,5 @@
+{
+  "name": "manifest-invalid-json",
+  "dependencies": {
+    "express": "^4.19.2"
+  }
