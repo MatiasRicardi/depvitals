@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -136,11 +136,9 @@ describe('discoverSourceFiles', () => {
         // A directory symlink and a file symlink pointing at the real content. Creating symlinks
         // can fail on some filesystems (e.g. Windows without privileges); in that case there is
         // nothing to assert, so the symlink-specific checks are skipped.
-        const followedThroughSymlink =
-          (await canCreateSymlinks(sandbox)) &&
-          (await discoverSourceFiles(sandbox)).filter(
-            (file) => file.includes('linkdir') || file.includes('linkfile'),
-          );
+        const linkDir = join(sandbox, 'linkdir');
+        const linkFile = join(sandbox, 'linkfile.ts');
+        const linksCreated = await createSymlinks(realDir, realFile, linkDir, linkFile);
 
         const files = await discoverSourceFiles(sandbox);
 
@@ -152,8 +150,38 @@ describe('discoverSourceFiles', () => {
         expect(files.some((file) => file.includes('linkdir'))).toBe(false);
         expect(files.some((file) => file.includes('linkfile'))).toBe(false);
 
-        // When symlinks could be created, prove the checks above were meaningful.
-        expect(followedThroughSymlink).toHaveLength(0);
+        // When symlinks could be created, prove the checks above were meaningful: the links exist
+        // on disk, yet discovery did not follow them.
+        if (linksCreated) {
+          expect(existsSync(linkDir)).toBe(true);
+          expect(existsSync(linkFile)).toBe(true);
+        }
+      } finally {
+        rmSync(sandbox, { recursive: true, force: true });
+      }
+    });
+
+    it('rejects a symlink supplied as the project root', async () => {
+      const sandbox = mkdtempSync(join(tmpdir(), 'depvitals-symlink-root-'));
+
+      try {
+        const realDir = join(sandbox, 'real');
+        const linkRoot = join(sandbox, 'link');
+
+        mkdirSync(realDir);
+        writeFileSync(join(realDir, 'src.ts'), 'export const a = 1;');
+
+        // A root that is a symlink to a directory must be rejected, not traversed through. When the
+        // environment cannot create symlinks there is nothing to assert, so the check is skipped.
+        try {
+          await symlink(realDir, linkRoot, 'dir');
+        } catch {
+          return;
+        }
+
+        const failure = await captureFailure(linkRoot);
+
+        expectSourceFilesError(failure, 'not-a-directory', ['symlink']);
       } finally {
         rmSync(sandbox, { recursive: true, force: true });
       }
@@ -191,19 +219,24 @@ describe('discoverSourceFiles', () => {
 });
 
 /**
- * Whether the current environment can create symlinks. Returns false instead of throwing so a
- * permission-restricted filesystem only skips the symlink assertions.
+ * Create a directory symlink (`linkDir -> realDir`) and a file symlink (`linkFile -> realFile`),
+ * returning whether they were created.
+ *
+ * Returns false instead of throwing so a permission-restricted filesystem (e.g. Windows without
+ * privileges) only skips the symlink assertions instead of failing the test.
  */
-async function canCreateSymlinks(dir: string): Promise<boolean> {
-  const probe = join(dir, '.symlink-probe');
-
+async function createSymlinks(
+  realDir: string,
+  realFile: string,
+  linkDir: string,
+  linkFile: string,
+): Promise<boolean> {
   try {
-    await symlink(dir, probe, 'dir');
+    await symlink(realDir, linkDir, 'dir');
+    await symlink(realFile, linkFile, 'file');
     return true;
   } catch {
     return false;
-  } finally {
-    rmSync(probe, { force: true });
   }
 }
 

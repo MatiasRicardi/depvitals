@@ -17,7 +17,7 @@
  * so the same tree always yields the same order.
  */
 
-import { readdir, stat } from 'node:fs/promises';
+import { lstat, readdir } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 
 /**
@@ -118,10 +118,21 @@ export async function discoverSourceFiles(
  * Validate that the resolved root exists and is a directory before walking it. A missing root is
  * reported separately from a root that is a regular file, and any other I/O failure stays
  * `unreadable`.
+ *
+ * `lstat` (not `stat`) is used on purpose: it does not follow a symlink supplied as the root, so a
+ * symlinked root is rejected instead of being traversed, keeping the "never follow symlinks"
+ * contract consistent from the entry point down.
  */
 async function assertReadableRoot(root: string): Promise<void> {
   try {
-    const info = await stat(root);
+    const info = await lstat(root);
+
+    if (info.isSymbolicLink()) {
+      throw new SourceFilesError(
+        `Project root ${root} is a symlink and will not be followed`,
+        'not-a-directory',
+      );
+    }
 
     if (!info.isDirectory()) {
       throw new SourceFilesError(
