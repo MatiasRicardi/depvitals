@@ -41,3 +41,19 @@ Input fixtures for `src/scanner/projectManifest.ts` (project manifest discovery)
 
 The `manifest/` directory itself intentionally has no `package.json`, while the repository root
 several levels above it does. Tests point the loader at it to prove no parent manifest lookup happens.
+
+## `source-discovery/`
+
+Input fixtures for `src/scanner/sourceFiles.ts` (source file discovery).
+
+### `basic/`
+
+A minimal tree that exercises the discovery contract without adding many files:
+
+- root source files (`index.js`, `app.tsx`, `entry.mjs`, `types.d.ts`);
+- nested source files (`src/main.ts`, `src/util.jsx`, `src/nested/deep.{mts,cts}`);
+- an unsupported-extension file at root (`README.md`, `styles.css`, `config.json`) that must be ignored;
+- every built-in ignored directory populated with files that must never be returned (`node_modules`,
+  `dist`, `build`, `coverage`, `out`, `.cache`, `.turbo`, `.next`, `.nuxt`);
+- a hidden directory that is **not** on the ignore list (`.config/`) whose contents **must** be
+  discovered.
