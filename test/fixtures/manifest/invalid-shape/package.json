@@ -1,0 +1,4 @@
+{
+  "name": "manifest-invalid-shape",
+  "dependencies": ["express"]
+}
