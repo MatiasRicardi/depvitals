@@ -1,0 +1,24 @@
+{
+  "name": "manifest-basic",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.json",
+    "format": "prettier --check ."
+  },
+  "dependencies": {
+    "zod": "^3.23.8",
+    "express": "^4.19.2",
+    "@fastify/cors": "^9.0.1"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.3",
+    "typescript": "5.9.3"
+  },
+  "optionalDependencies": {
+    "fsevents": "^2.3.3"
+  },
+  "peerDependencies": {
+    "react": "^18.3.1"
+  }
+}

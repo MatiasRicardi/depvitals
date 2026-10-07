@@ -1,0 +1,6 @@
+{
+  "name": "manifest-non-string-dependency-value",
+  "devDependencies": {
+    "typescript": 5
+  }
+}
