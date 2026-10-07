@@ -88,6 +88,15 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(`import 'tab\\tand\\nnewline';`)).toEqual(['tab\tand\nnewline']);
       expect(specifiers(`import "back\\\\slash";`)).toEqual(['back\\slash']);
     });
+
+    it('keeps unrecognized non-decimal escapes unchanged', () => {
+      expect(specifiers(`import 'a\\qb\\/c';`)).toEqual(['aqb/c']);
+    });
+
+    it('treats a backslash before U+2028 as a line continuation', () => {
+      const source = `import 'a` + '\\' + String.fromCharCode(0x2028) + `b';`;
+      expect(specifiers(source)).toEqual(['ab']);
+    });
   });
 
   describe('false positives must not be reported', () => {
@@ -135,6 +144,12 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(source)).toEqual([]);
     });
 
+    it('treats a slash after a template literal as division', () => {
+      const source = 'const half = `' + '${n}' + '` / 2;';
+
+      expect(specifiers(source)).toEqual([]);
+    });
+
     it('ignores import.meta', () => {
       expect(specifiers(`import.meta.url;`)).toEqual([]);
     });
@@ -146,6 +161,14 @@ describe('extractModuleSpecifiers', () => {
 
     it('ignores obj.require property access', () => {
       expect(specifiers(`obj.require('fake-h');`)).toEqual([]);
+    });
+
+    it('ignores obj.import member call', () => {
+      expect(specifiers(`System.import('fake-system');`)).toEqual([]);
+    });
+
+    it('treats a regex after an expression-starting keyword as a regex', () => {
+      expect(specifiers(`function isQuote(c) { return /["']/.test(c); }`)).toEqual([]);
     });
 
     it('does not treat the word "important" as an import', () => {
@@ -177,8 +200,8 @@ describe('extractModuleSpecifiers', () => {
       expect(() => extractModuleSpecifiers('const t = `unclosed;')).toThrow(ModuleSpecifierError);
     });
 
-    it('throws ModuleSpecifierError on a malformed string escape', () => {
-      expect(() => extractModuleSpecifiers(`import 'bad\\q';`)).toThrow(ModuleSpecifierError);
+    it('throws ModuleSpecifierError on a malformed hex escape', () => {
+      expect(() => extractModuleSpecifiers(`import 'bad\\xZZ';`)).toThrow(ModuleSpecifierError);
     });
 
     it('exposes an error code and offset', () => {

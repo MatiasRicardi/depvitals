@@ -92,6 +92,9 @@ function tokenize(source: string): readonly Token[] {
   const tokens: Token[] = [];
   const n = source.length;
   let i = 0;
+  // Whether the previous identifier token is an expression-starting keyword (return, typeof, ...).
+  // Such keywords start an expression, so a following `/` begins a regex rather than division.
+  let prevIsExpressionKeyword = false;
 
   // Hashbang: only at offset 0. Ignore until the first line break.
   if (source.startsWith('#!')) {
@@ -137,8 +140,9 @@ function tokenize(source: string): readonly Token[] {
 
     // `/` is a regex when it can start an expression, otherwise it is division.
     if (ch === '/') {
-      if (isRegexStart(prevKind, prevPunct)) {
+      if (isRegexStart(prevKind, prevPunct, prevIsExpressionKeyword)) {
         i = skipRegex(source, i);
+        prevKind = 'regex';
         continue;
       }
 
@@ -161,6 +165,7 @@ function tokenize(source: string): readonly Token[] {
     // Template literals are skipped wholesale so their inner text never yields findings.
     if (ch === '`') {
       i = skipTemplate(source, i);
+      prevKind = 'template';
       continue;
     }
 
@@ -178,7 +183,11 @@ function tokenize(source: string): readonly Token[] {
         i++;
       }
 
-      tokens.push({ kind: 'identifier', value: source.slice(start, i), offset: start });
+      const value = source.slice(start, i);
+      // A keyword after `.` is a property name (e.g. `x.return`), not an expression start.
+      prevIsExpressionKeyword =
+        REGEX_PRECEDING_KEYWORDS.has(value) && !(prevKind === 'punct' && prevPunct === '.');
+      tokens.push({ kind: 'identifier', value, offset: start });
       prevKind = 'identifier';
       continue;
     }
@@ -221,6 +230,26 @@ const EXPRESSION_ENDING: ReadonlySet<PrevKind> = new Set([
   'number',
   'string',
   'template',
+  'regex',
+]);
+
+/**
+ * Expression-starting keywords. After one of these, a `/` begins a regex literal even though the
+ * keyword itself is tokenized as an identifier. `of`, `yield` and `await` are intentionally
+ * excluded: they are valid identifiers in some contexts, so `/` after them may be division.
+ */
+const REGEX_PRECEDING_KEYWORDS: ReadonlySet<string> = new Set([
+  'return',
+  'typeof',
+  'instanceof',
+  'in',
+  'new',
+  'delete',
+  'void',
+  'throw',
+  'case',
+  'do',
+  'else',
 ]);
 
 /**
@@ -228,7 +257,15 @@ const EXPRESSION_ENDING: ReadonlySet<PrevKind> = new Set([
  * token. `)` and `]` punctuation also end an expression (division), so any other punctuation (or
  * the start of the file) may start a regex.
  */
-function isRegexStart(prevKind: PrevKind, prevPunct: string | undefined): boolean {
+function isRegexStart(
+  prevKind: PrevKind,
+  prevPunct: string | undefined,
+  prevIsExpressionKeyword: boolean,
+): boolean {
+  if (prevKind === 'identifier' && prevIsExpressionKeyword) {
+    return true;
+  }
+
   if (EXPRESSION_ENDING.has(prevKind)) {
     return false;
   }
@@ -284,6 +321,7 @@ function interpret(tokens: readonly Token[]): ModuleSpecifierOccurrence[] {
 /**
  * Handle an `import` identifier. Returns the next index to scan from.
  *
+ * - `obj.import(...)` is ignored (a member call, preceded by `.`).
  * - `import.meta` is ignored (treated as `import` followed by `.`).
  * - `import 'pkg'` and `import ... from 'pkg'` are `import`.
  * - `import('pkg')` is `dynamic-import` when the argument is a static string.
@@ -293,7 +331,13 @@ function handleImport(
   i: number,
   occurrences: ModuleSpecifierOccurrence[],
 ): number {
+  const prev = tokens[i - 1];
   const next = tokens[i + 1];
+
+  // `obj.import(...)`: a member call, not the import keyword.
+  if (prev?.kind === 'punct' && prev.value === '.') {
+    return i + 1;
+  }
 
   // `import.meta` / `import .foo`: not a module import.
   if (next?.kind === 'punct' && next.value === '.') {
@@ -472,6 +516,12 @@ function skipRegex(source: string, start: number): number {
   while (i < n) {
     const ch = source[i];
 
+    // A regex literal cannot contain a raw line terminator. Rejecting it here stops a wrong regex
+    // start from swallowing the following lines.
+    if (ch === '\n' || ch === '\r' || ch === '\u2028' || ch === '\u2029') {
+      throw new ModuleSpecifierError('Unterminated regex literal', 'invalid-source', start);
+    }
+
     if (ch === '\\') {
       i += 2;
       continue;
@@ -572,13 +622,24 @@ function decodeEscape(source: string, start: number): { value: string; next: num
 
   const e = source[i] ?? '';
 
-  // Line continuation: a backslash before a line break is dropped.
-  if (e === '\n') {
+  // Line continuation: a backslash before a line break (including the Unicode line separators
+  // U+2028 and U+2029) is dropped from the decoded value.
+  if (e === '\n' || e === '\u2028' || e === '\u2029') {
     return { value: '', next: i + 1 };
   }
 
   if (e === '\r') {
     return { value: '', next: source[i + 1] === '\n' ? i + 2 : i + 1 };
+  }
+
+  // Octal backreferences (`\1`-`\9`, and `\0` followed by a decimal digit) are not valid string
+  // escapes and must be rejected.
+  if (e >= '1' && e <= '9') {
+    throw new ModuleSpecifierError(`Invalid escape sequence '\\${e}`, 'invalid-source', backslash);
+  }
+
+  if (e === '0' && isNumberStart(source[i + 1] ?? '')) {
+    throw new ModuleSpecifierError(`Invalid escape sequence '\\${e}`, 'invalid-source', backslash);
   }
 
   const simple: Record<string, string> = {
@@ -614,7 +675,8 @@ function decodeEscape(source: string, start: number): { value: string; next: num
     return decodeHex(source, i + 1, 4);
   }
 
-  throw new ModuleSpecifierError(`Invalid escape sequence '\\${e}`, 'invalid-source', backslash);
+  // Any other character after a backslash evaluates to itself (e.g. `\q` is `q`, `\/` is `/`).
+  return { value: e, next: i + 1 };
 }
 
 function decodeHex(source: string, start: number, length: number): { value: string; next: number } {
@@ -639,10 +701,17 @@ function decodeUnicodeBraced(source: string, start: number): { value: string; ne
     }
 
     code = code * 16 + parseInt(hex, 16);
+
+    // Stop accumulating once the value exceeds the maximum code point to avoid unbounded growth.
+    if (code > 0x10ffff) {
+      break;
+    }
+
     i++;
   }
 
-  if (source[i] !== '}') {
+  // Reject empty braced escapes (`\u{}`) and code points above the maximum Unicode value.
+  if (source[i] !== '}' || i === start || code > 0x10ffff) {
     throw new ModuleSpecifierError('Invalid \\u{...} escape', 'invalid-source', start);
   }
 
