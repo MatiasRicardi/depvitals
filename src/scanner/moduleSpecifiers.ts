@@ -15,7 +15,8 @@
  *
  * Instead of a few global regexes over raw source, this module runs a small lexical scanner with
  * just enough JavaScript awareness to identify the required forms while ignoring comments, strings,
- * template literals and regex literals so they never produce false findings.
+ * template literal text and regex literals so they never produce false findings. JavaScript inside
+ * template interpolations (`${...}`) is still lexed, so specifiers there are found.
  */
 
 /**
@@ -109,10 +110,63 @@ function tokenize(source: string): readonly Token[] {
   // The value of the previous punctuation token, when the previous token was punctuation.
   let prevPunct: string | undefined;
 
+  // Template literal state. `exprDepth` counts the open `${...}` expressions on the current stack;
+  // `inText` is true while scanning template text that must not be lexed as JavaScript. A backtick
+  // toggles `inText`, so nested templates are handled by the toggle. JavaScript inside `${...}` is
+  // lexed like ordinary source.
+  let exprDepth = 0;
+  let inText = false;
+  // Offset of the opening backtick of the current template, for unterminated-template errors.
+  let templateStart = 0;
+
+  // Regex-after-`)` heuristic. `afterControlHead` is true when the most recent `)` closed the head
+  // of a control statement (if/while/for/with), so a following `/` may start a regex literal.
+  let afterControlHead = false;
+  // The control keyword pending a `(` (if/while/for/with), so the matching `)` can be recognised.
+  let pendingControlKeyword: string | undefined;
+  // Whether the most recent `(` opened a control-statement head.
+  let openControlParen = false;
+
+  // Reset the expression-start state at the beginning of a fresh `${...}` expression.
+  const resetExpressionState = (): void => {
+    prevKind = 'start';
+    prevPunct = undefined;
+    prevIsExpressionKeyword = false;
+  };
+
   while (i < n) {
     const ch = source[i];
 
     if (ch === undefined) {
+      i++;
+      continue;
+    }
+
+    // Template literal text: skip everything until `${`, a nested `` ` ``, or the closing `` ` ``.
+    // A backtick toggles out of text mode; the matching toggle happens below in code mode.
+    if (inText) {
+      if (ch === '\\') {
+        i += 2;
+        continue;
+      }
+
+      if (ch === '`') {
+        // Closing backtick of the current (or nested) template literal.
+        inText = false;
+        prevKind = 'template';
+        i++;
+        continue;
+      }
+
+      if (ch === '$' && source[i + 1] === '{') {
+        // Start of a `${...}` expression: lex the JavaScript inside like ordinary source.
+        exprDepth++;
+        inText = false;
+        resetExpressionState();
+        i += 2;
+        continue;
+      }
+
       i++;
       continue;
     }
@@ -135,20 +189,47 @@ function tokenize(source: string): readonly Token[] {
     // Block comment.
     if (ch === '/' && source[i + 1] === '*') {
       i = skipBlockComment(source, i);
+      afterControlHead = false;
+      pendingControlKeyword = undefined;
       continue;
+    }
+
+    // A backtick in code mode opens a (possibly nested) template literal.
+    if (ch === '`') {
+      templateStart = i;
+      inText = true;
+      prevKind = 'template';
+      i++;
+      continue;
+    }
+
+    // Closing brace of a `${...}` expression returns to template text.
+    if (ch === '}') {
+      if (exprDepth > 0) {
+        exprDepth--;
+        i++;
+        inText = true;
+        resetExpressionState();
+        continue;
+      }
+      // Otherwise `}` is an ordinary object-literal punctuation token.
     }
 
     // `/` is a regex when it can start an expression, otherwise it is division.
     if (ch === '/') {
-      if (isRegexStart(prevKind, prevPunct, prevIsExpressionKeyword)) {
+      if (isRegexStart(prevKind, prevPunct, prevIsExpressionKeyword, afterControlHead)) {
         i = skipRegex(source, i);
         prevKind = 'regex';
+        afterControlHead = false;
+        pendingControlKeyword = undefined;
         continue;
       }
 
       tokens.push({ kind: 'punct', value: '/', offset: i });
       prevKind = 'punct';
       prevPunct = '/';
+      afterControlHead = false;
+      pendingControlKeyword = undefined;
       i++;
       continue;
     }
@@ -158,14 +239,9 @@ function tokenize(source: string): readonly Token[] {
       const { value, next } = readString(source, i);
       tokens.push({ kind: 'string', value, offset: i });
       prevKind = 'string';
+      afterControlHead = false;
+      pendingControlKeyword = undefined;
       i = next;
-      continue;
-    }
-
-    // Template literals are skipped wholesale so their inner text never yields findings.
-    if (ch === '`') {
-      i = skipTemplate(source, i);
-      prevKind = 'template';
       continue;
     }
 
@@ -187,8 +263,11 @@ function tokenize(source: string): readonly Token[] {
       // A keyword after `.` is a property name (e.g. `x.return`), not an expression start.
       prevIsExpressionKeyword =
         REGEX_PRECEDING_KEYWORDS.has(value) && !(prevKind === 'punct' && prevPunct === '.');
+      // Remember a control-statement keyword until its `(` is seen.
+      pendingControlKeyword = CONTROL_HEAD_KEYWORDS.has(value) ? value : undefined;
       tokens.push({ kind: 'identifier', value, offset: start });
       prevKind = 'identifier';
+      afterControlHead = false;
       continue;
     }
 
@@ -208,14 +287,36 @@ function tokenize(source: string): readonly Token[] {
 
       tokens.push({ kind: 'number', offset: start });
       prevKind = 'number';
+      afterControlHead = false;
+      pendingControlKeyword = undefined;
       continue;
     }
 
     // Any other single character is punctuation.
+    if (ch === '(') {
+      // A `(` immediately after a control keyword opens a control head; the matching `)` may then
+      // start a regex with a following `/`.
+      openControlParen = pendingControlKeyword !== undefined;
+      pendingControlKeyword = undefined;
+    } else if (ch === ')') {
+      afterControlHead = openControlParen;
+      openControlParen = false;
+    }
+
     tokens.push({ kind: 'punct', value: ch, offset: i });
     prevKind = 'punct';
     prevPunct = ch;
     i++;
+  }
+
+  // Reaching the end of the source while inside a template text or an open `${...}` expression means
+  // the template literal was never closed.
+  if (inText || exprDepth > 0) {
+    throw new ModuleSpecifierError(
+      'Unterminated template literal',
+      'invalid-source',
+      templateStart,
+    );
   }
 
   return tokens;
@@ -252,15 +353,20 @@ const REGEX_PRECEDING_KEYWORDS: ReadonlySet<string> = new Set([
   'else',
 ]);
 
+// Control-statement heads whose closing `)` may be followed by a regex literal.
+const CONTROL_HEAD_KEYWORDS: ReadonlySet<string> = new Set(['if', 'while', 'for', 'with']);
+
 /**
  * Whether a `/` (not already a comment) may begin a regex literal, given the previous significant
  * token. `)` and `]` punctuation also end an expression (division), so any other punctuation (or
- * the start of the file) may start a regex.
+ * the start of the file) may start a regex. The one exception is a `/` after the `)` that closes a
+ * control-statement head (if/while/for/with), which may start a regex literal.
  */
 function isRegexStart(
   prevKind: PrevKind,
   prevPunct: string | undefined,
   prevIsExpressionKeyword: boolean,
+  afterControlHead: boolean,
 ): boolean {
   if (prevKind === 'identifier' && prevIsExpressionKeyword) {
     return true;
@@ -271,6 +377,10 @@ function isRegexStart(
   }
 
   if (prevKind === 'punct') {
+    if (afterControlHead && prevPunct === ')') {
+      return true;
+    }
+
     return prevPunct !== ')' && prevPunct !== ']';
   }
 
@@ -465,49 +575,6 @@ function skipBlockComment(source: string, start: number): number {
   throw new ModuleSpecifierError('Unterminated block comment', 'invalid-source', start);
 }
 
-function skipTemplate(source: string, start: number): number {
-  const n = source.length;
-  let i = start + 1;
-  let depth = 0;
-
-  while (i < n) {
-    const ch = source[i];
-
-    if (ch === '\\') {
-      i += 2;
-      continue;
-    }
-
-    if (ch === '`') {
-      if (depth === 0) {
-        return i + 1;
-      }
-
-      i++;
-      continue;
-    }
-
-    if (ch === '$' && source[i + 1] === '{') {
-      depth++;
-      i += 2;
-      continue;
-    }
-
-    if (ch === '}') {
-      if (depth > 0) {
-        depth--;
-      }
-
-      i++;
-      continue;
-    }
-
-    i++;
-  }
-
-  throw new ModuleSpecifierError('Unterminated template literal', 'invalid-source', start);
-}
-
 function skipRegex(source: string, start: number): number {
   const n = source.length;
   let i = start + 1;
@@ -593,6 +660,12 @@ function readString(source: string, start: number): { value: string; next: numbe
 
     if (ch === quote) {
       return { value: out, next: i + 1 };
+    }
+
+    // A raw line terminator inside a quoted string is invalid JavaScript; reject it instead of
+    // continuing to scan (which would otherwise swallow later code as part of the string).
+    if (ch === '\n' || ch === '\r' || ch === '\u2028' || ch === '\u2029') {
+      throw new ModuleSpecifierError('Unterminated string literal', 'invalid-source', start);
     }
 
     if (ch !== undefined) {

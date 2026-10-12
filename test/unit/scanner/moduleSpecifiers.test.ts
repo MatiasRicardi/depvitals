@@ -54,6 +54,18 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(`const value = require('commonjs');`)).toEqual(['commonjs']);
     });
 
+    it('scans JavaScript inside template interpolations', () => {
+      expect(specifiers("const value = `${require('pkg')}`;")).toEqual(['pkg']);
+      expect(specifiers("const other = `${import('other-pkg')}`;")).toEqual(['other-pkg']);
+    });
+
+    it('supports nested template interpolations', () => {
+      // Outer template with a nested template whose expression contains a require.
+      const source = "const x = `${ `x${require('nested')}` }`";
+
+      expect(specifiers(source)).toEqual(['nested']);
+    });
+
     it('extracts the CommonJS require inside a TypeScript import-equals', () => {
       expect(specifiers(`import value = require('ts-require');`)).toEqual(['ts-require']);
     });
@@ -171,6 +183,18 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(`function isQuote(c) { return /["']/.test(c); }`)).toEqual([]);
     });
 
+    it('treats a regex after a control-statement head as a regex', () => {
+      expect(specifiers(`if (ok) /require('fake')/.test(value);`)).toEqual([]);
+      expect(specifiers(`while (ok) /require('fake')/.test(value);`)).toEqual([]);
+      expect(specifiers(`for (;;) /require('fake')/.test(value);`)).toEqual([]);
+      expect(specifiers(`with (o) /require('fake')/.test(value);`)).toEqual([]);
+    });
+
+    it('treats a slash after a closing paren as division, not a regex', () => {
+      expect(specifiers(`const ratio = total / count;`)).toEqual([]);
+      expect(specifiers(`const value = fn() / 2;`)).toEqual([]);
+    });
+
     it('does not treat the word "important" as an import', () => {
       expect(specifiers(`const important = 1;`)).toEqual([]);
     });
@@ -194,6 +218,18 @@ describe('extractModuleSpecifiers', () => {
       expect(() => extractModuleSpecifiers(`/* never closed import 'x';`)).toThrow(
         ModuleSpecifierError,
       );
+    });
+
+    it('throws ModuleSpecifierError on a raw line terminator inside a single-quoted string', () => {
+      expect(() => extractModuleSpecifiers("import 'pkg\nother';")).toThrow(ModuleSpecifierError);
+    });
+
+    it('throws ModuleSpecifierError on a raw line terminator inside a double-quoted string', () => {
+      expect(() => extractModuleSpecifiers('import "pkg\nother";')).toThrow(ModuleSpecifierError);
+    });
+
+    it('keeps a valid line continuation inside a quoted string', () => {
+      expect(specifiers(`import 'line-` + '\\' + `continues';`)).toEqual(['line-continues']);
     });
 
     it('throws ModuleSpecifierError on an unterminated template literal', () => {
