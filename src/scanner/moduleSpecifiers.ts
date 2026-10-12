@@ -276,13 +276,14 @@ function tokenize(source: string): readonly Token[] {
       // A keyword after `.` is a property name (e.g. `x.return`), not an expression start.
       prevIsExpressionKeyword =
         REGEX_PRECEDING_KEYWORDS.has(value) && !(prevKind === 'punct' && prevPunct === '.');
-      // Remember a control-statement keyword until its `(` is seen. After `.` the identifier is a
-      // property name (e.g. `obj.if(...)`), so it must not be tracked as a control head: doing so
-      // would let the member call's `)` claim the regex-after-control-head state.
-      pendingControlKeyword =
-        CONTROL_HEAD_KEYWORDS.has(value) && !(prevKind === 'punct' && prevPunct === '.')
-          ? value
-          : undefined;
+      // Remember a control-statement keyword until its `(` is seen so only that head's `)` may be
+      // followed by a regex literal.
+      pendingControlKeyword = pendingControlKeywordAfter(
+        value,
+        // After `.` the identifier is a property name (e.g. `obj.if(...)`), never a control head.
+        prevKind === 'punct' && prevPunct === '.',
+        pendingControlKeyword,
+      );
       tokens.push({ kind: 'identifier', value, offset: start });
       prevKind = 'identifier';
       afterControlHead = false;
@@ -393,6 +394,31 @@ const REGEX_PRECEDING_KEYWORDS: ReadonlySet<string> = new Set([
 
 // Control-statement heads whose closing `)` may be followed by a regex literal.
 const CONTROL_HEAD_KEYWORDS: ReadonlySet<string> = new Set(['if', 'while', 'for', 'with']);
+
+/**
+ * The control keyword still pending a `(` after reading the identifier `value`, given what was
+ * pending before it.
+ *
+ * - `if`/`while`/`for`/`with` start a control head.
+ * - `await` keeps a pending `for` alive, because `for await (...)` puts it between the keyword and
+ *   its `(`. `await` is not a control keyword on its own.
+ * - Anything else (including a keyword used as a property name after `.`) clears the pending state.
+ */
+function pendingControlKeywordAfter(
+  value: string,
+  isMemberName: boolean,
+  pending: string | undefined,
+): string | undefined {
+  if (isMemberName) {
+    return undefined;
+  }
+
+  if (CONTROL_HEAD_KEYWORDS.has(value)) {
+    return value;
+  }
+
+  return value === 'await' && pending === 'for' ? pending : undefined;
+}
 
 /**
  * Whether a `/` (not already a comment) may begin a regex literal, given the previous significant
@@ -898,21 +924,25 @@ function decodeUnicodeBraced(source: string, start: number): { value: string; ne
 /* Character helpers                                                          */
 /* -------------------------------------------------------------------------- */
 
+// The Unicode `Zs` (`Space_Separator`) category, so every one of those characters separates tokens
+// instead of being read as punctuation.
+const SPACE_SEPARATOR = /\p{Zs}/u;
+
 /**
- * The characters that separate tokens: the ECMAScript `WhiteSpace` characters the scanner has to
- * accept between tokens (including NBSP and ZWNBSP/BOM) plus every `LineTerminator`. Only used for
- * the gap between tokens; string contents are handled by `readString`, so a raw U+2028/U+2029 inside
- * a quoted string stays valid source while a raw LF/CR there stays an error.
+ * The characters that separate tokens, that is the ECMAScript `WhiteSpace` production: the Unicode
+ * `Space_Separator` (`Zs`) characters (plain space, NBSP, EM SPACE, IDEOGRAPHIC SPACE, ...), tab,
+ * vertical tab, form feed, ZWNBSP/BOM, plus every `LineTerminator`. Only used for the gap between
+ * tokens; string contents are handled by `readString`, so a raw U+2028/U+2029 inside a quoted string
+ * stays valid source while a raw LF/CR there stays an error.
  */
 function isWhitespace(ch: string): boolean {
   return (
-    ch === ' ' ||
     ch === '\t' ||
     ch === '\v' ||
     ch === '\f' ||
-    ch === '\u00A0' ||
     ch === '\uFEFF' ||
-    isLineTerminator(ch)
+    isLineTerminator(ch) ||
+    SPACE_SEPARATOR.test(ch)
   );
 }
 

@@ -197,6 +197,39 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(source)).toEqual(['after-ls-division']);
     });
 
+    it('treats Unicode Space_Separator characters as token separators', () => {
+      // Built from code points so the sources contain the real characters.
+      const enSpace = String.fromCharCode(0x2002);
+      const emSpace = String.fromCharCode(0x2003);
+      const ideographicSpace = String.fromCharCode(0x3000);
+
+      expect(specifiers(`require${emSpace}('em-space-require');`)).toEqual(['em-space-require']);
+      expect(specifiers(`import${emSpace}'em-space-import';`)).toEqual(['em-space-import']);
+      expect(specifiers(`require${enSpace}('en-space-require');`)).toEqual(['en-space-require']);
+      expect(specifiers(`require${ideographicSpace}('ideographic-space-require');`)).toEqual([
+        'ideographic-space-require',
+      ]);
+    });
+
+    it('keeps a division slash after a Space_Separator a division', () => {
+      const emSpace = String.fromCharCode(0x2003);
+      const source = `const x = 4${emSpace}/ 2;\nimport 'after-em-division';`;
+
+      expect(specifiers(source)).toEqual(['after-em-division']);
+    });
+
+    it('extracts a require in the body of a for await loop', () => {
+      const source = `
+        async function run(items) {
+          for await (const item of items) {
+            require('pkg');
+          }
+        }
+      `;
+
+      expect(specifiers(source)).toEqual(['pkg']);
+    });
+
     it('tolerates semicolonless code', () => {
       expect(specifiers(`import 'no-semicolon'`)).toEqual(['no-semicolon']);
     });
@@ -364,6 +397,19 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(`while (ok) /require('fake')/.test(value);`)).toEqual([]);
       expect(specifiers(`for (;;) /require('fake')/.test(value);`)).toEqual([]);
       expect(specifiers(`with (o) /require('fake')/.test(value);`)).toEqual([]);
+    });
+
+    it('treats a regex after a for await control head as a regex', () => {
+      // `await` sits between `for` and its `(`, so the head still ends at that `)` and the slash
+      // that follows starts a regex literal, not a division.
+      const source = `
+        async function run(items) {
+          for await (const item of items)
+            /require('fake')/.test(item);
+        }
+      `;
+
+      expect(specifiers(source)).toEqual([]);
     });
 
     it('treats a regex after nested control-head parentheses as a regex', () => {
