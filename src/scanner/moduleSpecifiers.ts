@@ -276,8 +276,13 @@ function tokenize(source: string): readonly Token[] {
       // A keyword after `.` is a property name (e.g. `x.return`), not an expression start.
       prevIsExpressionKeyword =
         REGEX_PRECEDING_KEYWORDS.has(value) && !(prevKind === 'punct' && prevPunct === '.');
-      // Remember a control-statement keyword until its `(` is seen.
-      pendingControlKeyword = CONTROL_HEAD_KEYWORDS.has(value) ? value : undefined;
+      // Remember a control-statement keyword until its `(` is seen. After `.` the identifier is a
+      // property name (e.g. `obj.if(...)`), so it must not be tracked as a control head: doing so
+      // would let the member call's `)` claim the regex-after-control-head state.
+      pendingControlKeyword =
+        CONTROL_HEAD_KEYWORDS.has(value) && !(prevKind === 'punct' && prevPunct === '.')
+          ? value
+          : undefined;
       tokens.push({ kind: 'identifier', value, offset: start });
       prevKind = 'identifier';
       afterControlHead = false;
@@ -538,17 +543,22 @@ function scanImportSource(
     const token = tokens[j];
 
     if (token?.kind === 'identifier') {
-      if (token.value === 'import' || token.value === 'export' || token.value === 'require') {
+      const next = tokens[j + 1];
+
+      // A `require` identifier only starts a new construct when it begins a direct call: a binding
+      // named `require` (e.g. `import { require } from 'pkg'`) must not stop the search for the
+      // source that follows `from`.
+      if (
+        token.value === 'import' ||
+        token.value === 'export' ||
+        (token.value === 'require' && next?.kind === 'punct' && next.value === '(')
+      ) {
         break;
       }
 
-      if (token.value === 'from') {
-        const sourceToken = tokens[j + 1];
-
-        if (sourceToken?.kind === 'string') {
-          occurrences.push({ specifier: sourceToken.value, kind });
-          return j + 2;
-        }
+      if (token.value === 'from' && next?.kind === 'string') {
+        occurrences.push({ specifier: next.value, kind });
+        return j + 2;
       }
     }
 

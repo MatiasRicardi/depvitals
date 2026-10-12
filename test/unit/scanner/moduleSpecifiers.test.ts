@@ -54,6 +54,19 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(`const value = require('commonjs');`)).toEqual(['commonjs']);
     });
 
+    it('extracts sources from clauses that bind a name called require', () => {
+      // A binding named `require` must not stop the search for the `from` source.
+      expect(extractModuleSpecifiers(`import { require } from 'pkg';`)).toEqual([
+        { specifier: 'pkg', kind: 'import' },
+      ]);
+      expect(extractModuleSpecifiers(`import { require as loader } from 'pkg';`)).toEqual([
+        { specifier: 'pkg', kind: 'import' },
+      ]);
+      expect(extractModuleSpecifiers(`export { require } from 'pkg';`)).toEqual([
+        { specifier: 'pkg', kind: 'export-from' },
+      ]);
+    });
+
     it('scans JavaScript inside template interpolations', () => {
       expect(specifiers("const value = `${require('pkg')}`;")).toEqual(['pkg']);
       expect(specifiers("const other = `${import('other-pkg')}`;")).toEqual(['other-pkg']);
@@ -264,6 +277,16 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(`if ((ok)) /require('fake')/.test(value);`)).toEqual([]);
       expect(specifiers(`if (isValid(value)) /require('fake')/.test(value);`)).toEqual([]);
       expect(specifiers(`while (isValid(value)) /require('fake')/.test(value);`)).toEqual([]);
+    });
+
+    it('does not treat control keywords used as member properties as control heads', () => {
+      // The real `if` head ends after `obj.while(x)`, so the following `/` starts a regex literal.
+      expect(specifiers(`if (obj.while(x)) /require('fake')/.test(value);`)).toEqual([]);
+      // Inside the `if` head the `/` is division, so the require stays visible.
+      expect(specifiers(`if (obj.while(x) / require('pkg')) {}`)).toEqual(['pkg']);
+      // A member call is not a control head at all, so the following `/` stays division.
+      expect(specifiers(`obj.if(ok) / require('pkg') / 2;`)).toEqual(['pkg']);
+      expect(specifiers(`obj.for(ok) / require('pkg') / 2;`)).toEqual(['pkg']);
     });
 
     it('treats comments around a control head as whitespace', () => {
