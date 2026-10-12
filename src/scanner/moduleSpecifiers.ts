@@ -527,8 +527,9 @@ function handleExport(
 
 /**
  * Scan forward from `i` looking for the `from` keyword followed by a string, recording it with
- * `kind`. Stops early at a nested `import`/`export`/`require` so a following construct is handled
- * on its own.
+ * `kind`. Stops early at a nested `import`/`export`/`require` so a following construct is handled on
+ * its own, except for `import`/`export` used as binding names inside the `{ ... }` clause of the
+ * current statement (e.g. `import { export as v } from 'pkg'`).
  */
 function scanImportSource(
   tokens: readonly Token[],
@@ -538,19 +539,32 @@ function scanImportSource(
 ): number {
   const n = tokens.length;
   let j = i + 1;
+  // How many `{ ... }` named clauses of the current statement are open. `import`/`export` are legal
+  // binding names inside such a clause (e.g. `import { export as v } from 'pkg'`), so they may only
+  // start a new construct at depth 0, otherwise the search stops before the real `from` source.
+  let braceDepth = 0;
 
   while (j < n) {
     const token = tokens[j];
 
+    if (token?.kind === 'punct') {
+      if (token.value === '{') {
+        braceDepth++;
+      } else if (token.value === '}') {
+        // Clamped so an unmatched `}` cannot leave a negative depth that hides later boundaries.
+        braceDepth = braceDepth > 0 ? braceDepth - 1 : 0;
+      }
+    }
+
     if (token?.kind === 'identifier') {
       const next = tokens[j + 1];
 
-      // A `require` identifier only starts a new construct when it begins a direct call: a binding
-      // named `require` (e.g. `import { require } from 'pkg'`) must not stop the search for the
-      // source that follows `from`.
+      // `import`/`export` only start a new construct outside the named clause. A `require`
+      // identifier only starts one when it begins a direct call: a binding named `require` (e.g.
+      // `import { require } from 'pkg'`) must not stop the search for the source that follows
+      // `from`.
       if (
-        token.value === 'import' ||
-        token.value === 'export' ||
+        (braceDepth === 0 && (token.value === 'import' || token.value === 'export')) ||
         (token.value === 'require' && next?.kind === 'punct' && next.value === '(')
       ) {
         break;
@@ -884,8 +898,22 @@ function decodeUnicodeBraced(source: string, start: number): { value: string; ne
 /* Character helpers                                                          */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * The characters that separate tokens: the ECMAScript `WhiteSpace` characters the scanner has to
+ * accept between tokens (including NBSP and ZWNBSP/BOM) plus every `LineTerminator`. Only used for
+ * the gap between tokens; string contents are handled by `readString`, so a raw U+2028/U+2029 inside
+ * a quoted string stays valid source while a raw LF/CR there stays an error.
+ */
 function isWhitespace(ch: string): boolean {
-  return ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || ch === '\f' || ch === '\v';
+  return (
+    ch === ' ' ||
+    ch === '\t' ||
+    ch === '\v' ||
+    ch === '\f' ||
+    ch === '\u00A0' ||
+    ch === '\uFEFF' ||
+    isLineTerminator(ch)
+  );
 }
 
 /**

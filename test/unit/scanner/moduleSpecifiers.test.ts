@@ -96,6 +96,29 @@ describe('extractModuleSpecifiers', () => {
       ]);
     });
 
+    it('extracts sources from clauses that bind import or export as names', () => {
+      // `import`/`export` are legal binding names inside a named clause, so they must not end the
+      // search for the `from` source of the current statement.
+      expect(extractModuleSpecifiers(`import { export as value } from 'pkg';`)).toEqual([
+        { specifier: 'pkg', kind: 'import' },
+      ]);
+      expect(extractModuleSpecifiers(`import { import as value } from 'pkg';`)).toEqual([
+        { specifier: 'pkg', kind: 'import' },
+      ]);
+      expect(extractModuleSpecifiers(`export { value as import } from 'pkg';`)).toEqual([
+        { specifier: 'pkg', kind: 'export-from' },
+      ]);
+      expect(extractModuleSpecifiers(`export { value as export } from 'pkg';`)).toEqual([
+        { specifier: 'pkg', kind: 'export-from' },
+      ]);
+    });
+
+    it('still stops at a real construct that follows the clause', () => {
+      // Depth-0 boundaries keep working, including a direct require call inside a block body.
+      expect(specifiers(`import { value } from 'a'; require('b');`)).toEqual(['a', 'b']);
+      expect(specifiers(`export const run = () => { require('pkg'); };`)).toEqual(['pkg']);
+    });
+
     it('scans JavaScript inside template interpolations', () => {
       expect(specifiers("const value = `${require('pkg')}`;")).toEqual(['pkg']);
       expect(specifiers("const other = `${import('other-pkg')}`;")).toEqual(['other-pkg']);
@@ -146,6 +169,32 @@ describe('extractModuleSpecifiers', () => {
       const source = `import\n  value\n  from   'whitespace-pkg' ;`;
 
       expect(specifiers(source)).toEqual(['whitespace-pkg']);
+    });
+
+    it('treats ECMAScript whitespace and line terminators as token separators', () => {
+      // Built from code points so the sources contain the real characters.
+      const noBreakSpace = String.fromCharCode(0x00a0);
+      const lineSeparator = String.fromCharCode(0x2028);
+      const paragraphSeparator = String.fromCharCode(0x2029);
+      const byteOrderMark = String.fromCharCode(0xfeff);
+
+      expect(specifiers(`require${noBreakSpace}('nbsp-require');`)).toEqual(['nbsp-require']);
+      expect(specifiers(`import${noBreakSpace}'nbsp-import';`)).toEqual(['nbsp-import']);
+      expect(specifiers(`require${lineSeparator}('ls-require');`)).toEqual(['ls-require']);
+      expect(specifiers(`require${paragraphSeparator}('ps-require');`)).toEqual(['ps-require']);
+      expect(specifiers(`${byteOrderMark}import 'bom-import';`)).toEqual(['bom-import']);
+      expect(specifiers(`const value = require${byteOrderMark}('bom-require');`)).toEqual([
+        'bom-require',
+      ]);
+    });
+
+    it('keeps a division slash after a U+2028 separator a division', () => {
+      // The separator must not become punctuation, or the `/` would look like a regex literal and
+      // swallow the following import.
+      const lineSeparator = String.fromCharCode(0x2028);
+      const source = `const x = 4${lineSeparator}/ 2;\nimport 'after-ls-division';`;
+
+      expect(specifiers(source)).toEqual(['after-ls-division']);
     });
 
     it('tolerates semicolonless code', () => {
