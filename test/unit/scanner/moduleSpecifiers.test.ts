@@ -54,6 +54,35 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(`const value = require('commonjs');`)).toEqual(['commonjs']);
     });
 
+    it('still recognizes a static call closed immediately after the string', () => {
+      // Two adjacent static calls prove the closing paren is consumed as part of each call.
+      expect(specifiers(`await import('pkg-a'); const b = require('pkg-b');`)).toEqual([
+        'pkg-a',
+        'pkg-b',
+      ]);
+    });
+
+    it('finds specifiers after a line comment ended by CR, U+2028 or U+2029', () => {
+      // Each terminator ends the `//` comment, so the require on the next line is real code.
+      expect(specifiers(`// comment\rrequire('cr-comment');`)).toEqual(['cr-comment']);
+
+      const lineSeparator = String.fromCharCode(0x2028);
+      const paragraphSeparator = String.fromCharCode(0x2029);
+
+      expect(specifiers(`// comment${lineSeparator}require('ls-comment');`)).toEqual([
+        'ls-comment',
+      ]);
+      expect(specifiers(`// comment${paragraphSeparator}import 'ps-comment';`)).toEqual([
+        'ps-comment',
+      ]);
+    });
+
+    it('finds specifiers after a line comment ended by LF or CRLF', () => {
+      // Preserved behavior for the existing line terminators.
+      expect(specifiers(`// comment\nrequire('lf-comment');`)).toEqual(['lf-comment']);
+      expect(specifiers(`// comment\r\nrequire('crlf-comment');`)).toEqual(['crlf-comment']);
+    });
+
     it('extracts sources from clauses that bind a name called require', () => {
       // A binding named `require` must not stop the search for the `from` source.
       expect(extractModuleSpecifiers(`import { require } from 'pkg';`)).toEqual([
@@ -252,6 +281,21 @@ describe('extractModuleSpecifiers', () => {
     it('ignores dynamic and require with a non-literal argument', () => {
       expect(specifiers(`import(variable);`)).toEqual([]);
       expect(specifiers(`require(variable);`)).toEqual([]);
+    });
+
+    it('ignores a dynamic import whose argument is a concatenation', () => {
+      // The string is not the whole argument, so nothing is statically known.
+      expect(specifiers(`import('pkg-' + name);`)).toEqual([]);
+    });
+
+    it('ignores a require whose argument is a concatenation', () => {
+      expect(specifiers(`const value = require('pkg-' + name);`)).toEqual([]);
+    });
+
+    it('ignores require and dynamic import with extra arguments', () => {
+      // Only `keyword ( STRING )` is static, so a trailing argument disqualifies the call.
+      expect(specifiers(`require('pkg', other);`)).toEqual([]);
+      expect(specifiers(`import('pkg', options);`)).toEqual([]);
     });
 
     it('ignores obj.require property access', () => {

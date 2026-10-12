@@ -97,10 +97,10 @@ function tokenize(source: string): readonly Token[] {
   // Such keywords start an expression, so a following `/` begins a regex rather than division.
   let prevIsExpressionKeyword = false;
 
-  // Hashbang: only at offset 0. Ignore until the first line break.
+  // Hashbang: only at offset 0. Ignore until the first line terminator.
   if (source.startsWith('#!')) {
     i = 2;
-    while (i < n && source[i] !== '\n' && source[i] !== '\r') {
+    while (i < n && !isLineTerminator(source[i])) {
       i++;
     }
   }
@@ -183,10 +183,10 @@ function tokenize(source: string): readonly Token[] {
       continue;
     }
 
-    // Line comment.
+    // Line comment: it ends at any ECMAScript line terminator (LF, CR, LS or PS), not only `\n`.
     if (ch === '/' && source[i + 1] === '/') {
       i += 2;
-      while (i < n && source[i] !== '\n') {
+      while (i < n && !isLineTerminator(source[i])) {
         i++;
       }
 
@@ -472,7 +472,7 @@ function interpret(tokens: readonly Token[]): ModuleSpecifierOccurrence[] {
  * - `obj.import(...)` is ignored (a member call, preceded by `.`).
  * - `import.meta` is ignored (treated as `import` followed by `.`).
  * - `import 'pkg'` and `import ... from 'pkg'` are `import`.
- * - `import('pkg')` is `dynamic-import` when the argument is a static string.
+ * - `import('pkg')` is `dynamic-import` only when the sole argument is a static string.
  */
 function handleImport(
   tokens: readonly Token[],
@@ -498,12 +498,12 @@ function handleImport(
     return i + 2;
   }
 
-  // `import('pkg')` / `import ('pkg')`
+  // `import('pkg')` / `import ('pkg')`: only a sole string argument closed by `)` is static.
   if (next?.kind === 'punct' && next.value === '(') {
-    const arg = tokens[i + 2];
+    const specifier = soleStringSpecifier(tokens, i + 2);
 
-    if (arg?.kind === 'string') {
-      occurrences.push({ specifier: arg.value, kind: 'dynamic-import' });
+    if (specifier !== undefined) {
+      occurrences.push({ specifier, kind: 'dynamic-import' });
       return i + 3;
     }
 
@@ -571,7 +571,7 @@ function scanImportSource(
 
 /**
  * Handle a `require` identifier. `obj.require(...)` is ignored (preceded by `.`).
- * `require('pkg')` is `require`.
+ * `require('pkg')` is `require` only when the sole argument is a static string.
  */
 function handleRequire(
   tokens: readonly Token[],
@@ -587,16 +587,38 @@ function handleRequire(
 
   const next = tokens[i + 1];
 
+  // `require('pkg')`: only a sole string argument closed by `)` is static.
   if (next?.kind === 'punct' && next.value === '(') {
-    const arg = tokens[i + 2];
+    const specifier = soleStringSpecifier(tokens, i + 2);
 
-    if (arg?.kind === 'string') {
-      occurrences.push({ specifier: arg.value, kind: 'require' });
+    if (specifier !== undefined) {
+      occurrences.push({ specifier, kind: 'require' });
       return i + 3;
     }
   }
 
   return i + 1;
+}
+
+/**
+ * The decoded string at `argIndex` when it is the only argument of the surrounding call, that is
+ * when it is a string and the very next token closes the call with `)`. Returns undefined otherwise,
+ * so a dynamic argument (e.g. `'pkg-' + name`) or a call with extra arguments (e.g.
+ * `require('pkg', ctx)`) never yields a static specifier.
+ */
+function soleStringSpecifier(tokens: readonly Token[], argIndex: number): string | undefined {
+  const arg = tokens[argIndex];
+  const closing = tokens[argIndex + 1];
+
+  if (arg?.kind !== 'string') {
+    return undefined;
+  }
+
+  if (closing?.kind !== 'punct' || closing.value !== ')') {
+    return undefined;
+  }
+
+  return arg.value;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -864,6 +886,14 @@ function decodeUnicodeBraced(source: string, start: number): { value: string; ne
 
 function isWhitespace(ch: string): boolean {
   return ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || ch === '\f' || ch === '\v';
+}
+
+/**
+ * The ECMAScript `LineTerminator` characters. Line comments and the hashbang end at any of them,
+ * not only at `\n`. `undefined` (end of the source indexed past its end) is not a terminator.
+ */
+function isLineTerminator(ch: string | undefined): boolean {
+  return ch === '\n' || ch === '\r' || ch === '\u2028' || ch === '\u2029';
 }
 
 function isIdentifierStart(ch: string): boolean {
