@@ -110,11 +110,12 @@ function tokenize(source: string): readonly Token[] {
   // The value of the previous punctuation token, when the previous token was punctuation.
   let prevPunct: string | undefined;
 
-  // Template literal state. `exprDepth` counts the open `${...}` expressions on the current stack;
-  // `inText` is true while scanning template text that must not be lexed as JavaScript. A backtick
-  // toggles `inText`, so nested templates are handled by the toggle. JavaScript inside `${...}` is
-  // lexed like ordinary source.
-  let exprDepth = 0;
+  // Template literal state. `inText` is true while scanning template text that must not be lexed as
+  // JavaScript; a backtick toggles it, so nested templates are handled by the toggle. Every open
+  // `${...}` expression pushes its own brace depth onto `braceDepths`, which is what distinguishes
+  // the `}` that closes the interpolation from a `}` belonging to an object literal, a block or a
+  // function body inside it. JavaScript inside `${...}` is lexed like ordinary source.
+  const braceDepths: number[] = [];
   let inText = false;
   // Offset of the opening backtick of the current template, for unterminated-template errors.
   let templateStart = 0;
@@ -123,15 +124,20 @@ function tokenize(source: string): readonly Token[] {
   // of a control statement (if/while/for/with), so a following `/` may start a regex literal.
   let afterControlHead = false;
   // The control keyword pending a `(` (if/while/for/with), so the matching `)` can be recognised.
+  // Only whitespace and comments may appear between the keyword and the `(`.
   let pendingControlKeyword: string | undefined;
-  // Whether the most recent `(` opened a control-statement head.
-  let openControlParen = false;
+  // How many `(` are currently open, and the depth at which the open control-statement head sits,
+  // so only the `)` that closes the head itself (not a nested one) enables the heuristic.
+  let parenDepth = 0;
+  let controlParenDepth: number | undefined;
 
   // Reset the expression-start state at the beginning of a fresh `${...}` expression.
   const resetExpressionState = (): void => {
     prevKind = 'start';
     prevPunct = undefined;
     prevIsExpressionKeyword = false;
+    afterControlHead = false;
+    pendingControlKeyword = undefined;
   };
 
   while (i < n) {
@@ -159,8 +165,9 @@ function tokenize(source: string): readonly Token[] {
       }
 
       if (ch === '$' && source[i + 1] === '{') {
-        // Start of a `${...}` expression: lex the JavaScript inside like ordinary source.
-        exprDepth++;
+        // Start of a `${...}` expression: lex the JavaScript inside like ordinary source. The frame
+        // starts at brace depth 0, so the next unmatched `}` closes the interpolation.
+        braceDepths.push(0);
         inText = false;
         resetExpressionState();
         i += 2;
@@ -186,11 +193,10 @@ function tokenize(source: string): readonly Token[] {
       continue;
     }
 
-    // Block comment.
+    // Block comment. Comments are transparent to the regex/division heuristic, so a comment between
+    // a control keyword and its `(` behaves exactly like whitespace.
     if (ch === '/' && source[i + 1] === '*') {
       i = skipBlockComment(source, i);
-      afterControlHead = false;
-      pendingControlKeyword = undefined;
       continue;
     }
 
@@ -203,14 +209,21 @@ function tokenize(source: string): readonly Token[] {
       continue;
     }
 
-    // Closing brace of a `${...}` expression returns to template text.
+    // A `}` in code mode closes the innermost open `${...}` expression only when that expression has
+    // no open braces of its own; otherwise it is an ordinary brace inside the expression.
     if (ch === '}') {
-      if (exprDepth > 0) {
-        exprDepth--;
-        i++;
-        inText = true;
-        resetExpressionState();
-        continue;
+      const depth = braceDepths[braceDepths.length - 1];
+
+      if (depth !== undefined) {
+        if (depth === 0) {
+          braceDepths.pop();
+          i++;
+          inText = true;
+          resetExpressionState();
+          continue;
+        }
+
+        braceDepths[braceDepths.length - 1] = depth - 1;
       }
       // Otherwise `}` is an ordinary object-literal punctuation token.
     }
@@ -293,14 +306,34 @@ function tokenize(source: string): readonly Token[] {
     }
 
     // Any other single character is punctuation.
-    if (ch === '(') {
-      // A `(` immediately after a control keyword opens a control head; the matching `)` may then
-      // start a regex with a following `/`.
-      openControlParen = pendingControlKeyword !== undefined;
-      pendingControlKeyword = undefined;
+    if (ch === '{') {
+      // Count the brace inside the innermost open `${...}` expression so its closing `}` is found.
+      const depth = braceDepths[braceDepths.length - 1];
+
+      if (depth !== undefined) {
+        braceDepths[braceDepths.length - 1] = depth + 1;
+      }
+    } else if (ch === '(') {
+      // A `(` after a control keyword opens a control head; only its matching `)` may then be
+      // followed by a regex literal, so the nesting depth of every `(` has to be tracked.
+      parenDepth++;
+
+      if (pendingControlKeyword !== undefined) {
+        controlParenDepth = parenDepth;
+        pendingControlKeyword = undefined;
+      }
+
+      afterControlHead = false;
     } else if (ch === ')') {
-      afterControlHead = openControlParen;
-      openControlParen = false;
+      afterControlHead = controlParenDepth !== undefined && parenDepth === controlParenDepth;
+
+      if (afterControlHead) {
+        controlParenDepth = undefined;
+      }
+
+      if (parenDepth > 0) {
+        parenDepth--;
+      }
     }
 
     tokens.push({ kind: 'punct', value: ch, offset: i });
@@ -311,7 +344,7 @@ function tokenize(source: string): readonly Token[] {
 
   // Reaching the end of the source while inside a template text or an open `${...}` expression means
   // the template literal was never closed.
-  if (inText || exprDepth > 0) {
+  if (inText || braceDepths.length > 0) {
     throw new ModuleSpecifierError(
       'Unterminated template literal',
       'invalid-source',
@@ -662,9 +695,10 @@ function readString(source: string, start: number): { value: string; next: numbe
       return { value: out, next: i + 1 };
     }
 
-    // A raw line terminator inside a quoted string is invalid JavaScript; reject it instead of
-    // continuing to scan (which would otherwise swallow later code as part of the string).
-    if (ch === '\n' || ch === '\r' || ch === '\u2028' || ch === '\u2029') {
+    // A raw LF/CR inside a quoted string is invalid JavaScript; reject it instead of continuing to
+    // scan (which would otherwise swallow later code as part of the string). Raw U+2028 and U+2029
+    // are valid inside strings since ES2019, so they are kept as part of the value.
+    if (ch === '\n' || ch === '\r') {
       throw new ModuleSpecifierError('Unterminated string literal', 'invalid-source', start);
     }
 
@@ -705,14 +739,12 @@ function decodeEscape(source: string, start: number): { value: string; next: num
     return { value: '', next: source[i + 1] === '\n' ? i + 2 : i + 1 };
   }
 
-  // Octal backreferences (`\1`-`\9`, and `\0` followed by a decimal digit) are not valid string
-  // escapes and must be rejected.
-  if (e >= '1' && e <= '9') {
-    throw new ModuleSpecifierError(`Invalid escape sequence '\\${e}`, 'invalid-source', backslash);
-  }
-
-  if (e === '0' && isNumberStart(source[i + 1] ?? '')) {
-    throw new ModuleSpecifierError(`Invalid escape sequence '\\${e}`, 'invalid-source', backslash);
+  // Legacy octal escapes (`\0`-`\7` plus the following octal digits) are accepted and decoded: they
+  // are valid in sloppy-mode CommonJS, and rejecting them would make a whole source un-analysable
+  // even though the string has nothing to do with dependency detection. `\8` and `\9` fall through
+  // to the identity rule below, which is exactly what Annex-B specifies for them.
+  if (e >= '0' && e <= '7') {
+    return decodeLegacyOctal(source, i);
   }
 
   const simple: Record<string, string> = {
@@ -723,7 +755,6 @@ function decodeEscape(source: string, start: number): { value: string; next: num
     b: '\b',
     f: '\f',
     v: '\v',
-    0: '\0',
   };
 
   if (e === "'" || e === '"' || e === '`') {
@@ -750,6 +781,32 @@ function decodeEscape(source: string, start: number): { value: string; next: num
 
   // Any other character after a backslash evaluates to itself (e.g. `\q` is `q`, `\/` is `/`).
   return { value: e, next: i + 1 };
+}
+
+/**
+ * Decode a legacy octal escape whose first digit (`0`-`7`) sits at `start`.
+ *
+ * The first digit bounds how many octal digits the escape may consume: `0`-`3` allow up to three
+ * digits, `4`-`7` up to two. A lone `\0` decodes to NUL.
+ */
+function decodeLegacyOctal(source: string, start: number): { value: string; next: number } {
+  const first = source[start] ?? '';
+  const maxDigits = first >= '4' ? 2 : 3;
+  let i = start;
+  let digits = '';
+
+  while (digits.length < maxDigits) {
+    const digit = source[i];
+
+    if (digit === undefined || digit < '0' || digit > '7') {
+      break;
+    }
+
+    digits += digit;
+    i++;
+  }
+
+  return { value: String.fromCharCode(parseInt(digits, 8)), next: i };
 }
 
 function decodeHex(source: string, start: number, length: number): { value: string; next: number } {
