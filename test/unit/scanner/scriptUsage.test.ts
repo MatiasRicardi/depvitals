@@ -514,6 +514,148 @@ describe('findPackageScriptUsage', () => {
     });
   });
 
+  describe('mixed nesting inside opaque regions', () => {
+    it('does not close `${...}` early at a nested `$(...)` boundary', () => {
+      expect(
+        findPackageScriptUsage(
+          { run: 'echo ${X:-$(echo }; prettier; echo done)}; vitest' },
+          new Set(['prettier', 'vitest']),
+        ),
+      ).toEqual(new Set(['vitest']));
+    });
+
+    it('does not close `$()` early at a nested `${...}` boundary', () => {
+      expect(
+        findPackageScriptUsage(
+          { run: 'echo $(echo ${X:-)}; prettier; echo done); vitest' },
+          new Set(['prettier', 'vitest']),
+        ),
+      ).toEqual(new Set(['vitest']));
+    });
+
+    it('keeps a backtick substitution inside `${...}` opaque', () => {
+      // The `}` inside the backticks must not close the outer `${...}`.
+      expect(
+        findPackageScriptUsage({ run: 'echo ${X:-`echo }; prettier`}' }, new Set(['prettier'])),
+      ).toEqual(new Set());
+    });
+
+    it('keeps a backtick substitution containing `${...}` inside `$()` opaque', () => {
+      expect(
+        findPackageScriptUsage({ run: 'echo $(echo `${X:-)}`; prettier)' }, new Set(['prettier'])),
+      ).toEqual(new Set());
+    });
+  });
+
+  describe('backslash escapes', () => {
+    it('does not treat an escaped `;` as a segment separator', () => {
+      expect(findPackageScriptUsage({ run: 'echo a\\; prettier' }, new Set(['prettier']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('does not treat an escaped `|` as a segment separator', () => {
+      expect(findPackageScriptUsage({ run: 'echo a\\| prettier' }, new Set(['prettier']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('invalidates the segment instead of trusting an escaped `&`', () => {
+      expect(
+        findPackageScriptUsage({ run: 'echo a\\& prettier' }, new Set(['echo', 'prettier'])),
+      ).toEqual(new Set());
+    });
+
+    it('invalidates the segment for an escaped redirection character', () => {
+      expect(findPackageScriptUsage({ run: 'echo a\\> prettier' }, new Set(['prettier']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('invalidates a segment whose own command token is followed by an escape', () => {
+      expect(
+        findPackageScriptUsage({ lint: 'eslint a\\; prettier' }, new Set(['eslint', 'prettier'])),
+      ).toEqual(new Set());
+    });
+
+    it('recovers on a real separator that follows an escaped one', () => {
+      expect(
+        findPackageScriptUsage(
+          { run: 'echo a\\; prettier; vitest' },
+          new Set(['prettier', 'vitest']),
+        ),
+      ).toEqual(new Set(['vitest']));
+    });
+  });
+
+  describe('legacy backtick substitution', () => {
+    it('does not let a `;` inside backticks become an outer separator', () => {
+      expect(
+        findPackageScriptUsage({ run: 'echo `something; prettier`' }, new Set(['prettier'])),
+      ).toEqual(new Set());
+    });
+
+    it('does not let `&&` inside backticks become an outer separator', () => {
+      expect(
+        findPackageScriptUsage({ run: 'echo `something && prettier`' }, new Set(['prettier'])),
+      ).toEqual(new Set());
+    });
+
+    it('recovers after a backtick substitution closes', () => {
+      expect(
+        findPackageScriptUsage(
+          { run: 'echo `something; prettier`; vitest' },
+          new Set(['prettier', 'vitest']),
+        ),
+      ).toEqual(new Set(['vitest']));
+    });
+
+    it('does not close a substitution at an escaped backtick', () => {
+      // The escaped backticks must not end the region, so the inner `;` stays inside it.
+      expect(
+        findPackageScriptUsage({ run: 'echo `echo \\`value\\`; prettier`' }, new Set(['prettier'])),
+      ).toEqual(new Set());
+    });
+
+    it('recovers on the outer separator after an escaped backtick closes the region', () => {
+      expect(
+        findPackageScriptUsage(
+          { run: 'echo `echo \\`value\\`; prettier`; vitest' },
+          new Set(['prettier', 'vitest']),
+        ),
+      ).toEqual(new Set(['vitest']));
+    });
+
+    it('leaves the segment unsupported when a backtick is unterminated', () => {
+      expect(findPackageScriptUsage({ lint: 'eslint `something' }, new Set(['eslint']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('does not expose a command token that follows a separator inside backticks', () => {
+      // The closing backtick is separated by a space, so a naive tokenizer would hand `prettier` to
+      // the next segment as a clean command token. The region must stay opaque instead.
+      expect(findPackageScriptUsage({ run: 'echo `x; prettier `' }, new Set(['prettier']))).toEqual(
+        new Set(),
+      );
+      expect(
+        findPackageScriptUsage({ run: 'echo `x && prettier `' }, new Set(['prettier'])),
+      ).toEqual(new Set());
+      expect(
+        findPackageScriptUsage({ run: 'echo `x || prettier `' }, new Set(['prettier'])),
+      ).toEqual(new Set());
+    });
+
+    it('keeps an escaped backtick inside the region even when the close follows a separator', () => {
+      expect(
+        findPackageScriptUsage(
+          { run: 'echo `echo \\`value\\`; prettier `' },
+          new Set(['prettier']),
+        ),
+      ).toEqual(new Set());
+    });
+  });
+
   describe('quoted literal safety', () => {
     it('keeps single-quoted shell metacharacters literal instead of invalidating', () => {
       expect(
@@ -529,6 +671,15 @@ describe('findPackageScriptUsage', () => {
         new Set(['eslint']),
       );
       expect(findPackageScriptUsage({ lint: "eslint 'a < b'" }, new Set(['eslint']))).toEqual(
+        new Set(['eslint']),
+      );
+      expect(findPackageScriptUsage({ lint: "eslint '`something`'" }, new Set(['eslint']))).toEqual(
+        new Set(['eslint']),
+      );
+      expect(findPackageScriptUsage({ lint: "eslint 'a\\;b'" }, new Set(['eslint']))).toEqual(
+        new Set(['eslint']),
+      );
+      expect(findPackageScriptUsage({ lint: "eslint 'a\\|b'" }, new Set(['eslint']))).toEqual(
         new Set(['eslint']),
       );
     });
@@ -555,6 +706,21 @@ describe('findPackageScriptUsage', () => {
       expect(findPackageScriptUsage({ note: 'echo "$(cmd)"' }, new Set(['eslint']))).toEqual(
         new Set(),
       );
+      expect(findPackageScriptUsage({ lint: 'eslint "`something`"' }, new Set(['eslint']))).toEqual(
+        new Set(),
+      );
+      // An escaped double quote is an escape, so it invalidates the segment rather than ending the
+      // quoted run early.
+      expect(findPackageScriptUsage({ lint: 'eslint "a\\"b"' }, new Set(['eslint']))).toEqual(
+        new Set(),
+      );
+      // A substitution inside double quotes stays opaque, so its inner `;` never reaches the outer.
+      expect(
+        findPackageScriptUsage(
+          { lint: 'eslint "`cmd; prettier`; vitest"' },
+          new Set(['eslint', 'prettier', 'vitest']),
+        ),
+      ).toEqual(new Set());
     });
 
     it('never manufactures evidence from quoted echo text', () => {

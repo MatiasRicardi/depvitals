@@ -26,9 +26,11 @@
  *
  * Shell syntax this scanner does not understand invalidates the segment that contains it: single `&`
  * (background execution), redirection (`<`, `>`), command and parameter expansion (`$(...)`,
- * `${...}`) outside single quotes, and a quote that is still open at the end of the script. An
- * invalidated segment yields no evidence at all, while the neighbouring segments delimited by real
- * supported separators are still analyzed normally.
+ * `${...}`), legacy backtick substitution and backslash escapes outside single quotes, plus a quote
+ * that is still open at the end of the script. Each such region is consumed as an opaque block, so a
+ * separator inside it never delimits the surrounding script. An invalidated segment yields no
+ * evidence at all, while the neighbouring segments delimited by real supported separators are still
+ * analyzed normally.
  */
 
 import { classifyPackageSpecifier } from './packageSpecifier.js';
@@ -318,12 +320,21 @@ function scanToken(script: string, start: number): ScannedToken {
       continue;
     }
 
-    // `$(...)` and `${...}` are never parsed or expanded here. The whole expansion is consumed as an
-    // opaque region so that separators (`;`, `|`, `&&`, newline) found inside it can never reach the
-    // outer segment logic and flush the current segment.
-    if (ch === '$' && opensExpansion(script[i + 1])) {
+    // `$(...)`, `${...}` and backticks are never parsed or expanded here. The whole region is
+    // consumed as an opaque block so that separators (`;`, `|`, `&&`, newline) found inside it can
+    // never reach the outer segment logic and flush the current segment.
+    if (isUnsupportedRegionStart(script, i)) {
       unsupported = true;
-      i = skipUnsupportedExpansion(script, i);
+      i = skipUnsupportedRegion(script, i);
+      continue;
+    }
+
+    // Outside single quotes a backslash escapes the following character, so that character can never
+    // act as a separator. The pair is consumed together; its exact meaning is irrelevant here.
+    if (ch === '\\') {
+      unsupported = true;
+      value += ch + (script[i + 1] ?? '');
+      i += 2;
       continue;
     }
 
@@ -364,9 +375,11 @@ type QuotedRun = {
 /**
  * Consume a quoted run, keeping its content verbatim.
  *
- * Separators and redirection characters inside quotes stay literal text. Only inside double quotes do
- * `$(...)` and `${...}` count as expansion. Newlines are literal in both quote forms, so a quoted
- * string may span several lines; only an unclosed quote at the end of the script is malformed.
+ * Separators and redirection characters inside quotes stay literal text. Single quotes are fully
+ * literal. Inside double quotes `$(...)`, `${...}`, backticks and a backslash count as expansion or
+ * escape and invalidate the segment; each such region is still consumed as an opaque block. Newlines
+ * are literal in both quote forms, so a quoted string may span several lines; only an unclosed quote
+ * at the end of the script is malformed.
  */
 function scanQuoted(script: string, start: number, quote: string): QuotedRun {
   const doubleQuoted = quote === '"';
@@ -384,12 +397,21 @@ function scanQuoted(script: string, start: number, quote: string): QuotedRun {
       return { text, next: i + 1, open: false, expands };
     }
 
-    if (doubleQuoted && ch === '$' && opensExpansion(script[i + 1])) {
-      // Inside double quotes, `$(...)` and `${...}` are real expansion. The region is consumed as an
-      // opaque block so its inner separators never reach the outer segment, while the expansion
-      // itself still invalidates the segment.
+    if (doubleQuoted && isUnsupportedRegionStart(script, i)) {
+      // Inside double quotes, `$(...)`, `${...}` and backticks are real expansion. The region is
+      // consumed as an opaque block so its inner separators never reach the outer segment, while the
+      // expansion itself still invalidates the segment.
       expands = true;
-      i = skipUnsupportedExpansion(script, i);
+      i = skipUnsupportedRegion(script, i);
+      continue;
+    }
+
+    // Inside double quotes a backslash escapes the following character, so that character can never
+    // close the quoted run. The pair is consumed together and invalidates the segment.
+    if (doubleQuoted && ch === '\\') {
+      expands = true;
+      text += ch + (script[i + 1] ?? '');
+      i += 2;
       continue;
     }
 
@@ -408,54 +430,116 @@ function opensExpansion(next: string | undefined): boolean {
 }
 
 /**
- * Skip an unsupported shell expansion starting at the `$`, returning the index just past the
- * matching closing delimiter (`)` for `$(`, `}` for `${`).
- *
- * The expansion is consumed opaquely: its contents are never inspected, so separators found inside
- * it can never flush the outer segment. Nesting is tracked with a depth counter so `$(foo $(bar))`
- * and `${A:-${B}}` close at the outer delimiter only. A lightweight quote-aware scan keeps a
- * closing delimiter that appears inside a quoted region from ending the expansion early. If EOF is
- * reached first, the expansion is unterminated and `script.length` is returned, leaving the current
- * outer segment unsupported.
- *
- * This never interprets shell semantics; it only finds the matching outer delimiter safely.
+ * Whether an unsupported opaque region starts at `index`: `$(`, `${` or a legacy backtick.
  */
-function skipUnsupportedExpansion(script: string, start: number): number {
-  const open = script[start + 1];
-  const close = open === '(' ? ')' : '}';
-  let depth = 1;
-  let i = start + 2;
-  const length = script.length;
+function isUnsupportedRegionStart(script: string, index: number): boolean {
+  const ch = script[index];
+  if (ch === '`') {
+    return true;
+  }
 
-  while (i < length) {
+  return ch === '$' && opensExpansion(script[index + 1]);
+}
+
+/**
+ * The delimiter that closes an open region: `)` for `$(`, `}` for `${`, a backtick for a legacy
+ * command substitution, and the two quote characters for a quoted run.
+ */
+type RegionDelimiter = ')' | '}' | '`' | '"' | "'";
+
+/**
+ * Skip one unsupported shell region starting at `start`, which must point at `$(`, `${` or a
+ * backtick, and return the index just past its matching closing delimiter.
+ *
+ * The region is consumed opaquely: its contents are never interpreted, so separators found inside it
+ * can never flush the outer segment. Every open region is pushed onto a stack, which keeps mixed
+ * nesting balanced (`${A:-$(...)}`, `$(echo ${X})`, ``${X:-`cmd`}``) no matter which delimiter type
+ * opened it. Quoted runs are stack entries too, so a closing delimiter inside a quote never ends a
+ * region early, and a backslash consumes the character after it so an escaped `\)`, `\}` or backtick
+ * cannot close a region either.
+ *
+ * If EOF is reached first the region is unterminated and `script.length` is returned, leaving the
+ * current outer segment unsupported. This never interprets shell semantics; it only locates opaque
+ * region boundaries safely.
+ */
+function skipUnsupportedRegion(script: string, start: number): number {
+  const length = script.length;
+  const stack: RegionDelimiter[] = [];
+
+  const first = script[start];
+  const second = script[start + 1];
+  let i: number;
+  if (first === '`') {
+    stack.push('`');
+    i = start + 1;
+  } else if (first === '$' && (second === '(' || second === '{')) {
+    stack.push(second === '(' ? ')' : '}');
+    i = start + 2;
+  } else {
+    // Not a region opener; advance by one so a caller can never loop forever.
+    return start + 1;
+  }
+
+  while (i < length && stack.length > 0) {
     const ch = script[i];
     if (ch === undefined) {
       break;
     }
 
-    // A quoted region is skipped verbatim so a closing delimiter inside it does not end early.
-    if (ch === "'" || ch === '"') {
-      const run = scanQuoted(script, i + 1, ch);
-      if (run.open) {
-        return length;
+    const top = stack.at(-1);
+
+    // Inside single quotes everything is literal, so only the closing single quote is special.
+    if (top === "'") {
+      if (ch === "'") {
+        stack.pop();
       }
-      i = run.next;
+      i += 1;
       continue;
     }
 
-    if (ch === open) {
-      depth += 1;
-    } else if (ch === close) {
-      if (depth === 1) {
-        return i + 1;
-      }
-      depth -= 1;
+    // A backslash consumes the next character in `$()`, `${}`, backticks and double quotes.
+    if (ch === '\\') {
+      i += 2;
+      continue;
     }
 
+    if (ch === "'" || ch === '"') {
+      // A double quote closes only the quoted run it opened; any other quote opens a literal run.
+      if (ch === '"' && top === '"') {
+        stack.pop();
+      } else {
+        stack.push(ch);
+      }
+      i += 1;
+      continue;
+    }
+
+    const next = script[i + 1];
+    if (ch === '$' && opensExpansion(next)) {
+      stack.push(next === '(' ? ')' : '}');
+      i += 2;
+      continue;
+    }
+
+    if (ch === '`') {
+      if (top === '`') {
+        stack.pop();
+      } else {
+        stack.push('`');
+      }
+      i += 1;
+      continue;
+    }
+
+    // `)` and `}` close only a matching region; otherwise they are inert region content.
+    if ((ch === ')' || ch === '}') && ch === top) {
+      stack.pop();
+    }
     i += 1;
   }
 
-  return length;
+  // An empty stack means the outermost region closed just before `i`; otherwise EOF arrived first.
+  return stack.length === 0 ? i : length;
 }
 
 /**
