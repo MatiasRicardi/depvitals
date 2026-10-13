@@ -318,10 +318,12 @@ function scanToken(script: string, start: number): ScannedToken {
       continue;
     }
 
-    // `$(...)` and `${...}` are never parsed or expanded here.
+    // `$(...)` and `${...}` are never parsed or expanded here. The whole expansion is consumed as an
+    // opaque region so that separators (`;`, `|`, `&&`, newline) found inside it can never reach the
+    // outer segment logic and flush the current segment.
     if (ch === '$' && opensExpansion(script[i + 1])) {
       unsupported = true;
-      i += 1;
+      i = skipUnsupportedExpansion(script, i);
       continue;
     }
 
@@ -383,7 +385,12 @@ function scanQuoted(script: string, start: number, quote: string): QuotedRun {
     }
 
     if (doubleQuoted && ch === '$' && opensExpansion(script[i + 1])) {
+      // Inside double quotes, `$(...)` and `${...}` are real expansion. The region is consumed as an
+      // opaque block so its inner separators never reach the outer segment, while the expansion
+      // itself still invalidates the segment.
       expands = true;
+      i = skipUnsupportedExpansion(script, i);
+      continue;
     }
 
     text += ch;
@@ -398,6 +405,57 @@ function scanQuoted(script: string, start: number, quote: string): QuotedRun {
  */
 function opensExpansion(next: string | undefined): boolean {
   return next === '(' || next === '{';
+}
+
+/**
+ * Skip an unsupported shell expansion starting at the `$`, returning the index just past the
+ * matching closing delimiter (`)` for `$(`, `}` for `${`).
+ *
+ * The expansion is consumed opaquely: its contents are never inspected, so separators found inside
+ * it can never flush the outer segment. Nesting is tracked with a depth counter so `$(foo $(bar))`
+ * and `${A:-${B}}` close at the outer delimiter only. A lightweight quote-aware scan keeps a
+ * closing delimiter that appears inside a quoted region from ending the expansion early. If EOF is
+ * reached first, the expansion is unterminated and `script.length` is returned, leaving the current
+ * outer segment unsupported.
+ *
+ * This never interprets shell semantics; it only finds the matching outer delimiter safely.
+ */
+function skipUnsupportedExpansion(script: string, start: number): number {
+  const open = script[start + 1];
+  const close = open === '(' ? ')' : '}';
+  let depth = 1;
+  let i = start + 2;
+  const length = script.length;
+
+  while (i < length) {
+    const ch = script[i];
+    if (ch === undefined) {
+      break;
+    }
+
+    // A quoted region is skipped verbatim so a closing delimiter inside it does not end early.
+    if (ch === "'" || ch === '"') {
+      const run = scanQuoted(script, i + 1, ch);
+      if (run.open) {
+        return length;
+      }
+      i = run.next;
+      continue;
+    }
+
+    if (ch === open) {
+      depth += 1;
+    } else if (ch === close) {
+      if (depth === 1) {
+        return i + 1;
+      }
+      depth -= 1;
+    }
+
+    i += 1;
+  }
+
+  return length;
 }
 
 /**

@@ -419,6 +419,101 @@ describe('findPackageScriptUsage', () => {
     });
   });
 
+  describe('unsupported expansions are consumed opaquely', () => {
+    it('does not let a `;` inside `$()` become an outer separator', () => {
+      expect(
+        findPackageScriptUsage({ run: 'echo $(something; prettier )' }, new Set(['prettier'])),
+      ).toEqual(new Set());
+    });
+
+    it('does not let a `;` inside `${...}` become an outer separator', () => {
+      expect(
+        findPackageScriptUsage({ run: 'echo ${VALUE:-foo; prettier }' }, new Set(['prettier'])),
+      ).toEqual(new Set());
+    });
+
+    it('does not let a `&&` inside `$()` become an outer separator', () => {
+      expect(
+        findPackageScriptUsage({ run: 'echo $(something && prettier )' }, new Set(['prettier'])),
+      ).toEqual(new Set());
+    });
+
+    it('does not let a `||` inside `${...}` become an outer separator', () => {
+      expect(
+        findPackageScriptUsage({ run: 'echo ${VALUE:-foo || prettier}' }, new Set(['prettier'])),
+      ).toEqual(new Set());
+    });
+
+    it('recovers after `$()` closes and analyzes the next outer segment', () => {
+      expect(
+        findPackageScriptUsage(
+          { run: 'echo $(something; prettier ); vitest' },
+          new Set(['prettier', 'vitest']),
+        ),
+      ).toEqual(new Set(['vitest']));
+    });
+
+    it('recovers after `${...}` closes and analyzes the next outer segment', () => {
+      expect(
+        findPackageScriptUsage(
+          { run: 'echo ${VALUE:-foo; prettier}; vitest' },
+          new Set(['prettier', 'vitest']),
+        ),
+      ).toEqual(new Set(['vitest']));
+    });
+
+    it('recovers after `${...}` closes on an outer `&&`', () => {
+      expect(
+        findPackageScriptUsage(
+          { run: 'eslint ${FLAGS:-foo && prettier} && vitest' },
+          new Set(['eslint', 'prettier', 'vitest']),
+        ),
+      ).toEqual(new Set(['vitest']));
+    });
+
+    it('handles nested `$()` and stops at the outer delimiter', () => {
+      expect(
+        findPackageScriptUsage({ run: 'echo $(outer $(inner; prettier))' }, new Set(['prettier'])),
+      ).toEqual(new Set());
+    });
+
+    it('handles nested `${...}` and stops at the outer delimiter', () => {
+      expect(
+        findPackageScriptUsage({ run: 'echo ${A:-${B:-prettier; foo}}' }, new Set(['prettier'])),
+      ).toEqual(new Set());
+    });
+
+    it('leaves the segment unsupported when `$()` is unterminated', () => {
+      expect(findPackageScriptUsage({ lint: 'eslint $(something' }, new Set(['eslint']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('leaves the segment unsupported when `${...}` is unterminated', () => {
+      expect(findPackageScriptUsage({ lint: 'eslint ${FLAGS' }, new Set(['eslint']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('does not close an expansion at a delimiter that appears inside a quote', () => {
+      // The whole segment is unsupported, so nothing is counted here.
+      expect(findPackageScriptUsage({ run: 'echo $(echo ")")' }, new Set(['echo']))).toEqual(
+        new Set(),
+      );
+      expect(findPackageScriptUsage({ run: 'echo ${VALUE:-"}"}' }, new Set(['echo']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('keeps scanning outer separators after a quoted delimiter inside an expansion', () => {
+      // A quoted `)` must not close the expansion early; the outer `;` after it still flushes the
+      // segment so `vitest` becomes a fresh, analyzed segment.
+      expect(
+        findPackageScriptUsage({ run: 'eslint $(x ")"); vitest' }, new Set(['eslint', 'vitest'])),
+      ).toEqual(new Set(['vitest']));
+    });
+  });
+
   describe('quoted literal safety', () => {
     it('keeps single-quoted shell metacharacters literal instead of invalidating', () => {
       expect(
