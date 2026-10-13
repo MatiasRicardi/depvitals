@@ -714,6 +714,15 @@ describe('findPackageScriptUsage', () => {
       expect(findPackageScriptUsage({ lint: 'eslint "a\\"b"' }, new Set(['eslint']))).toEqual(
         new Set(),
       );
+      // A Windows-style path inside double quotes is a documented conservative false negative: the
+      // scanner does not model exact POSIX double-quote escape rules, so `\t` invalidates the segment
+      // the same way on every platform.
+      expect(
+        findPackageScriptUsage(
+          { postinstall: "node -e \"require('fs').writeFileSync('C:\\temp.txt', 'x')\"" },
+          new Set(['node']),
+        ),
+      ).toEqual(new Set());
       // A substitution inside double quotes stays opaque, so its inner `;` never reaches the outer.
       expect(
         findPackageScriptUsage(
@@ -762,7 +771,11 @@ describe('findPackageScriptUsage', () => {
   describe('no command is executed', () => {
     it('never runs the script string, even one that would create a marker file', () => {
       const dir = mkdtempSync(join(tmpdir(), 'depvitals-script-usage-'));
-      const marker = join(dir, 'marker.txt');
+      // A backslash inside double quotes is read as a shell escape, so a conservative scanner
+      // invalidates such a segment. Windows temporary paths always contain `\`, so the embedded
+      // location is normalized to forward slashes to keep this script string platform independent.
+      // Node's filesystem accepts forward slashes on every platform, including absolute paths.
+      const marker = join(dir, 'marker.txt').replaceAll('\\', '/');
 
       try {
         const scripts = {
