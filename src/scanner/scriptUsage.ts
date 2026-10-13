@@ -16,15 +16,19 @@
  * The strings are treated as inert text. This module performs no I/O and has no side effects.
  *
  * Recognition is intentionally conservative for `v0.1.0`:
- * - a shell segment's first effective command token may count, when it is a declared package name
- *   (or a declared package subpath, normalized by the specifier classifier);
+ * - a shell segment's first effective command token counts only when that token is exactly a package
+ *   name, so paths and package subpaths (`scripts/build.js`, `eslint/bin/cli`) are never usage
+ *   evidence for the package they point into;
  * - the five documented package-runner forms count (`npx`, `npm exec`, `pnpm exec`, `pnpm dlx`,
  *   `yarn dlx`) with the package in its immediate position;
  * - leading POSIX environment assignments (`NODE_ENV=test`, `FOO=1 BAR=2`) are skipped;
  * - quoted tokens keep their content, so separators and text inside quotes are not misread.
  *
- * Anything ambiguous (unterminated quotes, `$(...)`, `${...}`, single `&`, redirection, ...) fails
- * conservatively: the affected segment simply yields no evidence instead of a guessed token.
+ * Shell syntax this scanner does not understand invalidates the segment that contains it: single `&`
+ * (background execution), redirection (`<`, `>`), command and parameter expansion (`$(...)`,
+ * `${...}`) outside single quotes, and a quote that is still open at the end of the script. An
+ * invalidated segment yields no evidence at all, while the neighbouring segments delimited by real
+ * supported separators are still analyzed normally.
  */
 
 import { classifyPackageSpecifier } from './packageSpecifier.js';
@@ -39,8 +43,15 @@ type Token = { readonly value: string };
 
 /**
  * One command segment delimited by a supported separator (`&&`, `||`, `;`, `|`, newline).
+ *
+ * `unsupported` is segment-local: once a segment contains shell syntax the scanner does not
+ * understand, the whole segment stops producing evidence. It is reset by every real separator, so an
+ * ambiguous construct never discards an independent neighbouring segment.
  */
-type Segment = readonly Token[];
+type Segment = {
+  readonly tokens: readonly Token[];
+  readonly unsupported: boolean;
+};
 
 /**
  * Package-manager command words that are never evidence that the manager itself is a used dependency.
@@ -93,13 +104,19 @@ export function findPackageScriptUsage(
  * Collect the package-name candidates referenced by a single script command.
  *
  * Each shell segment contributes at most one candidate: the package supplied to a supported runner
- * form, or the normalized package root of the segment's first effective command token.
+ * form, or the segment's first effective command token when that token is exactly a package name.
+ * Segments containing unsupported shell syntax contribute nothing.
  */
 function collectScriptCandidates(command: string): readonly string[] {
   const candidates: string[] = [];
 
   for (const segment of splitSegments(command)) {
-    const significant = skipLeadingAssignments(segment);
+    // An unsupported segment is never partially trusted, not even its leading command.
+    if (segment.unsupported) {
+      continue;
+    }
+
+    const significant = skipLeadingAssignments(segment.tokens);
 
     if (significant.length === 0) {
       continue;
@@ -122,10 +139,11 @@ function collectScriptCandidates(command: string): readonly string[] {
       continue;
     }
 
-    // Only the first effective command token is inspected. It is normalized to its package root so
-    // that `some-package/subpath` counts as `some-package`, while filesystem paths never do.
+    // Only the first effective command token is inspected, and it must be exactly the package root.
+    // Shell command position carries binaries and file paths, so a package subpath such as
+    // `eslint/bin/cli` or a script path such as `scripts/build.js` is never usage evidence.
     const classification = classifyPackageSpecifier(commandName);
-    if (classification.kind === 'external') {
+    if (classification.kind === 'external' && commandName === classification.packageName) {
       candidates.push(classification.packageName);
     }
   }
@@ -181,23 +199,29 @@ function matchRunnerPackage(significant: readonly Token[]): string | undefined {
 }
 
 /**
- * Split a script string into segments on the supported separators (`&&`, `||`, `;`, `|`, newline).
+ * Split a script string into segments on the supported separators (`&&`, `||`, `;`, `|`, newline
+ * outside quotes).
  *
- * The scanner only needs enough shell awareness to preserve quoted tokens and to keep separators and
- * text inside quotes from being misread. It never executes, expands or substitutes anything.
+ * The scanner only needs enough shell awareness to preserve quoted tokens, to keep separators and
+ * text inside quotes from being misread, and to detect the syntax it refuses to interpret. It never
+ * executes, expands or substitutes anything.
  *
- * Ambiguous constructs (unterminated quotes, `$(...)`, `${...}`, single `&`, redirection, ...) fail
- * conservatively: the affected segment is dropped and no token is guessed from inside it.
+ * Unsupported constructs (single `&`, redirection, `$(...)`, `${...}`, quotes left open at the end of
+ * the script) mark the current segment as unsupported instead of guessing tokens from inside it. The
+ * marker is reset by the next real separator, so invalidation stays local to the affected segment.
  */
 function splitSegments(script: string): readonly Segment[] {
   const segments: Segment[] = [];
-  let segment: readonly Token[] = [];
+  let tokens: readonly Token[] = [];
+  let unsupported = false;
   let i = 0;
   const length = script.length;
 
+  // A real separator ends the current segment and clears its unsupported marker.
   const flush = (): void => {
-    segments.push(segment);
-    segment = [];
+    segments.push({ tokens, unsupported });
+    tokens = [];
+    unsupported = false;
   };
 
   while (i < length) {
@@ -212,8 +236,7 @@ function splitSegments(script: string): readonly Segment[] {
       continue;
     }
 
-    // Segment separators. `&&`/`||` are two-character; `;`, `|` and newline are single-character.
-    // Single `&` (background execution, `2>&1`) is intentionally not a separator in v0.1.0.
+    // Supported separators. `&&`/`||` are two-character; `;`, `|` and newline are single-character.
     if (ch === ';' || ch === '\n') {
       i += 1;
       flush();
@@ -226,60 +249,155 @@ function splitSegments(script: string): readonly Segment[] {
       continue;
     }
 
+    // A single `&` is background execution, which is unsupported in v0.1.0. It deliberately does not
+    // behave like `&&`: it never splits the segment, it only invalidates it, so `eslint & prettier`
+    // yields no evidence instead of two independently trusted commands.
     if (ch === '&') {
-      i += script[i + 1] === '&' ? 2 : 1;
-      flush();
+      if (script[i + 1] === '&') {
+        i += 2;
+        flush();
+      } else {
+        i += 1;
+        unsupported = true;
+      }
       continue;
     }
 
-    // Accumulate one unquoted token. Quoted runs inside the token are consumed and their content
-    // kept verbatim, so `"eslint"`, `FOO="a;b"` and `echo "a && b"` tokenize safely.
-    let value = '';
-    while (i < length) {
-      const c = script[i];
-      if (c === undefined) {
-        break;
-      }
-
-      if (isWhitespace(c) || c === ';' || c === '\n' || c === '|' || c === '&') {
-        break;
-      }
-
-      if (c === '"' || c === "'") {
-        const quote = c;
-        i += 1; // skip the opening quote
-        while (i < length) {
-          const inner = script[i];
-          if (inner === undefined) {
-            break; // unterminated quote at EOF
-          }
-          if (inner === quote) {
-            i += 1; // consume the closing quote
-            break;
-          }
-          // An unterminated quote terminated by a newline is malformed: drop this segment.
-          if (inner === '\n') {
-            segment = [];
-            i += 1;
-            break;
-          }
-          value += inner;
-          i += 1;
-        }
-        continue;
-      }
-
-      value += c;
-      i += 1;
+    // Every other character starts an unquoted token. The token scan consumes exactly the characters
+    // of one token, so it always advances at least one position here.
+    const scanned = scanToken(script, i);
+    if (scanned.unsupported) {
+      unsupported = true;
     }
-
-    if (value.length > 0) {
-      segment = [...segment, { value }];
+    if (scanned.text.length > 0) {
+      tokens = [...tokens, { value: scanned.text }];
     }
+    i = scanned.next;
   }
 
-  segments.push(segment);
+  segments.push({ tokens, unsupported });
   return segments;
+}
+
+/**
+ * One unquoted token: its text, the index to continue from, and whether it holds unsupported syntax.
+ */
+type ScannedToken = {
+  readonly text: string;
+  readonly next: number;
+  readonly unsupported: boolean;
+};
+
+/**
+ * Scan a single unquoted token starting at `start`.
+ *
+ * Quoted runs inside the token are consumed with their content kept verbatim, so `"eslint"`,
+ * `FOO="a;b"` and `echo "a && b"` tokenize safely. Redirection and shell expansion are reported as
+ * unsupported rather than interpreted, and a quote left open at the end of the script drops the
+ * partially accumulated token entirely.
+ */
+function scanToken(script: string, start: number): ScannedToken {
+  let value = '';
+  let unsupported = false;
+  let i = start;
+
+  while (i < script.length) {
+    const ch = script[i];
+    if (ch === undefined) {
+      break;
+    }
+
+    if (isWhitespace(ch) || ch === ';' || ch === '\n' || ch === '|' || ch === '&') {
+      break;
+    }
+
+    // Redirection is not parsed in v0.1.0; its presence alone invalidates the segment.
+    if (ch === '<' || ch === '>') {
+      unsupported = true;
+      i += 1;
+      continue;
+    }
+
+    // `$(...)` and `${...}` are never parsed or expanded here.
+    if (ch === '$' && opensExpansion(script[i + 1])) {
+      unsupported = true;
+      i += 1;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      const run = scanQuoted(script, i + 1, ch);
+      if (run.open) {
+        // EOF before the quote closes: the segment is invalid and the partial token is dropped.
+        return { text: '', next: run.next, unsupported: true };
+      }
+      if (run.expands) {
+        unsupported = true;
+      }
+      value += run.text;
+      i = run.next;
+      continue;
+    }
+
+    value += ch;
+    i += 1;
+  }
+
+  return { text: value, next: i, unsupported };
+}
+
+/**
+ * A quoted run that starts right after the opening quote.
+ *
+ * `open` reports a quote that was never closed before the end of the script. `expands` reports shell
+ * expansion that is still active inside double quotes; single quotes are fully literal.
+ */
+type QuotedRun = {
+  readonly text: string;
+  readonly next: number;
+  readonly open: boolean;
+  readonly expands: boolean;
+};
+
+/**
+ * Consume a quoted run, keeping its content verbatim.
+ *
+ * Separators and redirection characters inside quotes stay literal text. Only inside double quotes do
+ * `$(...)` and `${...}` count as expansion. Newlines are literal in both quote forms, so a quoted
+ * string may span several lines; only an unclosed quote at the end of the script is malformed.
+ */
+function scanQuoted(script: string, start: number, quote: string): QuotedRun {
+  const doubleQuoted = quote === '"';
+  let text = '';
+  let expands = false;
+  let i = start;
+
+  while (i < script.length) {
+    const ch = script[i];
+    if (ch === undefined) {
+      break;
+    }
+
+    if (ch === quote) {
+      return { text, next: i + 1, open: false, expands };
+    }
+
+    if (doubleQuoted && ch === '$' && opensExpansion(script[i + 1])) {
+      expands = true;
+    }
+
+    text += ch;
+    i += 1;
+  }
+
+  return { text, next: i, open: true, expands };
+}
+
+/**
+ * Whether the character right after `$` opens a shell expansion (`$(` or `${`).
+ */
+function opensExpansion(next: string | undefined): boolean {
+  return next === '(' || next === '{';
 }
 
 /**

@@ -20,10 +20,25 @@ describe('findPackageScriptUsage', () => {
       );
     });
 
-    it('normalizes a declared package used via a subpath command token', () => {
-      expect(findPackageScriptUsage({ run: 'eslint/bin/cli .' }, new Set(['eslint']))).toEqual(
+    it('counts a script that is only the declared package name', () => {
+      expect(findPackageScriptUsage({ lint: 'eslint' }, new Set(['eslint']))).toEqual(
         new Set(['eslint']),
       );
+    });
+
+    it('counts an exact scoped package name used as the first command token', () => {
+      expect(findPackageScriptUsage({ build: '@scope/pkg' }, new Set(['@scope/pkg']))).toEqual(
+        new Set(['@scope/pkg']),
+      );
+    });
+
+    it('does not count a package subpath used as a command token', () => {
+      expect(findPackageScriptUsage({ lint: 'eslint/bin/cli .' }, new Set(['eslint']))).toEqual(
+        new Set(),
+      );
+      expect(
+        findPackageScriptUsage({ lint: '@scope/pkg/bin/cli' }, new Set(['@scope/pkg'])),
+      ).toEqual(new Set());
     });
 
     it('does not count a package referenced only through an argument', () => {
@@ -242,9 +257,15 @@ describe('findPackageScriptUsage', () => {
       ).toEqual(new Set());
     });
 
-    it('does not count an arbitrary script path', () => {
+    it('does not count a script path whose first segment is a declared package', () => {
       expect(findPackageScriptUsage({ build: 'scripts/build.js' }, new Set(['scripts']))).toEqual(
-        new Set(['scripts']),
+        new Set(),
+      );
+    });
+
+    it('does not count a command token that only shares a prefix with a package', () => {
+      expect(findPackageScriptUsage({ lint: 'eslinthelper' }, new Set(['eslint']))).toEqual(
+        new Set(),
       );
     });
   });
@@ -275,28 +296,203 @@ describe('findPackageScriptUsage', () => {
 
   describe('determinism', () => {
     it('returns package names in alphabetical order regardless of declaration order', () => {
-      expect(
-        findPackageScriptUsage(
-          { a: 'vite build', b: 'eslint .', c: 'prettier --check .' },
-          new Set(['vite', 'eslint', 'prettier']),
-        ),
-      ).toEqual(new Set(['eslint', 'prettier', 'vite']));
+      const result = findPackageScriptUsage(
+        { a: 'vite build', b: 'eslint .', c: 'prettier --check .' },
+        new Set(['vite', 'eslint', 'prettier']),
+      );
+
+      // `toEqual` ignores set ordering, so the deterministic insertion order is asserted explicitly.
+      expect([...result]).toEqual(['eslint', 'prettier', 'vite']);
+    });
+
+    it('is stable across repeated calls with identical input', () => {
+      const scripts = { check: 'eslint . && prettier', build: 'vite build' };
+      const declared = new Set(['eslint', 'prettier', 'vite']);
+
+      expect([...findPackageScriptUsage(scripts, declared)]).toEqual([
+        ...findPackageScriptUsage(scripts, declared),
+      ]);
+    });
+
+    it('does not mutate the scripts or the declared package names', () => {
+      const scripts = { lint: 'eslint .', build: 'vite build' };
+      const declared = new Set(['eslint', 'vite', 'typescript']);
+      const scriptsBefore = JSON.stringify(scripts);
+      const declaredBefore = [...declared].join();
+
+      findPackageScriptUsage(scripts, declared);
+
+      expect(JSON.stringify(scripts)).toBe(scriptsBefore);
+      expect([...declared].join()).toBe(declaredBefore);
     });
   });
 
-  describe('malformed / unsupported shell syntax', () => {
-    it('does not crash and produces no evidence for an unterminated quote', () => {
-      expect(findPackageScriptUsage({ note: 'echo "unterminated' }, new Set(['eslint']))).toEqual(
+  describe('unsupported shell syntax invalidates its segment', () => {
+    it('produces no evidence for a double quote left open at the end of the script', () => {
+      expect(findPackageScriptUsage({ lint: '"eslint' }, new Set(['eslint']))).toEqual(new Set());
+    });
+
+    it('produces no evidence for a single quote left open at the end of the script', () => {
+      expect(findPackageScriptUsage({ lint: "'eslint" }, new Set(['eslint']))).toEqual(new Set());
+    });
+
+    it('does not trust the command of a segment that contains command substitution', () => {
+      expect(findPackageScriptUsage({ lint: 'eslint $(something)' }, new Set(['eslint']))).toEqual(
+        new Set(),
+      );
+      expect(findPackageScriptUsage({ run: 'echo $(ls)' }, new Set(['ls', 'echo']))).toEqual(
         new Set(),
       );
     });
 
-    it('does not crash and produces no evidence for command substitution', () => {
-      expect(findPackageScriptUsage({ run: 'echo $(ls)' }, new Set(['ls']))).toEqual(new Set());
+    it('does not trust the command of a segment that contains parameter expansion', () => {
+      expect(findPackageScriptUsage({ lint: 'eslint ${FLAGS}' }, new Set(['eslint']))).toEqual(
+        new Set(),
+      );
+      expect(findPackageScriptUsage({ run: 'echo ${HOME} eslint' }, new Set(['eslint']))).toEqual(
+        new Set(),
+      );
     });
 
-    it('does not crash and produces no evidence for parameter substitution', () => {
-      expect(findPackageScriptUsage({ run: 'echo ${HOME} eslint' }, new Set(['eslint']))).toEqual(
+    it('does not trust the command of a segment that redirects output', () => {
+      expect(findPackageScriptUsage({ lint: 'eslint > output.txt' }, new Set(['eslint']))).toEqual(
+        new Set(),
+      );
+      expect(findPackageScriptUsage({ lint: 'eslint >> output.txt' }, new Set(['eslint']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('does not trust the command of a segment that redirects input', () => {
+      expect(findPackageScriptUsage({ lint: 'eslint < input.txt' }, new Set(['eslint']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('does not trust a command after leading assignments once the segment redirects', () => {
+      expect(
+        findPackageScriptUsage({ lint: 'NODE_ENV=test eslint > out.txt' }, new Set(['eslint'])),
+      ).toEqual(new Set());
+    });
+
+    it('never treats a single `&` as a separator and drops the whole segment', () => {
+      expect(
+        findPackageScriptUsage({ lint: 'eslint & prettier' }, new Set(['eslint', 'prettier'])),
+      ).toEqual(new Set());
+    });
+
+    it('keeps invalidation local when the next segment starts after `;`', () => {
+      expect(
+        findPackageScriptUsage(
+          { lint: 'eslint $(something); prettier' },
+          new Set(['eslint', 'prettier']),
+        ),
+      ).toEqual(new Set(['prettier']));
+    });
+
+    it('keeps invalidation local when the next segment starts after `&&`', () => {
+      expect(
+        findPackageScriptUsage(
+          { lint: 'eslint > out.txt && prettier' },
+          new Set(['eslint', 'prettier']),
+        ),
+      ).toEqual(new Set(['prettier']));
+    });
+
+    it('keeps invalidation local when the next segment starts on a new line', () => {
+      expect(
+        findPackageScriptUsage(
+          { lint: 'eslint & prettier\nvitest run' },
+          new Set(['eslint', 'prettier', 'vitest']),
+        ),
+      ).toEqual(new Set(['vitest']));
+    });
+
+    it('does not let an invalid segment leak evidence from its own command token', () => {
+      // The `eslint` token exists in the script, but its segment is invalid.
+      expect(findPackageScriptUsage({ lint: 'eslint &&' }, new Set(['eslint']))).toEqual(
+        new Set(['eslint']),
+      );
+      expect(findPackageScriptUsage({ lint: 'npx eslint & npm ls' }, new Set(['eslint']))).toEqual(
+        new Set(),
+      );
+    });
+  });
+
+  describe('quoted literal safety', () => {
+    it('keeps single-quoted shell metacharacters literal instead of invalidating', () => {
+      expect(
+        findPackageScriptUsage({ lint: "eslint '$(something)'" }, new Set(['eslint'])),
+      ).toEqual(new Set(['eslint']));
+      expect(findPackageScriptUsage({ lint: "eslint '${FLAGS}'" }, new Set(['eslint']))).toEqual(
+        new Set(['eslint']),
+      );
+      expect(findPackageScriptUsage({ lint: "eslint 'a & b'" }, new Set(['eslint']))).toEqual(
+        new Set(['eslint']),
+      );
+      expect(findPackageScriptUsage({ lint: "eslint 'a > b'" }, new Set(['eslint']))).toEqual(
+        new Set(['eslint']),
+      );
+      expect(findPackageScriptUsage({ lint: "eslint 'a < b'" }, new Set(['eslint']))).toEqual(
+        new Set(['eslint']),
+      );
+    });
+
+    it('keeps operator characters inside double quotes literal', () => {
+      expect(findPackageScriptUsage({ lint: 'eslint "a & b"' }, new Set(['eslint']))).toEqual(
+        new Set(['eslint']),
+      );
+      expect(findPackageScriptUsage({ lint: 'eslint "a > b"' }, new Set(['eslint']))).toEqual(
+        new Set(['eslint']),
+      );
+      expect(findPackageScriptUsage({ lint: 'eslint "a < b"' }, new Set(['eslint']))).toEqual(
+        new Set(['eslint']),
+      );
+    });
+
+    it('still invalidates expansion that survives double quotes', () => {
+      expect(findPackageScriptUsage({ lint: 'eslint "$(cmd)"' }, new Set(['eslint']))).toEqual(
+        new Set(),
+      );
+      expect(findPackageScriptUsage({ lint: 'eslint "${FLAGS}"' }, new Set(['eslint']))).toEqual(
+        new Set(),
+      );
+      expect(findPackageScriptUsage({ note: 'echo "$(cmd)"' }, new Set(['eslint']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('never manufactures evidence from quoted echo text', () => {
+      expect(findPackageScriptUsage({ note: "echo '$(something)'" }, new Set(['eslint']))).toEqual(
+        new Set(),
+      );
+      expect(findPackageScriptUsage({ note: "echo '${FLAGS}'" }, new Set(['eslint']))).toEqual(
+        new Set(),
+      );
+      expect(findPackageScriptUsage({ note: "echo 'a & b'" }, new Set(['a', 'b']))).toEqual(
+        new Set(),
+      );
+      expect(findPackageScriptUsage({ note: 'echo "a & b"' }, new Set(['a', 'b']))).toEqual(
+        new Set(),
+      );
+    });
+  });
+
+  describe('newlines inside quotes', () => {
+    it('treats a newline inside a quoted token as literal text, not as malformed', () => {
+      expect(findPackageScriptUsage({ lint: 'eslint "a\nb"' }, new Set(['eslint']))).toEqual(
+        new Set(['eslint']),
+      );
+    });
+
+    it('finds a later segment after a multiline quoted string closes', () => {
+      expect(
+        findPackageScriptUsage({ check: 'echo "hello\nworld"; prettier' }, new Set(['prettier'])),
+      ).toEqual(new Set(['prettier']));
+    });
+
+    it('does not count an open multiline quote at the end of the script', () => {
+      expect(findPackageScriptUsage({ check: 'echo "hello\nworld' }, new Set(['echo']))).toEqual(
         new Set(),
       );
     });
