@@ -1,0 +1,239 @@
+/**
+ * Dependency analysis.
+ *
+ * This module combines the outputs of the manifest loader, source discovery, module-specifier
+ * extraction, package-specifier classification and script-usage detection into the first real
+ * dependency-analysis engine.
+ *
+ * It answers exactly three questions about a single Node.js project:
+ * - which `dependencies` are never referenced (used only by source files or by `package.json`
+ *   scripts)?
+ * - which `devDependencies` are never referenced?
+ * - which external packages are referenced by source files but are not declared anywhere?
+ *
+ * It deliberately does not:
+ * - decide whether a dependency is misplaced, a misconfigured peer/optional, or a scoped
+ *   dependency (that belongs to later releases);
+ * - resolve specifiers against `node_modules`, `tsconfig` `paths`, `package.json#imports` or
+ *   bundler aliases (Step 10 only classifies a raw specifier);
+ * - render terminal output, JSON, evidence or confidence (that belongs to later steps);
+ * - execute or import any analyzed source, run package scripts, or mutate the analyzed project;
+ * - consult the network or the npm registry.
+ *
+ * The pipeline is intentionally sequential and single-pass: each discovered source file is read
+ * once and parsed once. No concurrency pool, cache or index is introduced before a measured need
+ * appears.
+ *
+ * Usage/missing formulas (`usedNames` is the union of source-external package roots and script-used
+ * package names; `declaredDependencyNames` is the union of every declared dependency section):
+ *
+ * ```text
+ * sourceUsedNames = external package roots extracted from source files
+ * scriptUsedNames = findPackageScriptUsage(scripts, dependencies ∪ devDependencies)
+ * usedNames       = sourceUsedNames ∪ scriptUsedNames
+ * unusedDependencies    = dependencies    − usedNames
+ * unusedDevDependencies = devDependencies − usedNames
+ * missingDependencies   = sourceUsedNames − declaredDependencyNames
+ * ```
+ *
+ * Scripts never generate missing-dependency findings, and peer/optional declarations suppress false
+ * missing results through `declaredDependencyNames`.
+ */
+
+import { readFile } from 'node:fs/promises';
+
+import { loadProjectManifest } from '../scanner/projectManifest.js';
+import { discoverSourceFiles } from '../scanner/sourceFiles.js';
+import { extractModuleSpecifiers } from '../scanner/moduleSpecifiers.js';
+import { classifyPackageSpecifier } from '../scanner/packageSpecifier.js';
+import { findPackageScriptUsage } from '../scanner/scriptUsage.js';
+
+/**
+ * The structured outcome of a dependency analysis.
+ *
+ * Every package-name list is sorted alphabetically and contains no duplicates. The result carries
+ * only the facts needed by the `v0.1.0` report: the project root and the three unused/missing
+ * categories. Confidence, explanations, evidence, severity and JSON schema version are deliberately
+ * absent: they are future roadmap concepts.
+ */
+export type AnalysisResult = {
+  /** Absolute, normalized project root (from the manifest). */
+  projectRoot: string;
+  /** Unused `dependencies`, sorted alphabetically. */
+  unusedDependencies: readonly string[];
+  /** Unused `devDependencies`, sorted alphabetically. */
+  unusedDevDependencies: readonly string[];
+  /** External packages referenced by source but not declared anywhere, sorted alphabetically. */
+  missingDependencies: readonly string[];
+};
+
+/**
+ * Why the analysis could not complete.
+ *
+ * - `unreadable-source`: a discovered source file could not be read from disk.
+ * - `invalid-source`: a discovered source file reached a lexical state from which the specifier
+ *   extractor cannot safely continue (an unterminated string/comment/template/regex, or a malformed
+ *   string escape).
+ */
+export type AnalysisErrorCode = 'unreadable-source' | 'invalid-source';
+
+/**
+ * Operational error for the dependency-analysis engine.
+ *
+ * The `code` lets callers (the CLI in a later step) render a clean message without matching on error
+ * strings, and the preserved `cause` keeps the original filesystem or parsing failure. The affected
+ * source-file path is always included in the message so an unreadable or invalid file is never
+ * silently skipped.
+ */
+export class AnalysisError extends Error {
+  readonly code: AnalysisErrorCode;
+
+  constructor(message: string, code: AnalysisErrorCode, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause });
+    this.name = 'AnalysisError';
+    this.code = code;
+  }
+}
+
+/**
+ * Analyze the single project rooted at `projectRoot` and return the structured unused/missing result.
+ *
+ * The supplied root is resolved to an absolute path; `process.cwd()` is never changed and the target
+ * project is never written to.
+ *
+ * @throws {AnalysisError} when a discovered source file cannot be read or cannot be safely analyzed.
+ * @throws {ProjectManifestError} when the manifest is missing, unreadable, invalid or malformed.
+ * @throws {SourceFilesError} when the root is missing, is not a directory, or cannot be read.
+ */
+export async function analyzeProject(projectRoot: string): Promise<AnalysisResult> {
+  const manifest = await loadProjectManifest(projectRoot);
+
+  const sourceFiles = await discoverSourceFiles(manifest.root);
+
+  // External package roots referenced by source files, collapsed to their package root.
+  const sourceUsedNames = new Set<string>();
+
+  for (const file of sourceFiles) {
+    const specifiers = await readAndExtract(file);
+
+    for (const specifier of specifiers) {
+      const classified = classifyPackageSpecifier(specifier);
+
+      if (classified.kind === 'external') {
+        sourceUsedNames.add(classified.packageName);
+      }
+    }
+  }
+
+  // Script usage is only meaningful for the packages that may be reported as unused: dependencies
+  // and devDependencies. Peer/optional declarations are excluded from this input by design.
+  const declaredCandidates = unionNames([
+    Object.keys(manifest.dependencies),
+    Object.keys(manifest.devDependencies),
+  ]);
+
+  const scriptUsedNames = findPackageScriptUsage(manifest.scripts, declaredCandidates);
+
+  const usedNames = unionNames([[...sourceUsedNames], [...scriptUsedNames]]);
+
+  const unusedDependencies = declaredMinus(Object.keys(manifest.dependencies), usedNames);
+
+  const unusedDevDependencies = declaredMinus(Object.keys(manifest.devDependencies), usedNames);
+
+  // An external root is missing only when it is absent from every declared dependency section.
+  // Peer/optional declarations therefore suppress false missing results.
+  const missingDependencies = declaredMinus([...sourceUsedNames], manifest.declaredDependencyNames);
+
+  return {
+    projectRoot: manifest.root,
+    unusedDependencies,
+    unusedDevDependencies,
+    missingDependencies,
+  };
+}
+
+/**
+ * Read a discovered source file and extract its statically known specifiers.
+ *
+ * A filesystem read failure becomes {@link AnalysisError} with code `unreadable-source`; a lexical
+ * failure from the specifier extractor becomes {@link AnalysisError} with code `invalid-source`. Both
+ * preserve the original error as `cause` and include the affected path, so a broken file never
+ * yields a partial result or a misleading "clean" analysis.
+ */
+async function readAndExtract(file: string): Promise<readonly string[]> {
+  let source: string;
+
+  try {
+    source = await readFile(file, 'utf8');
+  } catch (error) {
+    throw new AnalysisError(
+      `Could not read source file ${file}: ${messageOf(error)}`,
+      'unreadable-source',
+      error,
+    );
+  }
+
+  try {
+    const occurrences = extractModuleSpecifiers(source);
+    return occurrences.map((occurrence) => occurrence.specifier);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'ModuleSpecifierError') {
+      throw new AnalysisError(
+        `Source file ${file} could not be analyzed: ${messageOf(error)}`,
+        'invalid-source',
+        error,
+      );
+    }
+
+    throw error;
+  }
+}
+
+/**
+ * Union of the names of every supplied list, sorted alphabetically.
+ */
+function unionNames(lists: readonly (readonly string[])[]): ReadonlySet<string> {
+  const names = new Set<string>();
+
+  for (const list of lists) {
+    for (const name of list) {
+      names.add(name);
+    }
+  }
+
+  return new Set([...names].sort(compareNames));
+}
+
+/**
+ * The sorted names of `declared` that are not contained in `used`.
+ */
+function declaredMinus(declared: readonly string[], used: ReadonlySet<string>): readonly string[] {
+  const unused = declared.filter((name) => !used.has(name));
+  return [...new Set(unused)].sort(compareNames);
+}
+
+/**
+ * A short, human-readable reason extracted from an unknown thrown value, for error messages only.
+ */
+function messageOf(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+}
+
+/**
+ * Locale-independent lexicographic ordering, so the same project always yields the same order.
+ */
+function compareNames(a: string, b: string): number {
+  if (a < b) {
+    return -1;
+  }
+
+  if (a > b) {
+    return 1;
+  }
+
+  return 0;
+}

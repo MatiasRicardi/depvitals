@@ -57,3 +57,55 @@ A minimal tree that exercises the discovery contract without adding many files:
   `dist`, `build`, `coverage`, `out`, `.cache`, `.turbo`, `.next`, `.nuxt`);
 - a hidden directory that is **not** on the ignore list (`.config/`) whose contents **must** be
   discovered.
+
+## `analysis/`
+
+Input fixtures for `src/core/analyzeProject.ts` (unused and missing dependency analysis). Each
+scenario is a real project directory with a `package.json` and supported source files so the full
+pipeline runs against real files on disk.
+
+### `basic/`
+
+The main pipeline fixture. `src/index.ts` and `src/util.ts` reference a mix of dependencies:
+
+- declared dependencies that are referenced from source (`axios`, `lodash`, `left-pad`,
+  `@scope/formatter`) - not unused;
+- `moment` declared in `devDependencies` and never referenced - unused;
+- `vitest` referenced from source and `eslint` referenced only by the `lint` script - not unused;
+- `zod` imported from source but never declared - missing;
+- `react` imported from source but declared only as a peer dependency - never missing;
+- `node:fs` (builtin) and `./util` (relative) - never missing.
+
+### `clean/`
+
+A project where every declared dependency is referenced from source. All three result arrays are
+empty.
+
+### `no-source/`
+
+A project with declared dependencies but no discoverable source files. Every declared dependency and
+dependency-dev is reported as unused, and nothing is reported as missing.
+
+### `duplicate-declaration/`
+
+Two scenarios for a package declared in **both** `dependencies` and `devDependencies`:
+
+- `unused/` - the package is never referenced, so it appears in both unused arrays;
+- `used/` - the package is referenced from source, so it appears in neither unused array.
+
+### `script-only-undeclared/`
+
+`left-pad` is declared in `dependencies` but never referenced from source, while a script command
+references an undeclared tool. The declared package is reported as unused, and the undeclared script
+tool never creates a missing finding.
+
+### `invalid-source/`
+
+A source file with a lexical error (an unterminated string literal). The analyzer must reject with an
+`AnalysisError` of code `invalid-source`, never return a partial result.
+
+### Missing / unreadable sources (no fixture)
+
+The unreadable-source case is exercised at runtime with a narrowly targeted mock of
+`node:fs/promises.readFile` (an `EACCES` failure for a single selected file) rather than a fixture,
+so the behavior is deterministic across platforms.
