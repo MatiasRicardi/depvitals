@@ -84,7 +84,7 @@ empty.
 ### `no-source/`
 
 A project with declared dependencies but no discoverable source files. Every declared dependency and
-dependency-dev is reported as unused, and nothing is reported as missing.
+every package in `devDependencies` is reported as unused, and nothing is reported as missing.
 
 ### `duplicate-declaration/`
 

@@ -6,7 +6,7 @@
  * dependency-analysis engine.
  *
  * It answers exactly three questions about a single Node.js project:
- * - which `dependencies` are never referenced (used only by source files or by `package.json`
+ * - which `dependencies` are never referenced (neither by source files nor by `package.json`
  *   scripts)?
  * - which `devDependencies` are never referenced?
  * - which external packages are referenced by source files but are not declared anywhere?
