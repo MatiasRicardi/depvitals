@@ -456,7 +456,8 @@ type RegionDelimiter = ')' | '}' | '`' | '"' | "'";
  * nesting balanced (`${A:-$(...)}`, `$(echo ${X})`, ``${X:-`cmd`}``) no matter which delimiter type
  * opened it. Quoted runs are stack entries too, so a closing delimiter inside a quote never ends a
  * region early, and a backslash consumes the character after it so an escaped `\)`, `\}` or backtick
- * cannot close a region either.
+ * cannot close a region either. A single quote is literal text inside a double-quoted run, which is
+ * the one quote form that does not nest.
  *
  * If EOF is reached first the region is unterminated and `script.length` is returned, leaving the
  * current outer segment unsupported. This never interprets shell semantics; it only locates opaque
@@ -504,6 +505,13 @@ function skipUnsupportedRegion(script: string, start: number): number {
     }
 
     if (ch === "'" || ch === '"') {
+      // A single quote is literal text inside a double-quoted run, so it must never open a region of
+      // its own. Doing so would keep the outer double quote open until EOF and hide the separators
+      // that follow it.
+      if (ch === "'" && top === '"') {
+        i += 1;
+        continue;
+      }
       // A double quote closes only the quoted run it opened; any other quote opens a literal run.
       if (ch === '"' && top === '"') {
         stack.pop();

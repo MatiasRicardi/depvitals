@@ -547,6 +547,49 @@ describe('findPackageScriptUsage', () => {
     });
   });
 
+  describe('quotes inside opaque regions', () => {
+    it('treats a single quote inside double quotes as literal text', () => {
+      // The apostrophe is literal inside `"..."`, so the double-quoted run still closes and the
+      // outer `;` stays available for segment recovery.
+      expect(
+        findPackageScriptUsage({ run: 'echo $(echo "it\'s"); prettier' }, new Set(['prettier'])),
+      ).toEqual(new Set(['prettier']));
+    });
+
+    it('treats a single quote inside double quotes in `${...}` as literal text', () => {
+      expect(
+        findPackageScriptUsage({ run: 'echo ${X-"it\'s"}; prettier' }, new Set(['prettier'])),
+      ).toEqual(new Set(['prettier']));
+    });
+
+    it('treats a single quote inside double quotes in backticks as literal text', () => {
+      expect(
+        findPackageScriptUsage({ run: 'echo `echo "it\'s"`; prettier' }, new Set(['prettier'])),
+      ).toEqual(new Set(['prettier']));
+    });
+
+    it('keeps double and single quoted runs nested in the same region balanced', () => {
+      expect(
+        findPackageScriptUsage(
+          { run: 'echo $(echo "don\'t" "${X-\'y\'}"); prettier' },
+          new Set(['prettier']),
+        ),
+      ).toEqual(new Set(['prettier']));
+    });
+
+    it('keeps a separator inside a double-quoted run opaque when an apostrophe is present', () => {
+      expect(
+        findPackageScriptUsage({ run: 'echo $(echo "a;b\'c"); prettier' }, new Set(['prettier'])),
+      ).toEqual(new Set(['prettier']));
+    });
+
+    it('leaves the segment unsupported when a double quote inside a region never closes', () => {
+      expect(
+        findPackageScriptUsage({ run: 'echo $(echo "it); prettier' }, new Set(['prettier'])),
+      ).toEqual(new Set());
+    });
+  });
+
   describe('backslash escapes', () => {
     it('does not treat an escaped `;` as a segment separator', () => {
       expect(findPackageScriptUsage({ run: 'echo a\\; prettier' }, new Set(['prettier']))).toEqual(
@@ -771,16 +814,17 @@ describe('findPackageScriptUsage', () => {
   describe('no command is executed', () => {
     it('never runs the script string, even one that would create a marker file', () => {
       const dir = mkdtempSync(join(tmpdir(), 'depvitals-script-usage-'));
+      const marker = join(dir, 'marker.txt');
       // A backslash inside double quotes is read as a shell escape, so a conservative scanner
-      // invalidates such a segment. Windows temporary paths always contain `\`, so the embedded
-      // location is normalized to forward slashes to keep this script string platform independent.
-      // Node's filesystem accepts forward slashes on every platform, including absolute paths.
-      const marker = join(dir, 'marker.txt').replaceAll('\\', '/');
+      // invalidates such a segment. Windows paths always contain `\`, which would make this script
+      // string platform dependent, so only the embedded location uses forward slashes while the
+      // filesystem check keeps using the native path.
+      const markerForScript = marker.replaceAll('\\', '/');
 
       try {
         const scripts = {
           // A command that would create the marker file if it were ever executed.
-          postinstall: `node -e "require('fs').writeFileSync('${marker}', 'x')"`,
+          postinstall: `node -e "require('fs').writeFileSync('${markerForScript}', 'x')"`,
         };
 
         // The command is recognized as usage evidence...
