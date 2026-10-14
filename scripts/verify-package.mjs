@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
- * Package consumer smoke test for the DepVitals `v0.0.1` CLI bootstrap.
+ * Package consumer smoke test for the DepVitals `v0.1.0` CLI.
  *
- * This does not run a dependency scan. It verifies the package exactly as an npm consumer receives
- * it: it packs the real artifact, inspects the tarball, installs the tarball into an isolated
- * temporary project, and executes the installed `depvitals` executable.
+ * It verifies the package exactly as an npm consumer receives it: it packs the real artifact,
+ * inspects the tarball, installs the tarball into an isolated temporary project, and executes the
+ * installed `depvitals` executable against two minimal, deterministic fixture projects so the smoke
+ * test exercises the real dependency scanner end to end.
  *
  * Node.js standard library only. No runtime or dev dependency is added.
  *
@@ -14,11 +15,20 @@
  *     -> inspect tarball contents
  *     -> create consumer temp project
  *     -> install the local tarball
- *     -> invoke the installed CLI
- *     -> assertions
+ *     -> create clean and findings fixture projects
+ *     -> invoke the installed CLI (help, version, clean scan, findings scan, errors)
+ *     -> assert the fixtures were not mutated
  *     -> cleanup (always, even on failure)
  */
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -188,6 +198,37 @@ function runInstalledCli(binPath, consumerDir, args) {
   return run(binPath, args, consumerDir);
 }
 
+/**
+ * Snapshot the contents of every file inside the given fixture directories, keyed by absolute
+ * path, so a scan can be asserted to leave them byte-for-byte unchanged.
+ */
+function snapshotFixtures(dirs) {
+  const snapshot = {};
+
+  for (const dir of dirs) {
+    for (const entry of readdirSync(dir)) {
+      snapshot[join(dir, entry)] = readFileSync(join(dir, entry), 'utf8');
+    }
+  }
+
+  return snapshot;
+}
+
+/**
+ * Whether every fixture file still matches its recorded contents from `before`.
+ */
+function fixturesUnchanged(before, dirs) {
+  for (const dir of dirs) {
+    for (const entry of readdirSync(dir)) {
+      if (readFileSync(join(dir, entry), 'utf8') !== before[join(dir, entry)]) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 function main() {
   const rootVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
 
@@ -265,25 +306,63 @@ function main() {
       existsSync(join(consumerDir, 'node_modules', 'depvitals', 'package.json')),
     );
 
-    // 4. Invoke the installed executable.
+    // 4. Create two minimal, deterministic fixture projects inside the consumer temp dir. They
+    //    stand in for real scanned projects and keep the smoke test independent of the DepVitals
+    //    repository fixtures or source tree.
+    const cleanDir = join(consumerDir, 'smoke-clean');
+    const findingsDir = join(consumerDir, 'smoke-findings');
+
+    mkdirSync(cleanDir, { recursive: true });
+    mkdirSync(findingsDir, { recursive: true });
+
+    writeFileSync(
+      join(cleanDir, 'package.json'),
+      `${JSON.stringify({ name: 'smoke-clean', version: '0.0.0', dependencies: { lodash: '4.17.21' } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(cleanDir, 'index.js'),
+      ["import { chunk } from 'lodash';", 'export const parts = chunk([1, 2], 2);', ''].join('\n'),
+    );
+
+    writeFileSync(
+      join(findingsDir, 'package.json'),
+      `${JSON.stringify(
+        {
+          name: 'smoke-findings',
+          version: '0.0.0',
+          dependencies: { lodash: '4.17.21', 'unused-dep': '1.0.0' },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(
+      join(findingsDir, 'index.js'),
+      [
+        "import { chunk } from 'lodash';",
+        "import { missing } from 'missing-pkg';",
+        '',
+        'export const parts = chunk([1, 2], 2);',
+        'export const m = missing;',
+        '',
+      ].join('\n'),
+    );
+
+    // Snapshot the fixtures so the read-only scan guarantee can be asserted below.
+    const before = snapshotFixtures([cleanDir, findingsDir]);
+
+    // 5. Invoke the installed executable.
     const binPath = resolveInstalledBin(consumerDir);
     check('installed executable exists', existsSync(binPath));
 
     console.log('\nValidating the installed CLI...');
 
-    const noArgs = runInstalledCli(binPath, consumerDir, []);
-    check('no-args exits 0', noArgs.status === 0);
-    check('no-args identifies DepVitals', noArgs.stdout.includes('DepVitals'));
-    check(
-      'no-args reports the early-development release',
-      noArgs.stdout.includes('Early development release.'),
-    );
-    check('no-args does not claim scanning works', !/scan|unused|missing/i.test(noArgs.stdout));
-
+    // Help and version keep working.
     const help = runInstalledCli(binPath, consumerDir, ['--help']);
     check('--help exits 0', help.status === 0);
     check('--help identifies DepVitals', help.stdout.includes('DepVitals'));
     check('--help shows usage', help.stdout.includes('Usage:'));
+    check('--help lists the project argument', help.stdout.includes('depvitals [project]'));
     check(
       '--help lists the supported flags',
       help.stdout.includes('-h, --help') && help.stdout.includes('-v, --version'),
@@ -297,12 +376,54 @@ function main() {
       `${version.stdout.trim()} !== ${rootVersion}`,
     );
 
+    // A clean project scans with exit 0 and prints no findings.
+    const clean = runInstalledCli(binPath, cleanDir, []);
+    check('clean scan exits 0', clean.status === 0, `status=${clean.status}`);
+    check(
+      'clean scan reports no issues',
+      clean.stdout === 'DepVitals\n\nNo dependency issues found.\n',
+      JSON.stringify(clean.stdout),
+    );
+    check('clean scan leaves stderr empty', clean.stderr === '');
+
+    // A project with findings scans with exit 1 and prints the report to stdout.
+    const findings = runInstalledCli(binPath, findingsDir, []);
+    check('findings scan exits 1', findings.status === 1, `status=${findings.status}`);
+    check(
+      'findings scan prints the report to stdout',
+      findings.stdout ===
+        'DepVitals\n\nUnused dependencies (1)\n  unused-dep\n\nMissing dependencies (1)\n  missing-pkg\n',
+      JSON.stringify(findings.stdout),
+    );
+    check('findings scan leaves stderr empty', findings.stderr === '');
+
+    // No-args scans the actual working directory.
+    const noArgs = runInstalledCli(binPath, cleanDir, []);
+    check('no-args scans cwd and exits 0', noArgs.status === 0);
+    check(
+      'no-args scans cwd with no issues',
+      noArgs.stdout === 'DepVitals\n\nNo dependency issues found.\n',
+    );
+
+    // An invalid project path fails with exit 1 and a concise, path-identifying stderr message.
+    const missingManifest = runInstalledCli(binPath, consumerDir, ['no-such-project']);
+    check('invalid project path exits 1', missingManifest.status === 1);
+    check(
+      'invalid project path prints a concise error',
+      missingManifest.stderr.includes('No package.json found at'),
+    );
+    check('invalid project path leaves stdout empty', missingManifest.stdout === '');
+
+    // An unknown option still fails with a useful stderr message.
     const unknown = runInstalledCli(binPath, consumerDir, ['--scan']);
     check('unknown option exits non-zero', unknown.status !== 0);
     check(
       'unknown option prints a useful stderr message',
       unknown.stderr.includes('Unknown option') && unknown.stderr.includes('depvitals --help'),
     );
+
+    // The scanner must not mutate the fixtures it reads.
+    check('scan does not mutate the fixtures', fixturesUnchanged(before, [cleanDir, findingsDir]));
 
     console.log(`\nAll ${checksPassed} checks passed.`);
   } catch (error) {
