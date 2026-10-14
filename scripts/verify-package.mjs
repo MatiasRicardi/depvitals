@@ -215,14 +215,24 @@ function snapshotFixtures(dirs) {
 }
 
 /**
- * Whether every fixture file still matches its recorded contents from `before`.
+ * Whether two fixture snapshots are identical: they track the same set of file paths and every
+ * tracked file has identical contents. Comparing the complete before-and-after snapshots (rather
+ * than only the files that still exist) detects modified, deleted, and newly created files.
  */
-function fixturesUnchanged(before, dirs) {
-  for (const dir of dirs) {
-    for (const entry of readdirSync(dir)) {
-      if (readFileSync(join(dir, entry), 'utf8') !== before[join(dir, entry)]) {
-        return false;
-      }
+function snapshotsEqual(before, after) {
+  const beforePaths = Object.keys(before);
+  const afterPaths = Object.keys(after);
+
+  // Different path counts mean a file was added or deleted.
+  if (beforePaths.length !== afterPaths.length) {
+    return false;
+  }
+
+  for (const path of afterPaths) {
+    // A path missing from `before` (a new file) or with different contents (a modified file) is a
+    // mutation; `before[path]` is `undefined` for a path absent from `before`.
+    if (before[path] !== after[path]) {
+      return false;
     }
   }
 
@@ -376,8 +386,9 @@ function main() {
       `${version.stdout.trim()} !== ${rootVersion}`,
     );
 
-    // A clean project scans with exit 0 and prints no findings.
-    const clean = runInstalledCli(binPath, cleanDir, []);
+    // A clean project scans with exit 0 and prints no findings, passed through an explicit
+    // project-path argument rather than the current working directory.
+    const clean = runInstalledCli(binPath, consumerDir, [cleanDir]);
     check('clean scan exits 0', clean.status === 0, `status=${clean.status}`);
     check(
       'clean scan reports no issues',
@@ -386,8 +397,9 @@ function main() {
     );
     check('clean scan leaves stderr empty', clean.stderr === '');
 
-    // A project with findings scans with exit 1 and prints the report to stdout.
-    const findings = runInstalledCli(binPath, findingsDir, []);
+    // A project with findings scans with exit 1 and prints the report to stdout, passed through
+    // an explicit project-path argument.
+    const findings = runInstalledCli(binPath, consumerDir, [findingsDir]);
     check('findings scan exits 1', findings.status === 1, `status=${findings.status}`);
     check(
       'findings scan prints the report to stdout',
@@ -422,8 +434,12 @@ function main() {
       unknown.stderr.includes('Unknown option') && unknown.stderr.includes('depvitals --help'),
     );
 
+    // Capture the fixtures again after every scan, then compare the complete before-and-after
+    // snapshots so added, deleted, and modified files are all detected.
+    const after = snapshotFixtures([cleanDir, findingsDir]);
+
     // The scanner must not mutate the fixtures it reads.
-    check('scan does not mutate the fixtures', fixturesUnchanged(before, [cleanDir, findingsDir]));
+    check('scan does not mutate the fixtures', snapshotsEqual(before, after));
 
     console.log(`\nAll ${checksPassed} checks passed.`);
   } catch (error) {
