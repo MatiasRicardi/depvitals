@@ -1,31 +1,47 @@
 /**
- * Deterministic, side-effect-free CLI behavior for the `v0.0.1` bootstrap.
+ * Asynchronous CLI orchestration for `v0.1.0`.
  *
- * The function never touches `process`: it receives the raw arguments and the package version and
- * returns a plain result object that the thin adapter renders. This keeps the argument handling
- * fully testable without mutating global process state.
+ * `runCli` turns parsed arguments into a plain {@link CliResult}. It performs no process I/O of its
+ * own: it never writes to stdout/stderr and never touches `process`. The thin adapter in
+ * `index.ts` is the only code that renders the result.
  *
- * Behavior is intentionally strict for `v0.0.1`:
- * - no arguments            -> early-development message (exit 0)
- * - exactly `--help`/`-h`   -> help output (exit 0)
- * - exactly `--version`/`-v`-> version output (exit 0)
- * - anything else           -> error (exit 1)
+ * The responsibilities here are:
+ * - delegate argument validation to the pure {@link parseCliArgs};
+ * - run the static dependency scan with `analyzeProject`;
+ * - render the report with the pure terminal reporter;
+ * - decide the scan exit code from `hasDependencyIssues`, not from the report string;
+ * - convert operational failures into a concise CLI error result.
+ *
+ * It deliberately does not implement any scanning or dependency-analysis logic: that stays in
+ * `src/core`, and the reporter stays in `src/reporters`.
  */
 
+import { AnalysisError, type AnalysisResult, analyzeProject } from '../core/analyzeProject.js';
+import { formatTerminalReport, hasDependencyIssues } from '../reporters/terminalReporter.js';
+import { ProjectManifestError } from '../scanner/projectManifest.js';
+import { SourceFilesError } from '../scanner/sourceFiles.js';
+
+import { parseCliArgs } from './parseCliArgs.js';
+
+/**
+ * The rendered CLI result: an exit code and the text to write to each stream. Exactly one of
+ * stdout/stderr is non-empty for every command, so a successful scan never mixes a report with an
+ * error and a failure never prints a misleading clean report.
+ */
 export type CliResult = {
   exitCode: number;
   stdout: string;
   stderr: string;
 };
 
-const EARLY_DEVELOPMENT_MESSAGE = [
-  'DepVitals',
-  '',
-  'A simple, lightweight dependency health checker for Node.js projects.',
-  '',
-  'Early development release.',
-  'Run `depvitals --help` for available commands.',
-].join('\n');
+/**
+ * Options supplied by the process adapter. Injecting `cwd` (rather than reading `process.cwd()`)
+ * keeps the orchestration pure and fully testable without mutating the working directory.
+ */
+export type CliOptions = {
+  version: string;
+  cwd: string;
+};
 
 const HELP_MESSAGE = [
   'DepVitals',
@@ -33,97 +49,90 @@ const HELP_MESSAGE = [
   'A simple, lightweight dependency health checker for Node.js projects.',
   '',
   'Usage:',
-  '  depvitals [options]',
+  '  depvitals [project]',
+  '',
+  'Arguments:',
+  '  project          Project directory to analyze (default: current directory)',
   '',
   'Options:',
-  '  -h, --help     Show help',
-  '  -v, --version  Show version',
+  '  -h, --help       Show help',
+  '  -v, --version    Show version',
 ].join('\n');
 
-const PRODUCT_NAME = 'depvitals';
-
 /**
- * Render the early-development message shown when no argument is provided.
- */
-function renderEarlyDevelopment(): CliResult {
-  return {
-    exitCode: 0,
-    stdout: `${EARLY_DEVELOPMENT_MESSAGE}\n`,
-    stderr: '',
-  };
-}
-
-/**
- * Render the help output.
- */
-function renderHelp(): CliResult {
-  return {
-    exitCode: 0,
-    stdout: `${HELP_MESSAGE}\n`,
-    stderr: '',
-  };
-}
-
-/**
- * Render the package version. The version is passed in so the source of truth stays in
- * `package.json` and is never duplicated as a hard-coded constant.
- */
-function renderVersion(version: string): CliResult {
-  return {
-    exitCode: 0,
-    stdout: `${version}\n`,
-    stderr: '',
-  };
-}
-
-/**
- * Build the error result for an unsupported argument or combination.
- */
-function renderUnknownOption(option: string): CliResult {
-  const stderr = [
-    `Unknown option: ${option}`,
-    `Run '${PRODUCT_NAME} --help' for available commands.`,
-  ].join('\n');
-  return {
-    exitCode: 1,
-    stdout: '',
-    stderr: `${stderr}\n`,
-  };
-}
-
-/**
- * Entry point for CLI argument handling.
+ * Orchestrate the CLI for the given arguments.
  *
- * @param args - The raw arguments (already stripped of `node` and the script path).
- * @param version - The package version read from `package.json`.
+ * @param args - The raw arguments after `node` and the script path.
+ * @param options - The package version and the current working directory.
+ * @returns The exit code and the stdout/stderr text to render.
  */
-export function runCli(args: readonly string[], version: string): CliResult {
-  if (args.length === 0) {
-    return renderEarlyDevelopment();
-  }
+export async function runCli(args: readonly string[], options: CliOptions): Promise<CliResult> {
+  const command = parseCliArgs(args, options.cwd);
 
-  if (args.length === 1) {
-    switch (args[0]) {
-      case '--help':
-      case '-h':
-        return renderHelp();
-      case '--version':
-      case '-v':
-        return renderVersion(version);
-    }
+  switch (command.kind) {
+    case 'help':
+      return { exitCode: 0, stdout: `${HELP_MESSAGE}\n`, stderr: '' };
+    case 'version':
+      return { exitCode: 0, stdout: `${options.version}\n`, stderr: '' };
+    case 'error':
+      return { exitCode: 1, stdout: '', stderr: `${command.message}\n` };
+    case 'scan':
+      return await runScan(command.projectPath);
   }
-
-  // Exactly one argument was expected for a flag; anything else (extra tokens, combinations,
-  // positional paths, unknown flags) is unsupported for `v0.0.1`.
-  const firstUnknown = args.find((argument) => !isKnownFlag(argument));
-  return renderUnknownOption(firstUnknown ?? args.join(' '));
 }
 
 /**
- * Whether a single argument is one of the flags supported by `v0.0.1`.
+ * Run the scan for a single project and render its report.
+ *
+ * Operational failures from the scanner are converted into a concise CLI error result (exit 1,
+ * empty stdout). Any other thrown value is surfaced through a generic fallback message so the CLI
+ * never leaks internal error objects and never leaves an unhandled rejection.
  */
-function isKnownFlag(argument: string): boolean {
+async function runScan(projectPath: string): Promise<CliResult> {
+  let result: AnalysisResult;
+
+  try {
+    result = await analyzeProject(projectPath);
+  } catch (error) {
+    if (isOperationalError(error)) {
+      return { exitCode: 1, stdout: '', stderr: `${error.message}\n` };
+    }
+
+    return {
+      exitCode: 1,
+      stdout: '',
+      stderr: `${unexpectedErrorMessage(projectPath, error)}\n`,
+    };
+  }
+
+  const hasIssues = hasDependencyIssues(result);
+
+  return { exitCode: hasIssues ? 1 : 0, stdout: formatTerminalReport(result), stderr: '' };
+}
+
+/**
+ * Whether the thrown value is a scanner error the CLI knows how to render. Only the existing typed
+ * error classes count; everything else is treated as an unexpected internal failure.
+ */
+function isOperationalError(
+  error: unknown,
+): error is ProjectManifestError | SourceFilesError | AnalysisError {
   return (
-    argument === '--help' || argument === '-h' || argument === '--version' || argument === '-v'
+    error instanceof ProjectManifestError ||
+    error instanceof SourceFilesError ||
+    error instanceof AnalysisError
   );
+}
+
+/**
+ * The fallback message for an unexpected thrown value. The path is always included so the failure
+ * is traceable; the underlying message is only appended when it is a non-empty, useful `Error`
+ * message, so unknown throwables never leak serialized internals.
+ */
+function unexpectedErrorMessage(projectPath: string, error: unknown): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return `Unexpected error while analyzing project ${projectPath}: ${error.message}`;
+  }
+
+  return `Unexpected error while analyzing project ${projectPath}.`;
 }
