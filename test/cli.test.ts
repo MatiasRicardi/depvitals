@@ -281,6 +281,15 @@ describe('runCli', () => {
       expect(result.stdout).toBe('');
       expect(result.stderr).toContain('No package.json found at');
     });
+
+    it('fails with a concise error when package.json is not valid JSON', async () => {
+      const result = await runCli([join(MANIFEST_FIXTURES, 'invalid-json')], OPTIONS);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain('is not valid JSON');
+      expect(result.stderr).toContain('package.json');
+    });
   });
 
   describe('CLI errors', () => {
