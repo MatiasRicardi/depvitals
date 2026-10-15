@@ -6,7 +6,7 @@ import('dynamic-pkg').then((mod) => mod);
 import fs from 'node:fs';
 import { local } from './local';
 
-export function run(value: string): void {
+export function run(value) {
   axios.get(value);
   chunk([1, 2, 3], 2);
   local(value);

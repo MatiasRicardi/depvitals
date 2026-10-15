@@ -4,6 +4,7 @@
   "dependencies": {
     "zod": "3.0.0",
     "@scope/ui": "1.0.0",
+    "widget-kit": "1.0.0",
     "unused-ts-dep": "1.0.0"
   },
   "devDependencies": {}

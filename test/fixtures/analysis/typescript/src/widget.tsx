@@ -1,3 +1,3 @@
-import { Widget } from '@scope/ui';
+import { Box } from 'widget-kit';
 
-export const WidgetBox = (): typeof Widget => Widget;
+export const WidgetBox = (): typeof Box => Box;
