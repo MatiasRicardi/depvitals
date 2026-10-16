@@ -342,6 +342,7 @@ function tokenize(source: string): readonly Token[] {
     // Any other single character is punctuation.
     if (ch === '{') {
       // Record what this brace opens, so its `}` knows whether an expression or a statement ended.
+      // The enclosing entry is inspected before pushing, so a `:` knows if it separates a property.
       braceContexts.push(
         opensObjectLiteral(
           prevKind,
@@ -349,6 +350,7 @@ function tokenize(source: string): readonly Token[] {
           prevIdentifier,
           prevIsExpressionKeyword,
           braceDepths.length > 0,
+          braceContexts[braceContexts.length - 1] === true,
         ),
       );
 
@@ -416,9 +418,13 @@ const EXPRESSION_ENDING: ReadonlySet<PrevKind> = new Set([
  * Expression-starting keywords. After one of these, a `/` begins a regex literal even though the
  * keyword itself is tokenized as an identifier. `of`, `yield` and `await` are intentionally
  * excluded: they are valid identifiers in some contexts, so `/` after them may be division.
+ * `default` covers `export default /re/.test(value)`, where the regex literal is the exported
+ * value, and, together with the brace stack, `export default {} / require('pkg') / 2`, where the
+ * object literal is.
  */
 const REGEX_PRECEDING_KEYWORDS: ReadonlySet<string> = new Set([
   'return',
+  'default',
   'typeof',
   'instanceof',
   'in',
@@ -462,11 +468,11 @@ function pendingControlKeywordAfter(
 /**
  * Punctuation after which a `{` opens an expression, because the token before it needs an
  * expression on its right: assignment (`= {`), an argument or element list (`f({`, `[{`) and the
- * separators and binary/logical operators. `:` is deliberately absent: it may follow a label
- * (`label: {}`), whose `{` opens a block, and it is never needed because the outer `{` of
- * `{ a: {} }` is already explained by a token below. `>` is absent too because it usually ends an
- * arrow function (`() => {}`), whose `{` opens a function body, and `)`/`}` are absent because they
- * close statement heads and blocks.
+ * separators and binary/logical operators. `>` is absent because it usually ends an arrow function
+ * (`() => {}`), whose `{` opens a function body, and `)`/`}` are absent because they close
+ * statement heads and blocks. `:` is decided separately, in {@link opensObjectLiteral}, because it
+ * is a property separator inside an object literal but a label or `case`/`default` separator
+ * otherwise.
  */
 const EXPRESSION_BEFORE_BRACE: ReadonlySet<string> = new Set([
   '=',
@@ -490,8 +496,9 @@ const BLOCK_AFTER_KEYWORD: ReadonlySet<string> = new Set(['else', 'do']);
 
 /**
  * Whether a `{` opens an expression (an object literal or a destructuring pattern) instead of a
- * statement block or function body. Statement position is the default, so an unknown context keeps
- * the existing behaviour of allowing a regex literal after the matching `}`.
+ * statement block or function body. `enclosingIsObjectLiteral` reports what the enclosing `{`, if
+ * any, opened. Statement position is the default, so an unknown context keeps the existing
+ * behaviour of allowing a regex literal after the matching `}`.
  */
 function opensObjectLiteral(
   prevKind: PrevKind,
@@ -499,8 +506,16 @@ function opensObjectLiteral(
   prevIdentifier: string | undefined,
   prevIsExpressionKeyword: boolean,
   inTemplateExpression: boolean,
+  enclosingIsObjectLiteral: boolean,
 ): boolean {
   if (prevKind === 'punct') {
+    // Inside an object literal a `:` separates a property from its value (`{ scale: {} }`, where a
+    // following `/` divides), while at statement level the same `:` follows a label
+    // (`label: {}`) or a `case`/`default` clause, whose `{` opens a block.
+    if (prevPunct === ':') {
+      return enclosingIsObjectLiteral;
+    }
+
     return EXPRESSION_BEFORE_BRACE.has(prevPunct ?? '');
   }
 
