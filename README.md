@@ -19,7 +19,7 @@ Run it from a project directory to scan the current directory, or provide a path
 
 **Requirements:** Node.js `>=22.13.0`.
 
-**Release status:** Dependency scanning is implemented in the repository and will be available on npm starting with `v0.1.0`. The currently published `v0.0.1` release still contains the initial CLI bootstrap.
+**Version note:** Dependency scanning was introduced in v0.1.0. The earlier v0.0.1 release contains only the initial CLI bootstrap.
 
 **Exit status:**
 
