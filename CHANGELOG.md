@@ -7,6 +7,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+No unreleased changes yet.
+
+## [0.1.0] - 2026-10-16
+
 ### Added
 
 - Project manifest discovery: the root `package.json` is read as static data, including
@@ -49,4 +53,5 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Cross-platform CI foundation.
 
 [Unreleased]: https://github.com/MatiasRicardi/depvitals/commits/main
+[0.1.0]: https://github.com/MatiasRicardi/depvitals/releases/tag/v0.1.0
 [0.0.1]: https://github.com/MatiasRicardi/depvitals/releases/tag/v0.0.1
