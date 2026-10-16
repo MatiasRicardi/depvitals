@@ -1,0 +1,8 @@
+{
+  "name": "ignored-directories-demo",
+  "version": "0.0.0",
+  "dependencies": {
+    "real-used": "1.0.0"
+  },
+  "devDependencies": {}
+}

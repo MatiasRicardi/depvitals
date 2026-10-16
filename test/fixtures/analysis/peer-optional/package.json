@@ -1,0 +1,14 @@
+{
+  "name": "peer-optional-demo",
+  "version": "0.0.0",
+  "dependencies": {
+    "main-pkg": "1.0.0"
+  },
+  "devDependencies": {},
+  "peerDependencies": {
+    "react": "18.0.0"
+  },
+  "optionalDependencies": {
+    "optional-pkg": "2.0.0"
+  }
+}
