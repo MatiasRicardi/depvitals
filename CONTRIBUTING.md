@@ -71,26 +71,28 @@ pnpm run check       # format check + lint + typecheck + tests
 - Coverage thresholds are raised per release; keep new code covered by tests even when the gate is
   loose.
 
-## Planned source layout
+## Source layout
 
-The intended structure (introduced incrementally by the roadmap releases, not created upfront):
+The structure below is introduced one directory at a time by the roadmap releases and is never
+created upfront. `src/cli`, `src/core`, `src/scanner` and `src/reporters` exist today, together with
+`test/unit` and `test/fixtures`; the remaining entries are still planned.
 
 ```text
 src/
-  cli/          # command parsing, CLI output
-  core/         # scanning + analysis orchestration
-  scanner/      # filesystem discovery, ignore rules
-  analyzers/    # unused, missing, dependency-group analysis
-  evidence/     # usage evidence and source locations
-  reporters/    # human, JSON, GitHub annotations
-  config/       # configuration loading and merging
-  detectors/    # framework-specific detection
-  package-manager/  # package.json / lockfile support
-  utils/        # path, string and module-id normalization
+  cli/          # command parsing, CLI output (current)
+  core/         # scanning + analysis orchestration (current)
+  scanner/      # filesystem discovery, ignore rules (current)
+  analyzers/    # unused, missing, dependency-group analysis (planned)
+  evidence/     # usage evidence and source locations (planned)
+  reporters/    # human, JSON, GitHub annotations (current)
+  config/       # configuration loading and merging (planned)
+  detectors/    # framework-specific detection (planned)
+  package-manager/  # package.json / lockfile support (planned)
+  utils/        # path, string and module-id normalization (planned)
 test/
-  unit/
-  integration/
-  fixtures/
+  unit/         # Vitest suites (current)
+  integration/  # end-to-end scans of whole fixtures (planned)
+  fixtures/     # synthetic repositories scanned by the tests (current)
 ```
 
 ## Git conventions
@@ -124,14 +126,14 @@ protection on `main` requires.
 
 ## Releases
 
-The first public npm release is `v0.0.1`.
-
-`v0.0.1` establishes the CLI and package foundation. Dependency scanning begins in `v0.1.0`.
+The first public npm release is `v0.0.1`, which established the CLI and package foundation.
+The dependency scanner (unused and missing dependencies) is implemented in the repository and is
+prepared for release as `v0.1.0`.
 
 Package version changes are made only as part of an explicit release-candidate step. Do not bump
 versions, create tags, or publish packages outside the release process.
 
-Before the first npm publish:
+Before each npm publish:
 
 - confirm the `LICENSE` copyright holder;
 - finalize `README.md` and `CHANGELOG.md`.
@@ -139,8 +141,7 @@ Before the first npm publish:
 After a successful and verified npm publish, create the matching version tag and GitHub Release.
 
 Publishing automation (GitHub Actions / npm trusted publishing) and npm provenance
-(`publishConfig.provenance`) are future improvements. They are not required for the first manual
-publish of `v0.0.1`.
+(`publishConfig.provenance`) remain future improvements: releases are still published manually.
 
 Versioning is conservative: removing a detection capability, adding false negatives, changing
 evidence semantics or changing default ignore behavior are breaking changes.
