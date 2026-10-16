@@ -109,6 +109,9 @@ function tokenize(source: string): readonly Token[] {
   let prevKind: PrevKind = 'start';
   // The value of the previous punctuation token, when the previous token was punctuation.
   let prevPunct: string | undefined;
+  // The value of the previous identifier token, when the previous token was an identifier. Which
+  // identifier it was matters for one decision: `return {` opens an object literal, `else {` not.
+  let prevIdentifier: string | undefined;
 
   // Template literal state. `inText` is true while scanning template text that must not be lexed as
   // JavaScript; a backtick toggles it, so nested templates are handled by the toggle. Every open
@@ -119,6 +122,17 @@ function tokenize(source: string): readonly Token[] {
   let inText = false;
   // Offset of the opening backtick of the current template, for unterminated-template errors.
   let templateStart = 0;
+
+  // Brace context. Each `{` pushes whether it opened an expression (an object literal or a
+  // destructuring pattern) or a statement block / function body, and its matching `}` pops that
+  // entry. A `}` only ends an expression when it closed an object literal, which is what separates
+  // `{}` in `{} / require('pkg') / 2`, where both slashes divide, from the `}` of
+  // `if (ok) { ... }`, after which a `/` may legitimately start a regex. Anything unrecognized is
+  // treated as a block.
+  const braceContexts: boolean[] = [];
+  // Whether the most recent `}` closed an object literal. It is only consulted while that `}` is
+  // the previous token, exactly like `prevPunct`.
+  let closedObjectBrace = false;
 
   // Regex-after-`)` heuristic. `afterControlHead` is true when the most recent `)` closed the head
   // of a control statement (if/while/for/with), so a following `/` may start a regex literal.
@@ -135,9 +149,11 @@ function tokenize(source: string): readonly Token[] {
   const resetExpressionState = (): void => {
     prevKind = 'start';
     prevPunct = undefined;
+    prevIdentifier = undefined;
     prevIsExpressionKeyword = false;
     afterControlHead = false;
     pendingControlKeyword = undefined;
+    closedObjectBrace = false;
   };
 
   while (i < n) {
@@ -225,12 +241,23 @@ function tokenize(source: string): readonly Token[] {
 
         braceDepths[braceDepths.length - 1] = depth - 1;
       }
-      // Otherwise `}` is an ordinary object-literal punctuation token.
+
+      // Otherwise `}` is an ordinary brace: it ends an expression only when it closed an object
+      // literal. An unmatched `}` (an empty context) keeps the statement-block behaviour.
+      closedObjectBrace = braceContexts.pop() === true;
     }
 
     // `/` is a regex when it can start an expression, otherwise it is division.
     if (ch === '/') {
-      if (isRegexStart(prevKind, prevPunct, prevIsExpressionKeyword, afterControlHead)) {
+      if (
+        isRegexStart(
+          prevKind,
+          prevPunct,
+          prevIsExpressionKeyword,
+          afterControlHead,
+          closedObjectBrace,
+        )
+      ) {
         i = skipRegex(source, i);
         prevKind = 'regex';
         afterControlHead = false;
@@ -273,6 +300,7 @@ function tokenize(source: string): readonly Token[] {
       }
 
       const value = source.slice(start, i);
+      prevIdentifier = value;
       // A keyword after `.` is a property name (e.g. `x.return`), not an expression start.
       prevIsExpressionKeyword =
         REGEX_PRECEDING_KEYWORDS.has(value) && !(prevKind === 'punct' && prevPunct === '.');
@@ -313,6 +341,19 @@ function tokenize(source: string): readonly Token[] {
 
     // Any other single character is punctuation.
     if (ch === '{') {
+      // Record what this brace opens, so its `}` knows whether an expression or a statement ended.
+      // The enclosing entry is inspected before pushing, so a `:` knows if it separates a property.
+      braceContexts.push(
+        opensObjectLiteral(
+          prevKind,
+          prevPunct,
+          prevIdentifier,
+          prevIsExpressionKeyword,
+          braceDepths.length > 0,
+          braceContexts[braceContexts.length - 1] === true,
+        ),
+      );
+
       // Count the brace inside the innermost open `${...}` expression so its closing `}` is found.
       const depth = braceDepths[braceDepths.length - 1];
 
@@ -377,9 +418,13 @@ const EXPRESSION_ENDING: ReadonlySet<PrevKind> = new Set([
  * Expression-starting keywords. After one of these, a `/` begins a regex literal even though the
  * keyword itself is tokenized as an identifier. `of`, `yield` and `await` are intentionally
  * excluded: they are valid identifiers in some contexts, so `/` after them may be division.
+ * `default` covers `export default /re/.test(value)`, where the regex literal is the exported
+ * value, and, together with the brace stack, `export default {} / require('pkg') / 2`, where the
+ * object literal is.
  */
 const REGEX_PRECEDING_KEYWORDS: ReadonlySet<string> = new Set([
   'return',
+  'default',
   'typeof',
   'instanceof',
   'in',
@@ -421,16 +466,83 @@ function pendingControlKeywordAfter(
 }
 
 /**
+ * Punctuation after which a `{` opens an expression, because the token before it needs an
+ * expression on its right: assignment (`= {`), an argument or element list (`f({`, `[{`) and the
+ * separators and binary/logical operators. `>` is absent because it usually ends an arrow function
+ * (`() => {}`), whose `{` opens a function body, and `)`/`}` are absent because they close
+ * statement heads and blocks. `:` is decided separately, in {@link opensObjectLiteral}, because it
+ * is a property separator inside an object literal but a label or `case`/`default` separator
+ * otherwise.
+ */
+const EXPRESSION_BEFORE_BRACE: ReadonlySet<string> = new Set([
+  '=',
+  '(',
+  '[',
+  ',',
+  '?',
+  '&',
+  '|',
+  '^',
+  '+',
+  '-',
+  '*',
+  '%',
+  '!',
+  '~',
+]);
+
+// Keywords that start an expression but are still followed by a statement block.
+const BLOCK_AFTER_KEYWORD: ReadonlySet<string> = new Set(['else', 'do']);
+
+/**
+ * Whether a `{` opens an expression (an object literal or a destructuring pattern) instead of a
+ * statement block or function body. `enclosingIsObjectLiteral` reports what the enclosing `{`, if
+ * any, opened. Statement position is the default, so an unknown context keeps the existing
+ * behaviour of allowing a regex literal after the matching `}`.
+ */
+function opensObjectLiteral(
+  prevKind: PrevKind,
+  prevPunct: string | undefined,
+  prevIdentifier: string | undefined,
+  prevIsExpressionKeyword: boolean,
+  inTemplateExpression: boolean,
+  enclosingIsObjectLiteral: boolean,
+): boolean {
+  if (prevKind === 'punct') {
+    // Inside an object literal a `:` separates a property from its value (`{ scale: {} }`, where a
+    // following `/` divides), while at statement level the same `:` follows a label
+    // (`label: {}`) or a `case`/`default` clause, whose `{` opens a block.
+    if (prevPunct === ':') {
+      return enclosingIsObjectLiteral;
+    }
+
+    return EXPRESSION_BEFORE_BRACE.has(prevPunct ?? '');
+  }
+
+  if (prevKind === 'identifier') {
+    // `return {` is an expression, `else {`/`do {` are blocks and every other identifier
+    // (`function f`, `class C`) sits in statement position.
+    return prevIsExpressionKeyword && !BLOCK_AFTER_KEYWORD.has(prevIdentifier ?? '');
+  }
+
+  // Right after `${` an expression is expected, so a `{` opens an object literal.
+  return inTemplateExpression && prevKind === 'start';
+}
+
+/**
  * Whether a `/` (not already a comment) may begin a regex literal, given the previous significant
  * token. `)` and `]` punctuation also end an expression (division), so any other punctuation (or
  * the start of the file) may start a regex. The one exception is a `/` after the `)` that closes a
- * control-statement head (if/while/for/with), which may start a regex literal.
+ * control-statement head (if/while/for/with), which may start a regex literal. A `}` depends on
+ * what it closed: an object literal ends an expression, so the `/` divides, while a statement block
+ * leaves the expression-start position, where a regex literal may begin.
  */
 function isRegexStart(
   prevKind: PrevKind,
   prevPunct: string | undefined,
   prevIsExpressionKeyword: boolean,
   afterControlHead: boolean,
+  closedObjectBrace: boolean,
 ): boolean {
   if (prevKind === 'identifier' && prevIsExpressionKeyword) {
     return true;
@@ -443,6 +555,10 @@ function isRegexStart(
   if (prevKind === 'punct') {
     if (afterControlHead && prevPunct === ')') {
       return true;
+    }
+
+    if (prevPunct === '}') {
+      return !closedObjectBrace;
     }
 
     return prevPunct !== ')' && prevPunct !== ']';
