@@ -9,6 +9,8 @@
     "dependency-analysis",
     "dependency-checker",
     "dependency-health",
+    "unused-dependencies",
+    "missing-dependencies",
     "depcheck",
     "cli"
   ],
