@@ -54,6 +54,76 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(`const value = require('commonjs');`)).toEqual(['commonjs']);
     });
 
+    it('extracts a require divided by an empty object literal', () => {
+      // `{}` is an object literal, so both slashes divide and the call stays visible.
+      expect(specifiers(`const value = {} / require('division-empty') / 2;`)).toEqual([
+        'division-empty',
+      ]);
+    });
+
+    it('extracts a require divided by an object literal without a second slash', () => {
+      const source = `const value = {} / require('division-single');`;
+
+      // The `/` after `}` divides, so no regex literal is opened and the scan does not fail.
+      expect(() => extractModuleSpecifiers(source)).not.toThrow();
+      expect(specifiers(source)).toEqual(['division-single']);
+    });
+
+    it('extracts a require divided by a populated object literal', () => {
+      const source = `const value = { count: 1 } / require('division-populated') / 2;`;
+
+      expect(specifiers(source)).toEqual(['division-populated']);
+    });
+
+    it('extracts a require divided by a nested object literal', () => {
+      const source = `const value = { outer: { inner: {} } } / require('division-nested') / 2;`;
+
+      expect(specifiers(source)).toEqual(['division-nested']);
+    });
+
+    it('extracts a require divided by an object literal inside a call argument', () => {
+      const source = `const value = fn({ a: 1 } / require('division-argument') / 2);`;
+
+      expect(specifiers(source)).toEqual(['division-argument']);
+    });
+
+    it('extracts specifiers around a regex literal that follows an object literal', () => {
+      const source = `
+        const value = {} / require('real-package') / 2;
+        const matcher = /require\\('fake-package'\\)/;
+        import 'another-package';
+      `;
+
+      expect(specifiers(source)).toEqual(['real-package', 'another-package']);
+    });
+
+    it('extracts a require divided by an object literal used as a property value', () => {
+      // Inside an object literal a `:` separates a property from its value, so `{}` still ends an
+      // expression and both slashes divide.
+      const source = `const config = { scale: {} / require('division-property') / 2 };`;
+
+      expect(specifiers(source)).toEqual(['division-property']);
+    });
+
+    it('extracts a require divided by a nested object literal used as a property value', () => {
+      const source = `const config = { outer: { inner: {} / require('division-inner') / 2 } };`;
+
+      expect(specifiers(source)).toEqual(['division-inner']);
+    });
+
+    it('extracts a require divided by a property value without a second slash', () => {
+      const source = `const config = { scale: {} / require('division-property-single') };`;
+
+      expect(() => extractModuleSpecifiers(source)).not.toThrow();
+      expect(specifiers(source)).toEqual(['division-property-single']);
+    });
+
+    it('extracts a require divided by the object literal exported as default', () => {
+      const source = `export default {} / require('division-default') / 2;`;
+
+      expect(specifiers(source)).toEqual(['division-default']);
+    });
+
     it('still recognizes a static call closed immediately after the string', () => {
       // Two adjacent static calls prove the closing paren is consumed as part of each call.
       expect(specifiers(`await import('pkg-a'); const b = require('pkg-b');`)).toEqual([
@@ -342,6 +412,94 @@ describe('extractModuleSpecifiers', () => {
       const source = `const matcher = /require\\('fake-e'\\)/;`;
 
       expect(specifiers(source)).toEqual([]);
+    });
+
+    it('ignores a regex used as an object literal property value', () => {
+      expect(specifiers(`const config = { re: /require\\('fake-prop'\\)/, n: 1 };`)).toEqual([]);
+    });
+
+    it('treats a regex after a statement block as a regex', () => {
+      // The `}` closes a block, so the following `/` starts a regex literal again.
+      const source = `
+        if (ready) {
+          doSomething();
+        }
+
+        /require\\('fake-block'\\)/.test(value);
+      `;
+
+      expect(specifiers(source)).toEqual([]);
+    });
+
+    it('treats a regex after a function, class or arrow body as a regex', () => {
+      const fn = `
+        function prepare() { load(); }
+
+        /require\\('fake-fn'\\)/.test(value);
+      `;
+      const klass = `
+        class Service { run() {} }
+
+        /require\\('fake-class'\\)/.test(value);
+      `;
+      const arrow = `const handler = () => { doWork(); };
+
+        /require\\('fake-arrow'\\)/.test(value);
+      `;
+
+      expect(specifiers(fn)).toEqual([]);
+      expect(specifiers(klass)).toEqual([]);
+      expect(specifiers(arrow)).toEqual([]);
+    });
+
+    it('treats a regex after a nested or adjacent block as a regex', () => {
+      expect(
+        specifiers(`if (a) { if (b) { c(); } }\n/require\\('fake-nested'\\)/.test(v);`),
+      ).toEqual([]);
+      expect(
+        specifiers(`if (a) { b(); } else { c(); }\n/require\\('fake-else'\\)/.test(v);`),
+      ).toEqual([]);
+      expect(
+        specifiers(`try { work(); } catch (e) {}\n/require\\('fake-try'\\)/.test(v);`),
+      ).toEqual([]);
+    });
+
+    it('treats a regex after an unmatched closing brace as a regex', () => {
+      // A fragment source keeps the conservative behaviour: an unknown brace is not an object.
+      expect(specifiers(`}\n/require\\('fake-stray'\\)/.test(v);`)).toEqual([]);
+    });
+
+    it('treats a regex after a labeled block as a regex', () => {
+      // A `:` that labels a statement is not a property separator, so `{}` is a block.
+      expect(specifiers(`label: {}\n/require\\('fake-label'\\)/.test(value);`)).toEqual([]);
+    });
+
+    it('treats a regex after a switch block as a regex', () => {
+      const clauses = `
+        switch (kind) {
+          case 'x': {
+            doWork();
+          }
+        }
+
+        /require\\('fake-switch'\\)/.test(value);
+      `;
+      const defaultClause = `
+        switch (kind) {
+          default: {}
+          /require\\('fake-default-clause'\\)/.test(value);
+        }
+      `;
+
+      expect(specifiers(clauses)).toEqual([]);
+      expect(specifiers(defaultClause)).toEqual([]);
+    });
+
+    it('treats a regex exported as the default value as a regex', () => {
+      // `default` needs an expression, so the `/` opens a regex literal rather than dividing.
+      expect(specifiers(`export default /require\\('fake-default-regex'\\)/.test(value);`)).toEqual(
+        [],
+      );
     });
 
     it('treats a plain division as division, not a regex', () => {
