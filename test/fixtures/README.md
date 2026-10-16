@@ -99,6 +99,60 @@ Two scenarios for a package declared in **both** `dependencies` and `devDependen
 references an undeclared tool. The declared package is reported as unused, and the undeclared script
 tool never creates a missing finding.
 
+### `esm/`
+
+ESM JavaScript exercising every import form the extractor supports in one project:
+
+- static import (`axios`), side-effect import (`side-effect-pkg`), re-export (`reexport-pkg`),
+  literal dynamic import (`dynamic-pkg`), Node builtin (`node:fs`) and a relative import (`./local`);
+- `lodash` referenced through a subpath (`lodash/chunk`) - not unused;
+- `unused-esm-dep` declared but never referenced - unused;
+- `side-effect-pkg`, `reexport-pkg` and `dynamic-pkg` imported but never declared - missing;
+- `vitest` referenced only by a script - not unused.
+
+### `commonjs/`
+
+CommonJS JavaScript with a strong false-positive audit. `src/index.js` contains real `require()`
+calls alongside text that must **not** count as usage:
+
+- `require('left-pad')` - used; `require('missing-cjs')` - missing; `unused-cjs-dep` - unused;
+- a `require(...)` inside a comment, an ordinary string, a template literal and a regex literal;
+- a non-literal `require(dynamicName)` and a property call `obj.require('...')`.
+
+The golden result keeps `missingDependencies` limited to `['missing-cjs']`, so a lexical match on any
+of the fake forms would fail the test.
+
+### `typescript/`
+
+TypeScript covering `import type`, a normal import, `export ... from` (including a scoped subpath
+`@scope/ui/util`), a `.tsx` file, and one unused declared dependency, with no missing dependencies.
+
+### `scripts-only-devtools/`
+
+`eslint`, `prettier` and `vite` are declared in `devDependencies` and referenced only by the
+`scripts` commands (`eslint .`, `prettier --write .`, `vite`, `vite build`), never imported from
+source. None is reported as unused, and no missing finding is created from the script commands.
+
+### `declarations/`
+
+A `types/app.d.ts` file imports an external package (`some-types`) with `import type`. The
+declaration file is discovered and the import counts as usage, so `some-types` is not reported as
+unused.
+
+### `ignored-directories/`
+
+`src/index.ts` uses `real-used`, while source-like files with package-like imports are placed inside
+the ignored/generated directories `node_modules`, `dist`, `coverage` and `build`. Those imports
+(`should-be-ignored-dep`, `also-ignored-dep`, `build-ignored-dep`, `node-module-ignored-dep`) must
+never be discovered, so the golden result stays clean. A discovery regression would surface those
+names as missing dependencies and fail the test.
+
+### `peer-optional/`
+
+`react` is declared only in `peerDependencies` and `optional-pkg` only in `optionalDependencies`, and
+both are imported from source along with the used `main-pkg` dependency. Neither peer nor optional
+package is reported as missing nor as unused.
+
 ### `invalid-source/`
 
 A source file with a lexical error (an unterminated string literal). The analyzer must reject with an
