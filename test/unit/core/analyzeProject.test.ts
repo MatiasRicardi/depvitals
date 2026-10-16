@@ -207,6 +207,41 @@ describe('analyzeProject', () => {
     });
   });
 
+  describe('literal require divided by an object literal', () => {
+    it('treats the require as usage instead of swallowing it as a regex literal', async () => {
+      const sandbox = mkdtempSync(join(tmpdir(), 'depvitals-analysis-division-'));
+
+      try {
+        writeFileSync(
+          join(sandbox, 'package.json'),
+          JSON.stringify({
+            name: 'division-demo',
+            version: '0.0.0',
+            dependencies: { 'declared-division': '1.0.0', 'unused-division': '1.0.0' },
+          }),
+        );
+        // `{}` closes an object literal, so both slashes divide and both calls are real usage.
+        // Before the fix the first line opened a regex literal that hid the declared package, and
+        // the second failed the whole scan as an unterminated regex.
+        writeFileSync(
+          join(sandbox, 'src.js'),
+          [
+            "const ratio = {} / require('declared-division') / 2;",
+            "const other = {} / require('missing-division');",
+          ].join('\n'),
+        );
+
+        const result = await analyzeProject(sandbox);
+
+        expect(result.unusedDependencies).toEqual(['unused-division']);
+        expect(result.unusedDevDependencies).toEqual([]);
+        expect(result.missingDependencies).toEqual(['missing-division']);
+      } finally {
+        rmSync(sandbox, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe('deterministic ordering', () => {
     it('returns sorted results that are stable across repeated calls', async () => {
       const first = await analyzeProject(fixture('basic'));
