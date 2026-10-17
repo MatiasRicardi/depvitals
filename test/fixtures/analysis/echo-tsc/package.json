@@ -1,0 +1,10 @@
+{
+  "name": "echo-tsc-control-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "typescript": "5.4.0"
+  },
+  "scripts": {
+    "build": "echo tsc"
+  }
+}

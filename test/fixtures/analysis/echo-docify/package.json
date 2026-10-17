@@ -1,0 +1,10 @@
+{
+  "name": "echo-docify-control-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "docsify-cli": "4.0.0"
+  },
+  "scripts": {
+    "docs": "echo docsify"
+  }
+}
