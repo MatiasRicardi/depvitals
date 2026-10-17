@@ -648,6 +648,14 @@ describe('extractModuleSpecifiers', () => {
       expect(() => extractModuleSpecifiers('const t = `unclosed;')).toThrow(ModuleSpecifierError);
     });
 
+    it('throws ModuleSpecifierError on an unterminated regex literal', () => {
+      // A `/` that opens a regex literal but is never closed must fail conservatively rather than
+      // silently producing a clean report. The import-like text inside it is never usage evidence.
+      expect(() => extractModuleSpecifiers(`const r = /import("pkg";`)).toThrow(
+        ModuleSpecifierError,
+      );
+    });
+
     it('throws ModuleSpecifierError on a malformed hex escape', () => {
       expect(() => extractModuleSpecifiers(`import 'bad\\xZZ';`)).toThrow(ModuleSpecifierError);
     });
