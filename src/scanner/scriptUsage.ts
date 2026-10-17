@@ -9,16 +9,19 @@
  * It deliberately does not:
  * - execute, expand, substitute, resolve, spawn, source or evaluate anything;
  * - shell-out, read the filesystem or consult `node_modules`;
- * - map shell binaries to packages (`tsc` is never treated as `typescript`);
+ * - map arbitrary shell binaries to packages; only the small, explicit `BINARY_TO_PACKAGE` list
+ *   (currently `tsc` -> `typescript`) is ever translated, and only against declared packages;
  * - report missing dependencies (undeclared command tokens are ignored);
  * - inspect installed `bin` metadata, config, workspaces or framework detectors.
  *
  * The strings are treated as inert text. This module performs no I/O and has no side effects.
  *
- * Recognition is intentionally conservative for `v0.1.0`:
+ * Recognition is intentionally conservative:
  * - a shell segment's first effective command token counts only when that token is exactly a package
  *   name, so paths and package subpaths (`scripts/build.js`, `eslint/bin/cli`) are never usage
  *   evidence for the package they point into;
+ * - the small explicit `BINARY_TO_PACKAGE` list translates a recognized direct executable (currently
+ *   `tsc` -> `typescript`) to its declared package; every other command keeps exact-name matching.
  * - the five documented package-runner forms count (`npx`, `npm exec`, `pnpm exec`, `pnpm dlx`,
  *   `yarn dlx`) with the package in its immediate position;
  * - leading POSIX environment assignments (`NODE_ENV=test`, `FOO=1 BAR=2`) are skipped;
@@ -72,12 +75,27 @@ const PACKAGE_MANAGER_COMMANDS: ReadonlySet<string> = new Set(['npm', 'pnpm', 'y
 const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
 /**
+ * Explicit static executable -> declared-package mappings for supported direct command positions.
+ *
+ * A shell command position carries binaries and file paths, not package names, so this list is
+ * strictly opt-in: each executable here is known to provide exactly the mapped package. `tsc` is the
+ * compiler front-end of the `typescript` package; the deprecated standalone `tsc` npm package is
+ * intentionally NOT treated as providing the TypeScript compiler. Only lowercase `tsc` maps; runner
+ * forms such as `npx tsc` keep their own (unmapped) semantics for now.
+ *
+ * The mapping is applied after safe command extraction and can only match a package that is actually
+ * declared, so it can never create a missing-dependency finding.
+ */
+const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([['tsc', 'typescript']]);
+
+/**
  * Recognize the declared dependencies that `package.json` scripts clearly reference.
  *
  * For every script command the module collects the package names that have clear static usage
- * evidence (a command token or a supported runner package position) and keeps only those that are
- * present in {@link declaredPackageNames}. Undeclared command tokens are ignored: this module never
- * creates missing-dependency findings.
+ * evidence (a command token, a recognized executable mapped through `BINARY_TO_PACKAGE`, or a
+ * supported runner package position) and keeps only those that are present in
+ * {@link declaredPackageNames}. Undeclared command tokens and undeclared mapped packages are ignored:
+ * this module never creates missing-dependency findings.
  *
  * The result is built in alphabetical package-name order so iteration is deterministic. Neither
  * {@link scripts} nor {@link declaredPackageNames} is mutated.
@@ -146,7 +164,11 @@ function collectScriptCandidates(command: string): readonly string[] {
     // `eslint/bin/cli` or a script path such as `scripts/build.js` is never usage evidence.
     const classification = classifyPackageSpecifier(commandName);
     if (classification.kind === 'external' && commandName === classification.packageName) {
-      candidates.push(classification.packageName);
+      // An explicit executable mapping takes precedence over same-name matching: `tsc` resolves to
+      // the declared `typescript` package only, never to a hypothetical `tsc` package, so a single
+      // executable yields at most one piece of usage evidence.
+      const mapped = BINARY_TO_PACKAGE.get(commandName);
+      candidates.push(mapped ?? commandName);
     }
   }
 

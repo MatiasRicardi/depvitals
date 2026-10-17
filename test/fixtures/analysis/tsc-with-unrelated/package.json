@@ -1,0 +1,13 @@
+{
+  "name": "tsc-with-unrelated-demo",
+  "version": "0.0.0",
+  "dependencies": {
+    "lodash": "4.17.21"
+  },
+  "devDependencies": {
+    "typescript": "5.4.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}
