@@ -122,6 +122,30 @@ const SCENARIOS: {
       'Peer/optional dependencies: packages declared only as peer or optional and imported from ' +
       'source are never reported as missing nor as unused.',
   },
+  {
+    name: 'builtins',
+    result: {
+      unusedDependencies: [],
+      unusedDevDependencies: [],
+      missingDependencies: [],
+    },
+    note:
+      'Node builtins: `node:fs`, the bare `fs` form and `path` are recognized as builtins and ' +
+      'never reported as missing external packages, and with nothing else declared the result is ' +
+      'clean.',
+  },
+  {
+    name: 'typed-modules',
+    result: {
+      unusedDependencies: [],
+      unusedDevDependencies: [],
+      missingDependencies: ['missing-in-mts'],
+    },
+    note:
+      '.mts/.cts end-to-end: a real import inside a `.mts` file marks `zod` used and reports ' +
+      '`missing-in-mts` as missing, and a real import inside a `.cts` file marks `legacy-helper` ' +
+      'used, proving both module-source extensions are analyzed.',
+  },
 ];
 
 describe('analyzeProject end-to-end fixtures', () => {
