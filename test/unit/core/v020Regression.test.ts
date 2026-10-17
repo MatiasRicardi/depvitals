@@ -15,6 +15,15 @@
  *   -> `docsify-cli` used). These are recorded with `it.todo` so the fixtures are ready to activate
  *   in Steps 23 and 24 without leaving red tests on the default CI suite.
  *
+ * MAPPING INVARIANT (for Steps 23-24): enabling binary-to-package mappings must never break a
+ * negative control added here. Concretely, when command-position mappings are active:
+ *   - `tsc` in command position -> `typescript` used, but `echo tsc` and `node script.js --tool=tsc`
+ *     must NOT count as `typescript` usage.
+ *   - `docsify serve docs` -> `docsify-cli` used, but `env VAR=docsify other-command` must NOT count
+ *     as `docsify-cli` usage.
+ * Each future mapping test must also keep asserting `missingDependencies: []` for undeclared
+ * `typescript` / `docsify-cli`, since script evidence never produces a missing finding.
+ *
  * No analyzed-project script is ever executed; every assertion runs the static pipeline offline.
  */
 
