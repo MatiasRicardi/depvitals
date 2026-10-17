@@ -240,6 +240,12 @@ describe('findPackageScriptUsage', () => {
       expect(findPackageScriptUsage({ build: 'tsc' }, new Set(['typescript']))).toEqual(new Set());
     });
 
+    it('does not map `docsify` to `docsify-cli`', () => {
+      expect(
+        findPackageScriptUsage({ docs: 'docsify serve docs' }, new Set(['docsify-cli'])),
+      ).toEqual(new Set());
+    });
+
     it('does not guess a scoped package bin from its name', () => {
       expect(
         findPackageScriptUsage({ build: 'vue-cli-service serve' }, new Set(['@vue/cli-service'])),
