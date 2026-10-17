@@ -71,6 +71,17 @@ describe('findPackageScriptUsage', () => {
       ).toEqual(new Set());
     });
 
+    it('does not count `tsc` from `node script.js --tool=tsc`', () => {
+      // `node` is the command token; `--tool=tsc` is an incidental argument value. Even though
+      // `node` is a real command here, `typescript` must never be inferred from the argument.
+      expect(
+        findPackageScriptUsage(
+          { build: 'node script.js --tool=tsc' },
+          new Set(['node', 'typescript']),
+        ),
+      ).toEqual(new Set(['node']));
+    });
+
     it('does not extract a basename from a node_modules path', () => {
       expect(
         findPackageScriptUsage({ lint: './node_modules/.bin/eslint .' }, new Set(['eslint'])),
@@ -168,6 +179,14 @@ describe('findPackageScriptUsage', () => {
       expect(
         findPackageScriptUsage({ build: 'FOO=1 BAR=2 vite build' }, new Set(['vite'])),
       ).toEqual(new Set(['vite']));
+    });
+
+    it('does not count `docsify` from an environment variable value', () => {
+      // `docsify` is the value of `VAR`, not a command token, so `docsify-cli` must never be
+      // inferred here even when it is declared.
+      expect(
+        findPackageScriptUsage({ run: 'env VAR=docsify other-command' }, new Set(['docsify-cli'])),
+      ).toEqual(new Set());
     });
   });
 
