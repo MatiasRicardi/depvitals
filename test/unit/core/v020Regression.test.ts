@@ -41,13 +41,39 @@ function fixturePath(name: string): string {
 }
 
 describe('v0.2.0 script-command executable mappings', () => {
-  describe('future positive mappings (activated by Steps 23-24)', () => {
-    it.todo('Step 23: `tsc` in command position marks declared `typescript` as used (tsc-command)');
+  describe('Step 23: `tsc` in command position marks declared `typescript` as used', () => {
+    it('does not report typescript as unused when build runs tsc', async () => {
+      const result = await analyzeProject(fixturePath('tsc-command'));
 
-    it.todo(
-      'Step 24: `docsify serve docs` in command position marks declared `docsify-cli` as used (docsify-command)',
-    );
+      // `tsc` is the direct executable, so the mapped `typescript` package is used and no longer
+      // reported as unused. Script evidence never creates a missing finding.
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('leaves unrelated declared dependencies unused when build runs tsc', async () => {
+      const result = await analyzeProject(fixturePath('tsc-with-unrelated'));
+
+      // Only `typescript` is mapped from `tsc`; `lodash` has no evidence and stays unused.
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('never reports a missing finding for undeclared typescript from a tsc script', async () => {
+      const result = await analyzeProject(fixturePath('tsc-undeclared'));
+
+      // The mapped candidate `typescript` is not declared, so it is dropped, not reported as missing.
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
   });
+
+  it.todo(
+    'Step 24: `docsify serve docs` in command position marks declared `docsify-cli` as used (docsify-command)',
+  );
 
   describe('negative controls that must stay green now', () => {
     it('does not treat `echo tsc` as TypeScript usage evidence', async () => {
