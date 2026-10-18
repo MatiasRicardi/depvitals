@@ -254,9 +254,14 @@ describe('findPackageScriptUsage', () => {
     });
   });
 
-  describe('no binary-to-package guessing', () => {
-    it('does not map `tsc` to `typescript`', () => {
-      expect(findPackageScriptUsage({ build: 'tsc' }, new Set(['typescript']))).toEqual(new Set());
+  describe('no binary-to-package guessing for unverified binaries', () => {
+    it('maps a direct tsc executable to the declared typescript package', () => {
+      // Step 23: the explicit `tsc` -> `typescript` mapping resolves the direct executable to its
+      // declared package. Undeclared typescript still yields no evidence.
+      expect(findPackageScriptUsage({ build: 'tsc' }, new Set(['typescript']))).toEqual(
+        new Set(['typescript']),
+      );
+      expect(findPackageScriptUsage({ build: 'tsc' }, new Set(['lodash']))).toEqual(new Set());
     });
 
     it('does not map `docsify` to `docsify-cli`', () => {
@@ -859,6 +864,42 @@ describe('findPackageScriptUsage', () => {
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
+    });
+  });
+
+  describe('tsc -> typescript executable mapping (Step 23)', () => {
+    it('maps a direct tsc executable to the declared typescript package only', () => {
+      // The explicit mapping takes precedence over same-name matching: a single `tsc` executable
+      // yields exactly one piece of evidence (typescript), never both tsc and typescript.
+      expect(
+        findPackageScriptUsage(
+          { build: 'tsc -p tsconfig.json' },
+          new Set(['typescript', 'lodash']),
+        ),
+      ).toEqual(new Set(['typescript']));
+    });
+
+    it('leaves unrelated declared dependencies unused when tsc is the command', () => {
+      expect(
+        findPackageScriptUsage(
+          { build: 'tsc -p tsconfig.json' },
+          new Set(['typescript', 'lodash']),
+        ),
+      ).toEqual(new Set(['typescript']));
+    });
+
+    it('never emits evidence for an undeclared typescript mapped from tsc', () => {
+      expect(
+        findPackageScriptUsage({ build: 'tsc -p tsconfig.json' }, new Set(['lodash'])),
+      ).toEqual(new Set());
+    });
+
+    it('does not map tsc invoked through a supported runner form', () => {
+      // `npx tsc` resolves the runner's package position, not a direct executable, so typescript is
+      // not marked used here. Documented limitation for a future step.
+      expect(findPackageScriptUsage({ build: 'npx tsc' }, new Set(['typescript']))).toEqual(
+        new Set(),
+      );
     });
   });
 });
