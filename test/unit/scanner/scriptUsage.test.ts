@@ -720,6 +720,54 @@ describe('findPackageScriptUsage', () => {
       ).toEqual(new Set());
     });
 
+    it('maps gulp, grunt and sequelize to their declared CLI packages', () => {
+      // Step 34: CLI-only manifests resolve through the verified bin provider.
+      expect(findPackageScriptUsage({ build: 'gulp build' }, new Set(['gulp-cli']))).toEqual(
+        new Set(['gulp-cli']),
+      );
+      expect(findPackageScriptUsage({ test: 'grunt test' }, new Set(['grunt-cli']))).toEqual(
+        new Set(['grunt-cli']),
+      );
+      expect(
+        findPackageScriptUsage({ migrate: 'sequelize db:migrate' }, new Set(['sequelize-cli'])),
+      ).toEqual(new Set(['sequelize-cli']));
+      expect(findPackageScriptUsage({ build: 'gulp build' }, new Set(['lodash']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('never marks a CLI and its same-name package used from one command', () => {
+      // Collision-sensitive names keep exact-name precedence: one `gulp` command is evidence for the
+      // declared `gulp` package only, and never for `gulp-cli` at the same time.
+      expect(
+        findPackageScriptUsage({ build: 'gulp build' }, new Set(['gulp', 'gulp-cli'])),
+      ).toEqual(new Set(['gulp']));
+      expect(
+        findPackageScriptUsage({ test: 'grunt test' }, new Set(['grunt', 'grunt-cli'])),
+      ).toEqual(new Set(['grunt']));
+      expect(
+        findPackageScriptUsage(
+          { migrate: 'sequelize db:migrate' },
+          new Set(['sequelize', 'sequelize-cli']),
+        ),
+      ).toEqual(new Set(['sequelize']));
+    });
+
+    it('does not treat echo or argument mentions as task-runner or database CLI evidence', () => {
+      expect(findPackageScriptUsage({ notes: 'echo grunt test' }, new Set(['grunt-cli']))).toEqual(
+        new Set(),
+      );
+      expect(findPackageScriptUsage({ notes: 'echo gulp' }, new Set(['gulp-cli']))).toEqual(
+        new Set(),
+      );
+      expect(
+        findPackageScriptUsage(
+          { build: 'node scripts/run.js sequelize' },
+          new Set(['sequelize-cli']),
+        ),
+      ).toEqual(new Set());
+    });
+
     it('does not map the sibling spack executable or the babel-node alias', () => {
       // `spack` ships with @swc/cli but is deliberately not a candidate, and `babel-node` belongs to
       // `@babel/node`, which has its own verification gate (Step 35). Neither maps here.

@@ -483,6 +483,41 @@ describe('v0.2.0 script-command executable mappings', () => {
     });
   });
 
+  describe('Step 34: collision-aware Gulp, Grunt and Sequelize CLI mappings', () => {
+    it('does not report a declared CLI package as unused when its executable runs', async () => {
+      const gulp = await analyzeProject(fixturePath('gulp-cli-only'));
+      const grunt = await analyzeProject(fixturePath('grunt-cli-only'));
+      const sequelize = await analyzeProject(fixturePath('sequelize-cli-only'));
+
+      // The declared CLIs are used; the unrelated lodash dependency keeps its own unused finding.
+      expect(gulp.unusedDependencies).toEqual(['lodash']);
+      expect(gulp.unusedDevDependencies).toEqual([]);
+      expect(grunt.unusedDependencies).toEqual(['lodash']);
+      expect(grunt.unusedDevDependencies).toEqual([]);
+      expect(sequelize.unusedDependencies).toEqual(['lodash']);
+      expect(sequelize.unusedDevDependencies).toEqual([]);
+    });
+
+    it('never marks a CLI and its same-name package used from one command', async () => {
+      const gulp = await analyzeProject(fixturePath('both-gulp'));
+      const grunt = await analyzeProject(fixturePath('both-grunt'));
+      const sequelize = await analyzeProject(fixturePath('both-sequelize'));
+
+      // Exact-name precedence is preserved, so the CLI package keeps its own unused finding instead
+      // of being marked used together with the same-name package.
+      expect(gulp.unusedDevDependencies).toEqual(['gulp-cli']);
+      expect(grunt.unusedDevDependencies).toEqual(['grunt-cli']);
+      expect(sequelize.unusedDevDependencies).toEqual(['sequelize-cli']);
+    });
+
+    it('does not treat an echo mention as task-runner usage evidence', async () => {
+      const result = await analyzeProject(fixturePath('echo-grunt'));
+
+      expect(result.unusedDevDependencies).toEqual(['grunt-cli']);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
+
   describe('negative controls that must stay green now', () => {
     it('does not treat `echo tsc` as TypeScript usage evidence', async () => {
       const result = await analyzeProject(fixturePath('echo-tsc'));

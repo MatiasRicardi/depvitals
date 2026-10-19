@@ -105,6 +105,11 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  *   `ncu` by `npm-check-updates`. These are runners: they are recognized as the tool that runs, never
  *   followed into their arguments, so `run-p vite` never marks a declared `vite` as used and `conc
  *   "vite" "tsc"` never marks `vite` or `typescript` as used.
+ * - `gulp` is the executable provided by `gulp-cli`, `grunt` by `grunt-cli`, and `sequelize` by
+ *   `sequelize-cli`. All three names are also plausible declared packages, so each is
+ *   collision-sensitive: the same-name package keeps precedence when declared, and a single command
+ *   never marks a CLI and its library as used together. Task runners and database CLIs are never
+ *   executed and their task names are never interpreted.
  * Only these lowercase executables map; runner forms such as `npx tsc` keep their own (unmapped)
  * semantics. A CLI executable never stands in for a related library package: `@babel/core` and
  * `@swc/core` are separate declarations and receive no evidence from `babel`/`swc`.
@@ -134,6 +139,9 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['run-s', 'npm-run-all'],
   ['conc', 'concurrently'],
   ['ncu', 'npm-check-updates'],
+  ['gulp', 'gulp-cli'],
+  ['grunt', 'grunt-cli'],
+  ['sequelize', 'sequelize-cli'],
 ]);
 
 /**
@@ -145,7 +153,13 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
  * CLI package. Every other mapped executable keeps the opposite (Category A) precedence described on
  * {@link BINARY_TO_PACKAGE}.
  */
-const COLLISION_SENSITIVE_BINARIES: ReadonlySet<string> = new Set(['postcss', 'dotenv']);
+const COLLISION_SENSITIVE_BINARIES: ReadonlySet<string> = new Set([
+  'postcss',
+  'dotenv',
+  'gulp',
+  'grunt',
+  'sequelize',
+]);
 
 /**
  * Recognize the declared dependencies that `package.json` scripts clearly reference.
