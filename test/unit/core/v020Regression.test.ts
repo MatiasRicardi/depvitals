@@ -1056,14 +1056,16 @@ describe('v0.2.0 script-command executable mappings', () => {
       expect(result.missingDependencies).toEqual([]);
     });
 
-    it('keeps Vue/Electron/Expo CLIs unused when the collision exact-name packages also win', async () => {
-      // Each executable name (`vue`, `electron-forge`, `eas`) is also published as a separate, unrelated
-      // package, so exact-name wins: the same-named packages are used while the real CLI packages stay
-      // unused.
+    it('credits @vue/cli and eas-cli via vue/eas commands but keeps exact-name and CLI packages unused', async () => {
+      // `vue` and `eas` are not published by the `vue` or `eas` packages, so those commands are ordinary
+      // mappings: `vue create` credits `@vue/cli` and `eas build` credits `eas-cli`. Only `electron-forge`
+      // is collision-sensitive: `electron-forge@5.2.4` publishes the same executable, so the exact-name
+      // package wins when declared and `@electron-forge/cli` stays unused. The never-used framework,
+      // templating, and core runtime packages (`vue`, `eas`) are correctly reported as unused.
       const result = await analyzeProject(fixturePath('vue-collision'));
 
       expect(result.unusedDependencies).toEqual([]);
-      expect(result.unusedDevDependencies).toEqual(['@electron-forge/cli', '@vue/cli', 'eas-cli']);
+      expect(result.unusedDevDependencies).toEqual(['@electron-forge/cli', 'eas', 'vue']);
       expect(result.missingDependencies).toEqual([]);
     });
 
