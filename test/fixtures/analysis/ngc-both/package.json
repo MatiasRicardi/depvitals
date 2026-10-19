@@ -1,0 +1,11 @@
+{
+  "name": "ngc-both-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "@angular/compiler-cli": "22.2.3",
+    "ngc": "1.0.0"
+  },
+  "scripts": {
+    "compile": "ngc -p tsconfig.json && echo ngc"
+  }
+}

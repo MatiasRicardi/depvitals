@@ -3,8 +3,10 @@
   "version": "0.0.0",
   "devDependencies": {
     "@angular/cli": "1.9.0",
+    "@angular/compiler-cli": "1.13.1",
     "@babel/cli": "1.5.1",
     "@babel/node": "1.15.6",
+    "@biomejs/biome": "1.0.1",
     "@changesets/cli": "1.4.0",
     "@commitlint/cli": "1.11.6",
     "@graphql-codegen/cli": "1.4.5",
@@ -52,6 +54,9 @@
     "echo-ts-node-cwd": "echo ts-node-cwd && printf '%s' ts-node-cwd && node scripts/run.js --tool=ts-node-cwd",
     "echo-ts-node-esm": "echo ts-node-esm && printf '%s' ts-node-esm && node scripts/run.js --tool=ts-node-esm",
     "echo-ts-node-script": "echo ts-node-script && printf '%s' ts-node-script && node scripts/run.js --tool=ts-node-script",
-    "echo-ts-node-transpile-only": "echo ts-node-transpile-only && printf '%s' ts-node-transpile-only && node scripts/run.js --tool=ts-node-transpile-only"
+    "echo-ts-node-transpile-only": "echo ts-node-transpile-only && printf '%s' ts-node-transpile-only && node scripts/run.js --tool=ts-node-transpile-only",
+    "echo-ngc": "echo ngc && printf '%s' ngc && node scripts/run.js --tool=ngc",
+    "echo-ng-xi18n": "echo ng-xi18n && printf '%s' ng-xi18n && node scripts/run.js --tool=ng-xi18n",
+    "echo-biome": "echo biome && printf '%s' biome && node scripts/run.js --tool=biome"
   }
 }

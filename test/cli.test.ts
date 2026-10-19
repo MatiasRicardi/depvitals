@@ -353,7 +353,7 @@ describe('runCli', () => {
       const result = await runCli([matrixFixture('all-negatives')], OPTIONS);
 
       expect(result.exitCode).toBe(1);
-      expect(result.stdout).toContain('Unused devDependencies (21)');
+      expect(result.stdout).toContain('Unused devDependencies (23)');
       expect(result.stdout).toContain('  typescript');
       expect(result.stdout).not.toContain('Missing dependencies');
       expect(result.stderr).toBe('');

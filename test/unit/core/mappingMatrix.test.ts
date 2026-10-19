@@ -59,6 +59,9 @@ const PAIRS: readonly (readonly [string, string])[] = [
   ['ts-node-esm', 'ts-node'],
   ['ts-node-script', 'ts-node'],
   ['ts-node-transpile-only', 'ts-node'],
+  ['ngc', '@angular/compiler-cli'],
+  ['ng-xi18n', '@angular/compiler-cli'],
+  ['biome', '@biomejs/biome'],
 ];
 
 /** Every mapped package exactly once, sorted. */

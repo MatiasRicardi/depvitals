@@ -1,0 +1,15 @@
+{
+  "name": "ngc-command-demo",
+  "version": "0.0.0",
+  "dependencies": {
+    "lodash": "4.17.21"
+  },
+  "devDependencies": {
+    "@angular/compiler-cli": "22.2.3"
+  },
+  "scripts": {
+    "compile": "ngc -p tsconfig.json",
+    "i18n": "ng-xi18n -p tsconfig.json && echo ng-xi18n",
+    "serve": "ng build --configuration production"
+  }
+}
