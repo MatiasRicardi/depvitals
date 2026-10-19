@@ -1,0 +1,11 @@
+{
+  "name": "dotenvx-undeclared-demo",
+  "version": "0.0.0",
+  "dependencies": {
+    "lodash": "4.17.21"
+  },
+  "scripts": {
+    "dev": "dotenvx run -- node app.js",
+    "print": "echo dotenvx"
+  }
+}

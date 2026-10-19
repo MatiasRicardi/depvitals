@@ -222,6 +222,15 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  *   `commitizen` package is the only provider of the `cz` name. The Commitizen adapters
  *   (`cz-conventional-changelog`) and the `@manypkg/*` libraries stay uncalled, and nothing is
  *   committed, deployed or rewritten.
+ * - `dotenvx` is the CLI of the scoped `@dotenvx/dotenvx` package. Verified in the published `bin` maps:
+ *   `@dotenvx/dotenvx@2.38.0` (2026-10-16) publishes `dotenvx` next to its `dx` alias, and the same
+ *   `dotenvx` key is published by `@dotenvx/dotenvx@1.24.2` and `1.0.0`, so the executable is stable across
+ *   the major lines. The mapping is ordinary because the bare `dotenvx` name is not published at all
+ *   (registry 404) and therefore is not a competing provider. Its short `dx` alias is deliberately not
+ *   mapped: `dx@1.1.6` is an unrelated published package that ships its own `bin/dx`, which would need the
+ *   collision rule. A `dotenvx` command never credits the `dotenv` library (`dotenv@18.0.8`, a separate
+ *   collision-sensitive mapping key), `dotenv-cli`, or `dotenv-flow@4.1.0`, and `dotenv` never credits
+ *   `@dotenvx/dotenvx`; no environment file is read, loaded or written.
  *
  * Ambiguous providers are deliberately absent from the list. `tailwindcss` is the published executable
  * of `tailwindcss` in v3 and of `@tailwindcss/cli` in v4, `playwright` is published by both `playwright`
@@ -299,6 +308,7 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['sls', 'serverless'],
   ['cz', 'commitizen'],
   ['manypkg', '@manypkg/cli'],
+  ['dotenvx', '@dotenvx/dotenvx'],
 ]);
 
 /**
