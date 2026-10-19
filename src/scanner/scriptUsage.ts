@@ -161,6 +161,13 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  *   does the command credit `cross-env`, `less` or `coffeescript`. The legacy `coffee-script` package
  *   is never inferred, `cross-env-shell`'s nested shell string is never parsed, and nothing is
  *   compiled or executed.
+ * - `uglifyjs` is the minifier executable provided by the `uglify-js` package, and `css-beautify`
+ *   /`html-beautify` are two of the three executables provided by the `js-beautify` package (the
+ *   third is the plain `js-beautify`). `uglifyjs` and `html-beautify` are also published as separate
+ *   packages (`uglifyjs@2.4.11` a legacy redirect to `uglify-js`, `html-beautify@1.0.4` an unrelated
+ *   formatter), so those two are collision-sensitive and keep exact-name precedence, while `css-beautify`
+ *   is not published under its own name and simply credits `js-beautify`. The plain `js-beautify`
+ *   command keeps its existing exact-name match, and nothing is minified or formatted.
  *
  * Ambiguous providers are deliberately absent from the list. `tailwindcss` is the published executable
  * of `tailwindcss` in v3 and of `@tailwindcss/cli` in v4, `playwright` is published by both `playwright`
@@ -220,6 +227,9 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['lessc', 'less'],
   ['coffee', 'coffeescript'],
   ['cake', 'coffeescript'],
+  ['uglifyjs', 'uglify-js'],
+  ['css-beautify', 'js-beautify'],
+  ['html-beautify', 'js-beautify'],
 ]);
 
 /**
@@ -253,6 +263,8 @@ const COLLISION_SENSITIVE_BINARIES: ReadonlySet<string> = new Set([
   'lessc',
   'coffee',
   'cake',
+  'uglifyjs',
+  'html-beautify',
 ]);
 
 /**
