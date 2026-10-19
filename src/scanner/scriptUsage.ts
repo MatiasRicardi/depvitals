@@ -151,6 +151,16 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  *   and keep exact-name precedence. Neither command implies the runtime libraries: `vue` and
  *   `@babel/core` receive no evidence from `vue-cli-service` or `babel-node`, and no build or
  *   transpilation is executed.
+ * - `cross-env-shell` is the executable provided by the `cross-env` package alongside the plain
+ *   `cross-env`. `lessc` is the Less compiler executable provided by the `less` package, and
+ *   `coffee`/`cake` (the task runner) are the executables provided by the modern `coffeescript`
+ *   package. All four names are also published as separate packages (`cross-env-shell@7.0.3` a legacy
+ *   wrapper, `lessc@1.0.2` a no-op npx shim, `coffee@5.5.1` an unrelated CLI, `cake@0.1.1` a legacy
+ *   CoffeeScript make), so all four are collision-sensitive and keep exact-name precedence: a project
+ *   that declares the same-named package credits it, and only when that exact-name package is absent
+ *   does the command credit `cross-env`, `less` or `coffeescript`. The legacy `coffee-script` package
+ *   is never inferred, `cross-env-shell`'s nested shell string is never parsed, and nothing is
+ *   compiled or executed.
  *
  * Ambiguous providers are deliberately absent from the list. `tailwindcss` is the published executable
  * of `tailwindcss` in v3 and of `@tailwindcss/cli` in v4, `playwright` is published by both `playwright`
@@ -206,6 +216,10 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['depcruise', 'dependency-cruiser'],
   ['depcruise-baseline', 'dependency-cruiser'],
   ['depcruise-fmt', 'dependency-cruiser'],
+  ['cross-env-shell', 'cross-env'],
+  ['lessc', 'less'],
+  ['coffee', 'coffeescript'],
+  ['cake', 'coffeescript'],
 ]);
 
 /**
@@ -235,6 +249,10 @@ const COLLISION_SENSITIVE_BINARIES: ReadonlySet<string> = new Set([
   'remark',
   'rehype',
   'depcruise',
+  'cross-env-shell',
+  'lessc',
+  'coffee',
+  'cake',
 ]);
 
 /**
