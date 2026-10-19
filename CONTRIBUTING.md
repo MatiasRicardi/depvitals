@@ -138,7 +138,7 @@ Before each npm publish:
 - confirm the `LICENSE` copyright holder;
 - finalize `README.md` and `CHANGELOG.md`.
 
-After a successful and verified npm publish, create the matching version tag and GitHub Release.
+A release is prepared as a focused release PR that runs CI (`pnpm run check` and the build) and passes the packaged-artifact smoke test (`pnpm run verify:package`). A maintainer then publishes to npm manually; the npm registry and consumer are verified (read-only `npm view` checks) before an immutable version tag and GitHub Release are created.
 
 Publishing automation (GitHub Actions / npm trusted publishing) and npm provenance
 (`publishConfig.provenance`) remain future improvements: releases are still published manually.
