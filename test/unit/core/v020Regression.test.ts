@@ -855,6 +855,33 @@ describe('v0.2.0 script-command executable mappings', () => {
       expect(result.missingDependencies).toEqual([]);
     });
 
+    it('marks dependency-cruiser used through depcruse alone', async () => {
+      // Only the primary shorthand is invoked; it must credit `dependency-cruiser` on its own.
+      const result = await analyzeProject(fixturePath('dc-clis-depcruise'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('marks dependency-cruiser used through depcruse-baseline alone', async () => {
+      // Only the baseline helper binary is invoked; it must credit `dependency-cruiser` on its own.
+      const result = await analyzeProject(fixturePath('dc-clis-baseline'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('marks dependency-cruiser used through depcruse-fmt alone', async () => {
+      // Only the formatting helper binary is invoked; it must credit `dependency-cruiser` on its own.
+      const result = await analyzeProject(fixturePath('dc-clis-fmt'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
     it('keeps dependency-cruiser unused when the exact-name placeholder also wins', async () => {
       // `depcruise` is also published as a defensive placeholder (1.0.0, no bin), so it is
       // collision-sensitive: when the exact-name `depcruise` is declared it absorbs the script

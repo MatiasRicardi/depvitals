@@ -1,0 +1,10 @@
+{
+  "name": "dc-clis-depcruise-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "dependency-cruiser": "18.6.0"
+  },
+  "scripts": {
+    "check": "depcruise conf/dependency-cruiser.js"
+  }
+}
