@@ -1043,4 +1043,38 @@ describe('v0.2.0 script-command executable mappings', () => {
       expect(result.missingDependencies).toEqual([]);
     });
   });
+
+  describe('Step 50: Vue, Electron Forge and Expo EAS CLI aliases', () => {
+    it('maps vue, electron-forge and eas to their declared CLI packages', async () => {
+      // The legacy `vue` CLI executable credits `@vue/cli`, `electron-forge` credits `@electron-forge/cli`,
+      // and `eas` credits `eas-cli` when declared and invoked in command position. None of these
+      // mappings imply a companion package (`vue`, `electron`, or `expo`).
+      const result = await analyzeProject(fixturePath('vue-command'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('keeps Vue/Electron/Expo CLIs unused when the collision exact-name packages also win', async () => {
+      // Each executable name (`vue`, `electron-forge`, `eas`) is also published as a separate, unrelated
+      // package, so exact-name wins: the same-named packages are used while the real CLI packages stay
+      // unused.
+      const result = await analyzeProject(fixturePath('vue-collision'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual(['@electron-forge/cli', '@vue/cli', 'eas-cli']);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('never turns undeclared Vue/Electron/Expo CLIs into missing findings', async () => {
+      // None of the three CLI packages is declared, so nothing is used and nothing becomes a missing
+      // finding; `lodash` stays unused.
+      const result = await analyzeProject(fixturePath('vue-undeclared'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
 });
