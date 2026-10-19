@@ -245,6 +245,85 @@ describe('v0.2.0 script-command executable mappings', () => {
     });
   });
 
+  describe('Step 30: collision-sensitive `postcss`/`dotenv` mappings', () => {
+    it('does not report postcss-cli as unused when build runs postcss', async () => {
+      const result = await analyzeProject(fixturePath('postcss-command'));
+
+      // Only the CLI package is declared, so the `postcss` executable marks `postcss-cli` as used.
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('does not report dotenv-cli as unused when start runs dotenv', async () => {
+      const result = await analyzeProject(fixturePath('dotenv-command'));
+
+      // `dotenv -e .env -- node index.js` marks the declared `dotenv-cli` as used; nothing after the
+      // command token is parsed, so `node` and `index.js` are not evidence for anything.
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('leaves unrelated declared dependencies unused when postcss or dotenv runs', async () => {
+      const postcssResult = await analyzeProject(fixturePath('postcss-with-unrelated'));
+      const dotenvResult = await analyzeProject(fixturePath('dotenv-with-unrelated'));
+
+      expect(postcssResult.unusedDependencies).toEqual(['lodash']);
+      expect(postcssResult.unusedDevDependencies).toEqual([]);
+      expect(postcssResult.missingDependencies).toEqual([]);
+      expect(dotenvResult.unusedDependencies).toEqual(['lodash']);
+      expect(dotenvResult.unusedDevDependencies).toEqual([]);
+      expect(dotenvResult.missingDependencies).toEqual([]);
+    });
+
+    it('never reports a missing finding for undeclared postcss-cli or dotenv-cli', async () => {
+      const postcssResult = await analyzeProject(fixturePath('postcss-undeclared'));
+      const dotenvResult = await analyzeProject(fixturePath('dotenv-undeclared'));
+
+      expect(postcssResult.unusedDependencies).toEqual([]);
+      expect(postcssResult.unusedDevDependencies).toEqual([]);
+      expect(postcssResult.missingDependencies).toEqual([]);
+      expect(dotenvResult.unusedDependencies).toEqual([]);
+      expect(dotenvResult.unusedDevDependencies).toEqual([]);
+      expect(dotenvResult.missingDependencies).toEqual([]);
+    });
+
+    it('does not auto-suppress both providers when a same-name library is declared too', async () => {
+      const postcssResult = await analyzeProject(fixturePath('postcss-collision'));
+      const dotenvResult = await analyzeProject(fixturePath('dotenv-collision'));
+
+      // Exact-name precedence: the same-name library keeps the evidence and the CLI provider stays
+      // unused, so one executable never marks two competing providers as used.
+      expect(postcssResult.unusedDevDependencies).toEqual(['postcss-cli']);
+      expect(postcssResult.missingDependencies).toEqual([]);
+      expect(dotenvResult.unusedDevDependencies).toEqual(['dotenv-cli']);
+      expect(dotenvResult.missingDependencies).toEqual([]);
+    });
+
+    it('does not parse the executable that dotenv runs after `--`', async () => {
+      const result = await analyzeProject(fixturePath('dotenv-runner-args'));
+
+      // `dotenv -e .env -- tsc --noEmit` uses dotenv-cli; the `tsc` after `--` is not inspected, so
+      // the declared `typescript` package stays unused and no runner parsing is inferred.
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual(['typescript']);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('does not treat echo or adjacent-command arguments as CLI usage evidence', async () => {
+      const echoPostcss = await analyzeProject(fixturePath('echo-postcss'));
+      const echoDotenv = await analyzeProject(fixturePath('echo-dotenv'));
+      const lintPostcss = await analyzeProject(fixturePath('eslint-postcss'));
+      const probeDotenv = await analyzeProject(fixturePath('node-e-dotenv'));
+
+      expect(echoPostcss.unusedDevDependencies).toEqual(['postcss-cli']);
+      expect(echoDotenv.unusedDevDependencies).toEqual(['dotenv-cli']);
+      expect(lintPostcss.unusedDevDependencies).toEqual(['postcss-cli']);
+      expect(probeDotenv.unusedDevDependencies).toEqual(['dotenv-cli']);
+    });
+  });
+
   describe('negative controls that must stay green now', () => {
     it('does not treat `echo tsc` as TypeScript usage evidence', async () => {
       const result = await analyzeProject(fixturePath('echo-tsc'));

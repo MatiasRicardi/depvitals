@@ -1,0 +1,10 @@
+{
+  "name": "eslint-postcss-control-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "postcss-cli": "11.0.0"
+  },
+  "scripts": {
+    "lint": "eslint postcss"
+  }
+}

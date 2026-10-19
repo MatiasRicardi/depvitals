@@ -1,0 +1,13 @@
+{
+  "name": "postcss-with-unrelated-demo",
+  "version": "0.0.0",
+  "dependencies": {
+    "lodash": "4.17.21"
+  },
+  "devDependencies": {
+    "postcss-cli": "11.0.0"
+  },
+  "scripts": {
+    "build": "postcss src/index.css -o dist/index.css"
+  }
+}
