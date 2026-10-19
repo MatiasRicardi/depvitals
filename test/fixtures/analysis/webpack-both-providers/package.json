@@ -1,0 +1,11 @@
+{
+  "name": "webpack-both-providers-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "webpack": "5.90.0",
+    "webpack-cli": "5.1.0"
+  },
+  "scripts": {
+    "bundle": "webpack --mode production"
+  }
+}

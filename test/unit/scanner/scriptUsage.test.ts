@@ -773,6 +773,78 @@ describe('findPackageScriptUsage', () => {
       ).toEqual(new Set());
     });
 
+    it('never maps ambiguous binary providers that publish the same executable', () => {
+      // Step 36: `tailwindcss` is published by `tailwindcss` (v3) and by `@tailwindcss/cli` (v4), and
+      // `playwright` is published by both `playwright` and `@playwright/test`. A static scanner cannot
+      // pick a provider, so it only credits an exactly declared same-name package and abstains otherwise.
+      expect(
+        findPackageScriptUsage(
+          { css: 'tailwindcss -i input.css -o output.css' },
+          new Set(['tailwindcss', '@tailwindcss/cli']),
+        ),
+      ).toEqual(new Set(['tailwindcss']));
+      expect(
+        findPackageScriptUsage(
+          { css: 'tailwindcss -i input.css -o output.css' },
+          new Set(['@tailwindcss/cli']),
+        ),
+      ).toEqual(new Set());
+      expect(
+        findPackageScriptUsage(
+          { e2e: 'playwright test' },
+          new Set(['playwright', '@playwright/test']),
+        ),
+      ).toEqual(new Set(['playwright']));
+      expect(
+        findPackageScriptUsage({ e2e: 'playwright test' }, new Set(['@playwright/test'])),
+      ).toEqual(new Set());
+    });
+
+    it('never treats the webpack executable as evidence for webpack-cli', () => {
+      // `webpack` publishes its own `webpack` bin and `webpack-cli` publishes `webpack-cli`; there is
+      // no published `webpack` bin in `webpack-cli`, so no alias may be invented here.
+      expect(
+        findPackageScriptUsage(
+          { bundle: 'webpack --mode production' },
+          new Set(['webpack', 'webpack-cli']),
+        ),
+      ).toEqual(new Set(['webpack']));
+      expect(
+        findPackageScriptUsage({ bundle: 'webpack --mode production' }, new Set(['webpack-cli'])),
+      ).toEqual(new Set());
+    });
+
+    it('keeps exact-name precedence for every collision-sensitive mapping', () => {
+      // One command never marks a CLI package and its same-name package used together (Steps 30, 34, 35).
+      const cases: readonly [string, string, string][] = [
+        ['dotenv', 'dotenv-cli', 'dotenv -e .env'],
+        ['postcss', 'postcss-cli', 'postcss styles.css -o dist.css'],
+        ['gulp', 'gulp-cli', 'gulp build'],
+        ['grunt', 'grunt-cli', 'grunt test'],
+        ['sequelize', 'sequelize-cli', 'sequelize db:migrate'],
+        ['vue-cli-service', '@vue/cli-service', 'vue-cli-service build'],
+        ['babel-node', '@babel/node', 'babel-node src/server.js'],
+      ];
+
+      for (const [sameName, cliPackage, command] of cases) {
+        expect(
+          findPackageScriptUsage({ run: command }, new Set([sameName, cliPackage])),
+          `${command} must credit ${sameName} only`,
+        ).toEqual(new Set([sameName]));
+      }
+    });
+
+    it('never infers a dependency from the node or pnpm binary itself', () => {
+      // `node` and `pnpm` are not evidence for any unrelated declared package; only a literal
+      // same-name declaration could ever match, and no alias is invented for them.
+      expect(
+        findPackageScriptUsage(
+          { build: 'node scripts/build.js', release: 'pnpm node scripts/release.js' },
+          new Set(['webpack-cli', 'tailwindcss', '@playwright/test']),
+        ),
+      ).toEqual(new Set());
+    });
+
     it('does not map the sibling spack executable', () => {
       // `spack` ships with @swc/cli but is deliberately not a candidate.
       expect(findPackageScriptUsage({ build: 'spack src -o dist' }, new Set(['@swc/cli']))).toEqual(
