@@ -352,8 +352,13 @@ describe('findPackageScriptUsage', () => {
     });
 
     it('does not guess a scoped package bin from its name', () => {
+      // A command token is only evidence for a scoped package when the allowlist proves the executable
+      // (Step 35 added `vue-cli-service`); an unlisted command never resolves to a scoped package.
+      expect(findPackageScriptUsage({ build: 'nuxt generate' }, new Set(['@nuxt/cli']))).toEqual(
+        new Set(),
+      );
       expect(
-        findPackageScriptUsage({ build: 'vue-cli-service serve' }, new Set(['@vue/cli-service'])),
+        findPackageScriptUsage({ build: 'vite-node entry.ts' }, new Set(['@vitejs/cli'])),
       ).toEqual(new Set());
     });
 
@@ -768,14 +773,72 @@ describe('findPackageScriptUsage', () => {
       ).toEqual(new Set());
     });
 
-    it('does not map the sibling spack executable or the babel-node alias', () => {
-      // `spack` ships with @swc/cli but is deliberately not a candidate, and `babel-node` belongs to
-      // `@babel/node`, which has its own verification gate (Step 35). Neither maps here.
+    it('does not map the sibling spack executable', () => {
+      // `spack` ships with @swc/cli but is deliberately not a candidate.
       expect(findPackageScriptUsage({ build: 'spack src -o dist' }, new Set(['@swc/cli']))).toEqual(
         new Set(),
       );
+    });
+
+    it('maps vue-cli-service and babel-node to their declared packages', () => {
+      // Step 35: both executables are verified published bins of the mapped packages.
       expect(
-        findPackageScriptUsage({ start: 'babel-node src/index.js' }, new Set(['@babel/node'])),
+        findPackageScriptUsage({ build: 'vue-cli-service build' }, new Set(['@vue/cli-service'])),
+      ).toEqual(new Set(['@vue/cli-service']));
+      expect(
+        findPackageScriptUsage({ start: 'babel-node src/server.js' }, new Set(['@babel/node'])),
+      ).toEqual(new Set(['@babel/node']));
+      expect(
+        findPackageScriptUsage({ build: 'vue-cli-service build' }, new Set(['lodash'])),
+      ).toEqual(new Set());
+    });
+
+    it('keeps exact-name precedence for the collision-sensitive Step 35 names', () => {
+      // `vue-cli-service` and `babel-node` are themselves published package names.
+      expect(
+        findPackageScriptUsage(
+          { build: 'vue-cli-service build' },
+          new Set(['vue-cli-service', '@vue/cli-service']),
+        ),
+      ).toEqual(new Set(['vue-cli-service']));
+      expect(
+        findPackageScriptUsage(
+          { start: 'babel-node src/server.js' },
+          new Set(['babel-node', '@babel/node']),
+        ),
+      ).toEqual(new Set(['babel-node']));
+    });
+
+    it('never infers the matching runtime library from these CLI commands', () => {
+      expect(
+        findPackageScriptUsage(
+          { build: 'vue-cli-service build' },
+          new Set(['vue', '@vue/cli-service']),
+        ),
+      ).toEqual(new Set(['@vue/cli-service']));
+      expect(
+        findPackageScriptUsage(
+          { start: 'babel-node src/server.js' },
+          new Set(['@babel/core', '@babel/cli']),
+        ),
+      ).toEqual(new Set());
+    });
+
+    it('does not treat echo or node -e mentions as Step 35 CLI usage evidence', () => {
+      expect(
+        findPackageScriptUsage(
+          { notes: 'echo vue-cli-service build' },
+          new Set(['@vue/cli-service']),
+        ),
+      ).toEqual(new Set());
+      expect(
+        findPackageScriptUsage({ notes: 'echo babel-node' }, new Set(['@babel/node'])),
+      ).toEqual(new Set());
+      expect(
+        findPackageScriptUsage(
+          { probe: 'node -e "console.log(\'babel-node\')"' },
+          new Set(['@babel/node']),
+        ),
       ).toEqual(new Set());
     });
   });

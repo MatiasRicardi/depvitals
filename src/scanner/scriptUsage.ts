@@ -110,6 +110,11 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  *   collision-sensitive: the same-name package keeps precedence when declared, and a single command
  *   never marks a CLI and its library as used together. Task runners and database CLIs are never
  *   executed and their task names are never interpreted.
+ * - `vue-cli-service` is the executable provided by `@vue/cli-service`, and `babel-node` by
+ *   `@babel/node`. Both names are also published as separate packages, so they are collision-sensitive
+ *   and keep exact-name precedence. Neither command implies the runtime libraries: `vue` and
+ *   `@babel/core` receive no evidence from `vue-cli-service` or `babel-node`, and no build or
+ *   transpilation is executed.
  * Only these lowercase executables map; runner forms such as `npx tsc` keep their own (unmapped)
  * semantics. A CLI executable never stands in for a related library package: `@babel/core` and
  * `@swc/core` are separate declarations and receive no evidence from `babel`/`swc`.
@@ -142,6 +147,8 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['gulp', 'gulp-cli'],
   ['grunt', 'grunt-cli'],
   ['sequelize', 'sequelize-cli'],
+  ['vue-cli-service', '@vue/cli-service'],
+  ['babel-node', '@babel/node'],
 ]);
 
 /**
@@ -159,6 +166,8 @@ const COLLISION_SENSITIVE_BINARIES: ReadonlySet<string> = new Set([
   'gulp',
   'grunt',
   'sequelize',
+  'vue-cli-service',
+  'babel-node',
 ]);
 
 /**
