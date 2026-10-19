@@ -22,7 +22,8 @@
  *   evidence for the package they point into;
  * - the small explicit `BINARY_TO_PACKAGE` list translates a recognized direct executable (for
  *   example `tsc` -> `typescript`) to its declared package; every other command keeps exact-name
- *   matching.
+ *   matching. Collision-sensitive entries keep exact-name precedence instead (see
+ *   `COLLISION_SENSITIVE_BINARIES`), so one executable never marks two competing providers as used.
  * - the five documented package-runner forms count (`npx`, `npm exec`, `pnpm exec`, `pnpm dlx`,
  *   `yarn dlx`) with the package in its immediate position;
  * - leading POSIX environment assignments (`NODE_ENV=test`, `FOO=1 BAR=2`) are skipped;
@@ -88,6 +89,9 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  * - `babel` is the executable provided by the `@babel/cli` package.
  * - `swc` is one of the executables provided by the `@swc/cli` package; the sibling `spack`
  *   executable is deliberately not mapped.
+ * - `postcss` is the executable provided by the `postcss-cli` package, and `dotenv` the one provided
+ *   by `dotenv-cli`. Both are collision-sensitive: a real unrelated package with the exact same name
+ *   exists, so they are listed in `COLLISION_SENSITIVE_BINARIES` and keep exact-name precedence.
  * Only these lowercase executables map; runner forms such as `npx tsc` keep their own (unmapped)
  * semantics. A CLI executable never stands in for a related library package: `@babel/core` and
  * `@swc/core` are separate declarations and receive no evidence from `babel`/`swc`.
@@ -105,7 +109,20 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['nest', '@nestjs/cli'],
   ['babel', '@babel/cli'],
   ['swc', '@swc/cli'],
+  ['postcss', 'postcss-cli'],
+  ['dotenv', 'dotenv-cli'],
 ]);
+
+/**
+ * Mapped executables whose package name is also a real, unrelated published package.
+ *
+ * For these, the exact-name package keeps precedence whenever it is declared, so a single command
+ * such as `postcss src/index.css -o dist/index.css` never marks both `postcss` and `postcss-cli` as
+ * used. Only when the exact-name package is absent may the mapping provide evidence for the declared
+ * CLI package. Every other mapped executable keeps the opposite (Category A) precedence described on
+ * {@link BINARY_TO_PACKAGE}.
+ */
+const COLLISION_SENSITIVE_BINARIES: ReadonlySet<string> = new Set(['postcss', 'dotenv']);
 
 /**
  * Recognize the declared dependencies that `package.json` scripts clearly reference.
@@ -114,7 +131,8 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
  * evidence (a command token, a recognized executable mapped through `BINARY_TO_PACKAGE`, or a
  * supported runner package position) and keeps only those that are present in
  * {@link declaredPackageNames}. Undeclared command tokens and undeclared mapped packages are ignored:
- * this module never creates missing-dependency findings.
+ * this module never creates missing-dependency findings. The declared names are also consulted when
+ * resolving a collision-sensitive executable, which needs them to keep exact-name precedence.
  *
  * The result is built in alphabetical package-name order so iteration is deterministic. Neither
  * {@link scripts} nor {@link declaredPackageNames} is mutated.
@@ -129,7 +147,7 @@ export function findPackageScriptUsage(
   const used = new Set<string>();
 
   for (const command of Object.values(scripts)) {
-    for (const candidate of collectScriptCandidates(command)) {
+    for (const candidate of collectScriptCandidates(command, declaredPackageNames)) {
       if (declaredPackageNames.has(candidate)) {
         used.add(candidate);
       }
@@ -145,8 +163,14 @@ export function findPackageScriptUsage(
  * Each shell segment contributes at most one candidate: the package supplied to a supported runner
  * form, or the segment's first effective command token when that token is exactly a package name.
  * Segments containing unsupported shell syntax contribute nothing.
+ *
+ * `declaredPackageNames` is only used to resolve collision-sensitive executables, which need to know
+ * whether the exact-name package is declared before choosing the candidate.
  */
-function collectScriptCandidates(command: string): readonly string[] {
+function collectScriptCandidates(
+  command: string,
+  declaredPackageNames: ReadonlySet<string>,
+): readonly string[] {
   const candidates: string[] = [];
 
   for (const segment of splitSegments(command)) {
@@ -183,11 +207,18 @@ function collectScriptCandidates(command: string): readonly string[] {
     // `eslint/bin/cli` or a script path such as `scripts/build.js` is never usage evidence.
     const classification = classifyPackageSpecifier(commandName);
     if (classification.kind === 'external' && commandName === classification.packageName) {
-      // An explicit executable mapping takes precedence over same-name matching: `tsc` resolves to
-      // the declared `typescript` package only, never to a hypothetical `tsc` package, so a single
-      // executable yields at most one piece of usage evidence.
+      // A single executable always yields at most one piece of usage evidence. Unmapped commands and
+      // Category A mappings resolve to the mapped package (`tsc` is `typescript`, never a
+      // hypothetical `tsc` package). Collision-sensitive executables keep exact-name precedence, so
+      // the same command never marks two competing providers as used.
       const mapped = BINARY_TO_PACKAGE.get(commandName);
-      candidates.push(mapped ?? commandName);
+      if (mapped === undefined) {
+        candidates.push(commandName);
+      } else if (COLLISION_SENSITIVE_BINARIES.has(commandName)) {
+        candidates.push(declaredPackageNames.has(commandName) ? commandName : mapped);
+      } else {
+        candidates.push(mapped);
+      }
     }
   }
 
