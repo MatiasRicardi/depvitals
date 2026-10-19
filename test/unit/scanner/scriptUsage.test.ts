@@ -550,6 +550,47 @@ describe('findPackageScriptUsage', () => {
       ).toEqual(new Set());
     });
 
+    it('maps a direct changeset executable to the declared @changesets/cli package', () => {
+      // Step 31: `changeset version` is a command plus arguments, so the command token maps to the
+      // declared CLI package. Undeclared @changesets/cli still yields no evidence.
+      expect(
+        findPackageScriptUsage({ version: 'changeset version' }, new Set(['@changesets/cli'])),
+      ).toEqual(new Set(['@changesets/cli']));
+      expect(findPackageScriptUsage({ version: 'changeset version' }, new Set(['lodash']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('maps a direct commitlint executable to the declared @commitlint/cli package', () => {
+      expect(
+        findPackageScriptUsage({ lint: 'commitlint --edit' }, new Set(['@commitlint/cli'])),
+      ).toEqual(new Set(['@commitlint/cli']));
+      expect(findPackageScriptUsage({ lint: 'commitlint --edit' }, new Set(['lodash']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('does not match the unverified plural changesets spelling', () => {
+      // Only the singular `changeset` bin is published; the plural spelling must never be treated as
+      // an alias of `@changesets/cli`.
+      expect(
+        findPackageScriptUsage({ version: 'changesets version' }, new Set(['@changesets/cli'])),
+      ).toEqual(new Set());
+    });
+
+    it('does not treat `echo changeset`/`echo commitlint` as CLI usage evidence', () => {
+      // Both names appear only as the argument of `echo`, never in command position.
+      expect(
+        findPackageScriptUsage(
+          { notes: 'echo changeset version pending' },
+          new Set(['@changesets/cli']),
+        ),
+      ).toEqual(new Set());
+      expect(
+        findPackageScriptUsage({ notes: 'echo commitlint --edit' }, new Set(['@commitlint/cli'])),
+      ).toEqual(new Set());
+    });
+
     it('does not map the sibling spack executable or the babel-node alias', () => {
       // `spack` ships with @swc/cli but is deliberately not a candidate, and `babel-node` belongs to
       // `@babel/node`, which has its own verification gate (Step 35). Neither maps here.

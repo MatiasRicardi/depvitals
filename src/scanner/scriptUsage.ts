@@ -92,6 +92,9 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  * - `postcss` is the executable provided by the `postcss-cli` package, and `dotenv` the one provided
  *   by `dotenv-cli`. Both are collision-sensitive: a real unrelated package with the exact same name
  *   exists, so they are listed in `COLLISION_SENSITIVE_BINARIES` and keep exact-name precedence.
+ * - `changeset` (singular only) is the executable provided by the `@changesets/cli` package; the
+ *   plural `changesets` is not a published bin and is deliberately not matched.
+ * - `commitlint` is the executable provided by the `@commitlint/cli` package.
  * Only these lowercase executables map; runner forms such as `npx tsc` keep their own (unmapped)
  * semantics. A CLI executable never stands in for a related library package: `@babel/core` and
  * `@swc/core` are separate declarations and receive no evidence from `babel`/`swc`.
@@ -111,6 +114,8 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['swc', '@swc/cli'],
   ['postcss', 'postcss-cli'],
   ['dotenv', 'dotenv-cli'],
+  ['changeset', '@changesets/cli'],
+  ['commitlint', '@commitlint/cli'],
 ]);
 
 /**
