@@ -1,0 +1,18 @@
+{
+  "name": "repo-clis-collision-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "@manypkg/cli": "0.25.1",
+    "@manypkg/get-packages": "3.1.0",
+    "commitizen": "4.3.2",
+    "cz": "1.8.2",
+    "cz-conventional-changelog": "3.3.0",
+    "serverless": "4.44.0",
+    "sls": "0.1.0"
+  },
+  "scripts": {
+    "check": "manypkg check",
+    "commit": "cz",
+    "deploy": "sls deploy"
+  }
+}

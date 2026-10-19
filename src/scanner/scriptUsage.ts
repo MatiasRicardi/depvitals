@@ -207,6 +207,21 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  *   or `netlify` runtime package is never credited from a CLI command. `aws-cdk-lib@2.273.0` publishes no
  *   bin at all, so `cdk` never credits the CDK construct library; no cloud project is contacted or
  *   deployed.
+ * - `sls`, `cz` and `manypkg` are the short command names of the Serverless Framework CLI
+ *   (`serverless`), the Commitizen CLI (`commitizen`) and the monorepo package-lint CLI (`@manypkg/cli`).
+ *   Verified in the published `bin` maps: `serverless@4.44.0` (2026-10-14, unchanged in
+ *   `serverless@3.38.0` and `2.72.4`) publishes `sls` next to `serverless`, `commitizen@4.3.2`
+ *   (2026-06-12) publishes `cz` next to `git-cz`/`commitizen`, and `@manypkg/cli@0.25.1` (2025-08-28,
+ *   unchanged in `0.19.0` and `0.21.1`) publishes `manypkg`. Only `sls` needs the collision rule: the
+ *   unrelated `sls@0.1.0` directory-listing tool ships its own `bin/sls`, so a declared `sls` keeps
+ *   exact-name precedence and `serverless` is not additionally credited from the same command.
+ *   `cz@1.8.2` is a config utility with no bin and `manypkg` is not a published package at all, so those
+ *   two mappings are ordinary and a declared `cz` package never receives evidence from a `cz` command.
+ *   The `cz` bin itself only exists since `commitizen@4.2.0` (the older lines published `git-cz` and
+ *   `commitizen`), which is accepted here because no version resolution is performed: the declared
+ *   `commitizen` package is the only provider of the `cz` name. The Commitizen adapters
+ *   (`cz-conventional-changelog`) and the `@manypkg/*` libraries stay uncalled, and nothing is
+ *   committed, deployed or rewritten.
  *
  * Ambiguous providers are deliberately absent from the list. `tailwindcss` is the published executable
  * of `tailwindcss` in v3 and of `@tailwindcss/cli` in v4, `playwright` is published by both `playwright`
@@ -281,6 +296,9 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['firebase', 'firebase-tools'],
   ['netlify', 'netlify-cli'],
   ['cdk', 'aws-cdk'],
+  ['sls', 'serverless'],
+  ['cz', 'commitizen'],
+  ['manypkg', '@manypkg/cli'],
 ]);
 
 /**
@@ -325,6 +343,7 @@ const COLLISION_SENSITIVE_BINARIES: ReadonlySet<string> = new Set([
   'ionic',
   'electron-forge',
   'cdk',
+  'sls',
 ]);
 
 /**
