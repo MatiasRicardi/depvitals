@@ -1,0 +1,11 @@
+{
+  "name": "ngc-undeclared-demo",
+  "version": "0.0.0",
+  "dependencies": {
+    "lodash": "4.17.21"
+  },
+  "scripts": {
+    "compile": "ngc -p tsconfig.json && ng-xi18n -p tsconfig.json",
+    "lint": "ngc --version"
+  }
+}

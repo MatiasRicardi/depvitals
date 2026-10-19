@@ -113,6 +113,15 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  *   collision-sensitive: the same-name package keeps precedence when declared, and a single command
  *   never marks a CLI and its library as used together. Task runners and database CLIs are never
  *   executed and their task names are never interpreted.
+ * - `ngc` and `ng-xi18n` are executables provided by `@angular/compiler-cli` (verified for the published
+ *   17.x/20.x/22.x line). They are unrelated to the `ng` command, which keeps mapping to `@angular/cli`
+ *   alone: `ng build` never credits `@angular/compiler-cli`, and the older `ngcc` executable is not a
+ *   candidate and stays unmapped. `ngc` is itself a published package, so it is collision-sensitive and
+ *   keeps exact-name precedence; `ng-xi18n` is not published under that name.
+ * - `biome` is the executable provided by `@biomejs/biome`. The platform-specific `@biomejs/cli-*`
+ *   packages are optional dependencies of that package and are never inferred from the command: only the
+ *   declared `@biomejs/biome` receives evidence. `biome` is also an unrelated published package, so it is
+ *   collision-sensitive and keeps exact-name precedence. No lint or format run is executed.
  * - `tsserver` is the language-server executable shipped by the `typescript` package next to `tsc`
  *   (verified for the published 4.x/5.x/6.x line; the 7.x package no longer lists this bin, which is
  *   irrelevant here because no version resolution is performed and `typescript` is the only provider of
@@ -174,6 +183,9 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['ts-node-esm', 'ts-node'],
   ['ts-node-script', 'ts-node'],
   ['ts-node-transpile-only', 'ts-node'],
+  ['ngc', '@angular/compiler-cli'],
+  ['ng-xi18n', '@angular/compiler-cli'],
+  ['biome', '@biomejs/biome'],
 ]);
 
 /**
@@ -197,6 +209,8 @@ const COLLISION_SENSITIVE_BINARIES: ReadonlySet<string> = new Set([
   'ts-node-esm',
   'ts-node-script',
   'ts-node-transpile-only',
+  'ngc',
+  'biome',
 ]);
 
 /**

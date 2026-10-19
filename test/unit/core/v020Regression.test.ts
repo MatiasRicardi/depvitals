@@ -716,6 +716,63 @@ describe('v0.2.0 script-command executable mappings', () => {
     });
   });
 
+  describe('Step 43: Angular compiler-cli and Biome aliases', () => {
+    it('marks the Angular compiler-cli used through ngc and ng-xi18n only', async () => {
+      const result = await analyzeProject(fixturePath('ngc-command'));
+
+      // `ngc` and `ng-xi18n` both credit the declared compiler-cli. The `ng build` script in the same
+      // manifest maps to `@angular/cli`, which is not declared here, so it contributes nothing.
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('never treats ng build as Angular compiler-cli usage', async () => {
+      const result = await analyzeProject(fixturePath('ng-build-not-compiler-cli'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual(['@angular/compiler-cli']);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('gives ngc evidence only to the declared same-name package', async () => {
+      // `ngc@1.0.0` is an unrelated published package that exposes the same bin, so the exact-name
+      // match wins and the compiler-cli stays unused.
+      const result = await analyzeProject(fixturePath('ngc-both'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual(['@angular/compiler-cli']);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('never turns undeclared ngc or ng-xi18n commands into missing findings', async () => {
+      const result = await analyzeProject(fixturePath('ngc-undeclared'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('credits @biomejs/biome but never its platform packages', async () => {
+      const result = await analyzeProject(fixturePath('biome-command'));
+
+      // The `biome` command credits `@biomejs/biome`; the platform build stays unused, and the
+      // `node scripts/emit.js biome check .` argument position contributes nothing extra.
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual(['@biomejs/cli-linux-x64']);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('keeps exact-name precedence when the unrelated biome package is declared too', async () => {
+      // `biome@0.3.3` is an unrelated published package with the same bin name.
+      const result = await analyzeProject(fixturePath('biome-with-unrelated'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual(['@biomejs/biome']);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
+
   describe('Step 42: TypeScript language-server and ts-node variant aliases', () => {
     it('marks typescript and ts-node used through the new aliases only', async () => {
       // `tsserver` ships with `typescript`; `ts-node-cwd`, `ts-node-esm`, `ts-node-script` and
