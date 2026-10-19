@@ -128,6 +128,14 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  *   declares the `markdownlint` library and runs `markdownlint README.md` credits the library, not
  *   `markdownlint-cli`. The libraries, their plugins (`remark-parse`, `rehype-stringify`, ...) and the
  *   separate `markdownlint-cli2` package are never inferred from these commands, and nothing is executed.
+ * - `depcruise`, `depcruise-baseline` and `depcruise-fmt` are three published executables of the
+ *   `dependency-cruiser` package (verified against the published `bin` metadata, latest 18.6.0). `depcruise` is the
+ *   primary shorthand; the other two are the baseline and formatting helper binaries. The bare
+ *   `depcruise` name is also published as a defensive placeholder package (1.0.0, no bin) whose only
+ *   purpose is to prevent dependency confusion, so it is collision-sensitive and keeps exact-name
+ *   precedence, while `depcruise-baseline` and `depcruise-fmt` are not published under their own names
+ *   and simply credit `dependency-cruiser`. None of the three runs a real dependency-cruiser report and
+ *   no config is evaluated.
  * - `tsserver` is the language-server executable shipped by the `typescript` package next to `tsc`
  *   (verified for the published 4.x/5.x/6.x line; the 7.x package no longer lists this bin, which is
  *   irrelevant here because no version resolution is performed and `typescript` is the only provider of
@@ -195,6 +203,9 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['markdownlint', 'markdownlint-cli'],
   ['remark', 'remark-cli'],
   ['rehype', 'rehype-cli'],
+  ['depcruise', 'dependency-cruiser'],
+  ['depcruise-baseline', 'dependency-cruiser'],
+  ['depcruise-fmt', 'dependency-cruiser'],
 ]);
 
 /**
@@ -223,6 +234,7 @@ const COLLISION_SENSITIVE_BINARIES: ReadonlySet<string> = new Set([
   'markdownlint',
   'remark',
   'rehype',
+  'depcruise',
 ]);
 
 /**

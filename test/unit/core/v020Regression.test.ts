@@ -842,4 +842,41 @@ describe('v0.2.0 script-command executable mappings', () => {
       expect(result.missingDependencies).toEqual([]);
     });
   });
+
+  describe('Step 45: dependency-cruiser executable family', () => {
+    it('marks dependency-cruiser used through depcruse, depcruse-baseline and depcruse-fmt', async () => {
+      // The three published binaries of `dependency-cruiser` in command position credit that single
+      // package. The `echo done` half of the `fmt` script only adds incidental text and must not be
+      // what makes the package used.
+      const result = await analyzeProject(fixturePath('dc-clis-command'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('keeps dependency-cruiser unused when the exact-name placeholder also wins', async () => {
+      // `depcruise` is also published as a defensive placeholder (1.0.0, no bin), so it is
+      // collision-sensitive: when the exact-name `depcruise` is declared it absorbs the script
+      // evidence and the real CLI package (`dependency-cruiser`) stays unused. The non-collision
+      // aliases (`depcruise-baseline`, `depcruise-fmt`) are not published under their own names and
+      // would credit `dependency-cruiser`, but here the collision rule keeps precedence for the
+      // shared `depcruise` token.
+      const result = await analyzeProject(fixturePath('dc-clis-collision'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual(['dependency-cruiser']);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('never turns undeclared dependency-cruiser binaries into missing findings', async () => {
+      // The three binaries are invoked but `dependency-cruiser` is not declared, so nothing is used
+      // and nothing becomes a missing finding; `lodash` stays unused.
+      const result = await analyzeProject(fixturePath('dc-clis-undeclared'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
 });
