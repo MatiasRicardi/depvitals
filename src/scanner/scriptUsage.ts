@@ -193,6 +193,20 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  *   package is a real competing provider: `electron-forge` is collision-sensitive and keeps exact-name
  *   precedence, crediting `@electron-forge/cli` only when the `electron-forge` package is absent.
  *   Neither command implies the core `electron` runtime; the apps are never built.
+ * - `firebase`, `netlify` and `cdk` are the Firebase CLI (`firebase-tools`), the Netlify CLI
+ *   (`netlify-cli`) and the AWS CDK toolkit (`aws-cdk`) executables. Verified in the published `bin`
+ *   maps: `firebase-tools@15.34.0` (2026-10-14, unchanged in `firebase-tools@14.25.0`) publishes
+ *   `firebase`, `netlify-cli@27.13.0` (2026-10-16, unchanged in `netlify-cli@17.38.1`) publishes `netlify`
+ *   next to its `ntl` alias, and `aws-cdk@2.1145.0` (2026-10-08, unchanged in `aws-cdk@1.204.0`) publishes
+ *   `cdk`. `cdk` alone needs the collision rule because `cdk@2.1145.0` is the published wrapper of the same
+ *   toolkit (it depends on `aws-cdk@2.1145.0`) and ships the identical executable, so it is registered
+ *   below and keeps exact-name precedence. The `firebase` SDK and the `netlify` client library never
+ *   publish their homonymous executables (`firebase@8.10.1`, `11.10.0` and `13.0.0` publish no bin, and
+ *   `netlify@0.3.3`, `2.4.8`, `8.0.0`, `12.0.0` and `13.0.0` publish none while `netlify@22.0.0`, `23.0.0`
+ *   and `27.13.0` publish only `npxnetlify`), so those two mappings are ordinary and a declared `firebase`
+ *   or `netlify` runtime package is never credited from a CLI command. `aws-cdk-lib@2.273.0` publishes no
+ *   bin at all, so `cdk` never credits the CDK construct library; no cloud project is contacted or
+ *   deployed.
  *
  * Ambiguous providers are deliberately absent from the list. `tailwindcss` is the published executable
  * of `tailwindcss` in v3 and of `@tailwindcss/cli` in v4, `playwright` is published by both `playwright`
@@ -264,6 +278,9 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['vue', '@vue/cli'],
   ['electron-forge', '@electron-forge/cli'],
   ['eas', 'eas-cli'],
+  ['firebase', 'firebase-tools'],
+  ['netlify', 'netlify-cli'],
+  ['cdk', 'aws-cdk'],
 ]);
 
 /**
@@ -272,8 +289,9 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
  * For these, the exact-name package keeps precedence whenever it is declared, so a single command
  * such as `postcss src/index.css -o dist/index.css` never marks both `postcss` and `postcss-cli` as
  * used. Only when the exact-name package is absent may the mapping provide evidence for the declared
- * CLI package. Every other mapped executable keeps the opposite (Category A) precedence described on
- * {@link BINARY_TO_PACKAGE}.
+ * CLI package. A same-named package may also be the wrapper of the very same CLI (`cdk@2.1145.0`); the
+ * rule is unchanged and the declared exact-name package wins. Every other mapped executable keeps the
+ * opposite (Category A) precedence described on {@link BINARY_TO_PACKAGE}.
  */
 const COLLISION_SENSITIVE_BINARIES: ReadonlySet<string> = new Set([
   'postcss',
@@ -306,6 +324,7 @@ const COLLISION_SENSITIVE_BINARIES: ReadonlySet<string> = new Set([
   'tauri',
   'ionic',
   'electron-forge',
+  'cdk',
 ]);
 
 /**
