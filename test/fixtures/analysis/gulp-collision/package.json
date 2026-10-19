@@ -1,0 +1,11 @@
+{
+  "name": "gulp-collision-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "gulp": "4.0.2",
+    "gulp-cli": "2.3.0"
+  },
+  "scripts": {
+    "build": "gulp build"
+  }
+}

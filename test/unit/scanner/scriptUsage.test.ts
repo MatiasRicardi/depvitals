@@ -991,6 +991,14 @@ describe('findPackageScriptUsage', () => {
       ).toEqual(new Set(['typescript']));
     });
 
+    it('keeps mapping precedence even when a same-name tsc package is also declared (Step 26)', () => {
+      // Category A (explicit mapping) wins: with both `typescript` and a hypothetical `tsc` declared,
+      // the `tsc` executable marks only `typescript` used, never the same-name package.
+      expect(
+        findPackageScriptUsage({ build: 'tsc -p tsconfig.json' }, new Set(['typescript', 'tsc'])),
+      ).toEqual(new Set(['typescript']));
+    });
+
     it('leaves unrelated declared dependencies unused when tsc is the command', () => {
       expect(
         findPackageScriptUsage(
