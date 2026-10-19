@@ -1,0 +1,8 @@
+{
+  "name": "codegen-undeclared-demo",
+  "version": "0.0.0",
+  "scripts": {
+    "generate": "graphql-codegen --config codegen.yml",
+    "generate:openapi": "openapi-generator-cli generate"
+  }
+}
