@@ -264,10 +264,38 @@ describe('findPackageScriptUsage', () => {
       expect(findPackageScriptUsage({ build: 'tsc' }, new Set(['lodash']))).toEqual(new Set());
     });
 
-    it('does not map `docsify` to `docsify-cli`', () => {
+    it('maps a direct docsify executable to the declared docsify-cli package', () => {
+      // Step 24: the explicit `docsify` -> `docsify-cli` mapping resolves the direct executable to
+      // its declared package. Undeclared docsify-cli still yields no evidence.
       expect(
         findPackageScriptUsage({ docs: 'docsify serve docs' }, new Set(['docsify-cli'])),
-      ).toEqual(new Set());
+      ).toEqual(new Set(['docsify-cli']));
+      expect(findPackageScriptUsage({ docs: 'docsify serve docs' }, new Set(['lodash']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('gives script evidence only to the mapped docsify-cli, not a bare docsify', () => {
+      // When both are declared, the `docsify` executable maps to `docsify-cli`; the bare `docsify`
+      // package receives no script evidence and stays unused without independent source/import use.
+      expect(
+        findPackageScriptUsage({ docs: 'docsify serve docs' }, new Set(['docsify', 'docsify-cli'])),
+      ).toEqual(new Set(['docsify-cli']));
+    });
+
+    it('does not mark a bare docsify package as used by the docsify-cli mapping', () => {
+      // A project declaring only `docsify` must not be treated as used just because the executable
+      // `docsify` maps to the unrelated declared package `docsify-cli`.
+      expect(findPackageScriptUsage({ docs: 'docsify serve docs' }, new Set(['docsify']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('does not count `docsify` as an argument of an adjacent command', () => {
+      // `docsify` here is the argument of `eslint`, never a command token, so it is not evidence.
+      expect(findPackageScriptUsage({ lint: 'eslint docsify' }, new Set(['docsify-cli']))).toEqual(
+        new Set(),
+      );
     });
 
     it('does not guess a scoped package bin from its name', () => {

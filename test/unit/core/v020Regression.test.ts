@@ -11,9 +11,9 @@
  *   strings/arguments, undeclared script commands). These assert the current, correct behavior: a
  *   package name that only appears inside a script *argument* or *string* never becomes usage
  *   evidence, and script evidence never creates a missing-dependency finding. They must stay green.
- * - Future positive mappings (`tsc` in command position -> `typescript` used, `docsify serve docs`
- *   -> `docsify-cli` used). These are recorded with `it.todo` so the fixtures are ready to activate
- *   in Steps 23 and 24 without leaving red tests on the default CI suite.
+ * - Active positive mappings (`tsc` in command position -> `typescript` used, `docsify serve docs`
+ *   -> `docsify-cli` used). Enabled in Steps 23 and 24; the fixtures are asserted as positive
+ *   findings while their adjacent negative controls stay green.
  *
  * MAPPING INVARIANT (for Steps 23-24): enabling binary-to-package mappings must never break a
  * negative control added here. Concretely, when command-position mappings are active:
@@ -71,9 +71,26 @@ describe('v0.2.0 script-command executable mappings', () => {
     });
   });
 
-  it.todo(
-    'Step 24: `docsify serve docs` in command position marks declared `docsify-cli` as used (docsify-command)',
-  );
+  describe('Step 24: `docsify serve docs` in command position marks declared `docsify-cli` as used', () => {
+    it('does not report docsify-cli as unused when docs runs docsify', async () => {
+      const result = await analyzeProject(fixturePath('docsify-command'));
+
+      // `docsify` is the direct executable, so the mapped `docsify-cli` package is used and no longer
+      // reported as unused. Script evidence never creates a missing finding.
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('never reports a missing finding for undeclared docsify-cli from a docsify script', async () => {
+      const result = await analyzeProject(fixturePath('docsify-undeclared'));
+
+      // The mapped candidate `docsify-cli` is not declared, so it is dropped, not reported as missing.
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
 
   describe('negative controls that must stay green now', () => {
     it('does not treat `echo tsc` as TypeScript usage evidence', async () => {

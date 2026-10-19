@@ -78,15 +78,23 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  * Explicit static executable -> declared-package mappings for supported direct command positions.
  *
  * A shell command position carries binaries and file paths, not package names, so this list is
- * strictly opt-in: each executable here is known to provide exactly the mapped package. `tsc` is the
- * compiler front-end of the `typescript` package; the deprecated standalone `tsc` npm package is
- * intentionally NOT treated as providing the TypeScript compiler. Only lowercase `tsc` maps; runner
- * forms such as `npx tsc` keep their own (unmapped) semantics for now.
+ * strictly opt-in: each executable here is known to provide exactly the mapped package.
+ * - `tsc` is the compiler front-end of the `typescript` package; the deprecated standalone `tsc`
+ *   npm package is intentionally NOT treated as providing the TypeScript compiler.
+ * - `docsify` is the executable provided by the `docsify-cli` package.
+ * Only lowercase `tsc` and `docsify` map; runner forms such as `npx tsc` or `npx docsify` keep their
+ * own (unmapped) semantics for now.
  *
  * The mapping is applied after safe command extraction and can only match a package that is actually
- * declared, so it can never create a missing-dependency finding.
+ * declared, so it can never create a missing-dependency finding. When both a bare package name and
+ * its mapped package are declared (for example `docsify` and `docsify-cli`), only the declared
+ * mapped package (`docsify-cli`) receives this evidence; the bare `docsify` package is unaffected
+ * unless independent source or script evidence supports it.
  */
-const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([['tsc', 'typescript']]);
+const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
+  ['tsc', 'typescript'],
+  ['docsify', 'docsify-cli'],
+]);
 
 /**
  * Recognize the declared dependencies that `package.json` scripts clearly reference.
