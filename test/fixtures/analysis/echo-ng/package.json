@@ -1,0 +1,10 @@
+{
+  "name": "echo-ng-control-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "@angular/cli": "17.0.0"
+  },
+  "scripts": {
+    "build": "echo ng"
+  }
+}
