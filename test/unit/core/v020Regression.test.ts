@@ -92,6 +92,85 @@ describe('v0.2.0 script-command executable mappings', () => {
     });
   });
 
+  describe('Step 28: `ng`/`nest` in command position mark the declared CLI package as used', () => {
+    it('does not report @angular/cli as unused when build runs ng', async () => {
+      const result = await analyzeProject(fixturePath('ng-command'));
+
+      // `ng` is the direct executable of the @angular/cli package, so @angular/cli is used and no
+      // longer reported as unused. Script evidence never creates a missing finding.
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('does not report @nestjs/cli as unused when build runs nest', async () => {
+      const result = await analyzeProject(fixturePath('nest-command'));
+
+      // `nest` is the direct executable of the @nestjs/cli package, so @nestjs/cli is used and no
+      // longer reported as unused. Script evidence never creates a missing finding.
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('leaves unrelated declared dependencies unused when build runs ng or nest', async () => {
+      const ngResult = await analyzeProject(fixturePath('ng-with-unrelated'));
+      const nestResult = await analyzeProject(fixturePath('nest-with-unrelated'));
+
+      // Only the mapped CLI package is used; lodash has no evidence and stays unused.
+      expect(ngResult.unusedDependencies).toEqual(['lodash']);
+      expect(ngResult.unusedDevDependencies).toEqual([]);
+      expect(ngResult.missingDependencies).toEqual([]);
+      expect(nestResult.unusedDependencies).toEqual(['lodash']);
+      expect(nestResult.unusedDevDependencies).toEqual([]);
+      expect(nestResult.missingDependencies).toEqual([]);
+    });
+
+    it('never reports a missing finding for undeclared CLI from an ng or nest script', async () => {
+      const ngResult = await analyzeProject(fixturePath('ng-undeclared'));
+      const nestResult = await analyzeProject(fixturePath('nest-undeclared'));
+
+      // The mapped candidates are not declared, so they are dropped, not reported as missing.
+      expect(ngResult.unusedDependencies).toEqual([]);
+      expect(ngResult.unusedDevDependencies).toEqual([]);
+      expect(ngResult.missingDependencies).toEqual([]);
+      expect(nestResult.unusedDependencies).toEqual([]);
+      expect(nestResult.unusedDevDependencies).toEqual([]);
+      expect(nestResult.missingDependencies).toEqual([]);
+    });
+
+    it('does not treat `echo ng`/`echo nest` as CLI usage evidence', async () => {
+      const ngResult = await analyzeProject(fixturePath('echo-ng'));
+      const nestResult = await analyzeProject(fixturePath('echo-nest'));
+
+      // `ng`/`nest` are only the argument of `echo`, never a command position, so the CLI packages
+      // stay unused.
+      expect(ngResult.unusedDevDependencies).toEqual(['@angular/cli']);
+      expect(nestResult.unusedDevDependencies).toEqual(['@nestjs/cli']);
+      expect(ngResult.missingDependencies).toEqual([]);
+      expect(nestResult.missingDependencies).toEqual([]);
+    });
+
+    it('does not treat `node -e "ng"`/`node -e "nest"` as CLI usage evidence', async () => {
+      const ngResult = await analyzeProject(fixturePath('node-e-ng'));
+      const nestResult = await analyzeProject(fixturePath('node-e-nest'));
+
+      expect(ngResult.unusedDevDependencies).toEqual(['@angular/cli']);
+      expect(nestResult.unusedDevDependencies).toEqual(['@nestjs/cli']);
+      expect(ngResult.missingDependencies).toEqual([]);
+      expect(nestResult.missingDependencies).toEqual([]);
+    });
+
+    it('does not fabricate usage for framework runtime dependencies', async () => {
+      // `ng build` maps only to @angular/cli; the declared @angular/core runtime stays unused.
+      const result = await analyzeProject(fixturePath('ng-framework-runtime'));
+
+      expect(result.unusedDependencies).toEqual(['@angular/core']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
+
   describe('negative controls that must stay green now', () => {
     it('does not treat `echo tsc` as TypeScript usage evidence', async () => {
       const result = await analyzeProject(fixturePath('echo-tsc'));

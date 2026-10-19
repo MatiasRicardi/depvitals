@@ -1,0 +1,10 @@
+{
+  "name": "echo-nest-control-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "@nestjs/cli": "10.0.0"
+  },
+  "scripts": {
+    "build": "echo nest"
+  }
+}

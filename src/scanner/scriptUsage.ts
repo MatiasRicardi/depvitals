@@ -10,7 +10,8 @@
  * - execute, expand, substitute, resolve, spawn, source or evaluate anything;
  * - shell-out, read the filesystem or consult `node_modules`;
  * - map arbitrary shell binaries to packages; only the small, explicit `BINARY_TO_PACKAGE` list
- *   (currently `tsc` -> `typescript`) is ever translated, and only against declared packages;
+ *   (currently `tsc` -> `typescript`, `ng` -> `@angular/cli`, `nest` -> `@nestjs/cli`) is ever
+ *   translated, and only against declared packages;
  * - report missing dependencies (undeclared command tokens are ignored);
  * - inspect installed `bin` metadata, config, workspaces or framework detectors.
  *
@@ -21,7 +22,8 @@
  *   name, so paths and package subpaths (`scripts/build.js`, `eslint/bin/cli`) are never usage
  *   evidence for the package they point into;
  * - the small explicit `BINARY_TO_PACKAGE` list translates a recognized direct executable (currently
- *   `tsc` -> `typescript`) to its declared package; every other command keeps exact-name matching.
+ *   `tsc` -> `typescript`, `ng` -> `@angular/cli`, `nest` -> `@nestjs/cli`) to its declared package;
+ *   every other command keeps exact-name matching.
  * - the five documented package-runner forms count (`npx`, `npm exec`, `pnpm exec`, `pnpm dlx`,
  *   `yarn dlx`) with the package in its immediate position;
  * - leading POSIX environment assignments (`NODE_ENV=test`, `FOO=1 BAR=2`) are skipped;
@@ -82,8 +84,10 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  * - `tsc` is the compiler front-end of the `typescript` package; the deprecated standalone `tsc`
  *   npm package is intentionally NOT treated as providing the TypeScript compiler.
  * - `docsify` is the executable provided by the `docsify-cli` package.
- * Only lowercase `tsc` and `docsify` map; runner forms such as `npx tsc` or `npx docsify` keep their
- * own (unmapped) semantics for now.
+ * - `ng` is the executable provided by the `@angular/cli` package.
+ * - `nest` is the executable provided by the `@nestjs/cli` package.
+ * Only these lowercase executables map; runner forms such as `npx tsc`, `npx ng` or `npx nest` keep
+ * their own (unmapped) semantics.
  *
  * The mapping is applied after safe command extraction and can only match a package that is actually
  * declared, so it can never create a missing-dependency finding. When both a bare package name and
@@ -94,6 +98,8 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['tsc', 'typescript'],
   ['docsify', 'docsify-cli'],
+  ['ng', '@angular/cli'],
+  ['nest', '@nestjs/cli'],
 ]);
 
 /**
