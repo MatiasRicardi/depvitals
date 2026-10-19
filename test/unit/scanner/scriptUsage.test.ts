@@ -470,6 +470,86 @@ describe('findPackageScriptUsage', () => {
       );
     });
 
+    it('maps a direct postcss executable to the declared postcss-cli package', () => {
+      // Step 30: with only the CLI package declared, the `postcss` executable resolves to it.
+      expect(
+        findPackageScriptUsage(
+          { build: 'postcss src/index.css -o dist/index.css' },
+          new Set(['postcss-cli']),
+        ),
+      ).toEqual(new Set(['postcss-cli']));
+      expect(
+        findPackageScriptUsage(
+          { build: 'postcss src/index.css -o dist/index.css' },
+          new Set(['lodash']),
+        ),
+      ).toEqual(new Set());
+    });
+
+    it('maps a direct dotenv executable to the declared dotenv-cli package', () => {
+      // Step 30: with only the CLI package declared, the `dotenv` executable resolves to it. The
+      // executable after `--` is never parsed, so no other package gets evidence.
+      expect(
+        findPackageScriptUsage(
+          { start: 'dotenv -e .env -- node index.js' },
+          new Set(['dotenv-cli']),
+        ),
+      ).toEqual(new Set(['dotenv-cli']));
+      expect(
+        findPackageScriptUsage({ start: 'dotenv -e .env -- node index.js' }, new Set(['lodash'])),
+      ).toEqual(new Set());
+    });
+
+    it('keeps exact-name precedence for the collision-sensitive postcss pair', () => {
+      // `postcss` is also a real unrelated package. When both are declared the exact-name package
+      // keeps the evidence and the CLI provider is not auto-suppressed as well.
+      expect(
+        findPackageScriptUsage(
+          { build: 'postcss src/index.css -o dist/index.css' },
+          new Set(['postcss', 'postcss-cli']),
+        ),
+      ).toEqual(new Set(['postcss']));
+    });
+
+    it('keeps exact-name precedence for the collision-sensitive dotenv pair', () => {
+      // Same rule as `postcss`: never two competing providers from one executable.
+      expect(
+        findPackageScriptUsage(
+          { start: 'dotenv -e .env -- node index.js' },
+          new Set(['dotenv', 'dotenv-cli']),
+        ),
+      ).toEqual(new Set(['dotenv']));
+    });
+
+    it('does not parse the executable that dotenv runs after `--`', () => {
+      // `dotenv` is a runner, but this scanner never looks past the command token, so `tsc` after
+      // `--` is not usage evidence for the declared `typescript` package.
+      expect(
+        findPackageScriptUsage(
+          { typecheck: 'dotenv -e .env -- tsc --noEmit' },
+          new Set(['typescript']),
+        ),
+      ).toEqual(new Set());
+    });
+
+    it('does not treat `echo postcss`/`echo dotenv` or adjacent arguments as CLI usage evidence', () => {
+      expect(findPackageScriptUsage({ build: 'echo postcss' }, new Set(['postcss-cli']))).toEqual(
+        new Set(),
+      );
+      expect(findPackageScriptUsage({ start: 'echo dotenv' }, new Set(['dotenv-cli']))).toEqual(
+        new Set(),
+      );
+      expect(findPackageScriptUsage({ lint: 'eslint postcss' }, new Set(['postcss-cli']))).toEqual(
+        new Set(),
+      );
+      expect(
+        findPackageScriptUsage(
+          { probe: 'node -e "console.log(\'dotenv\')"' },
+          new Set(['dotenv-cli']),
+        ),
+      ).toEqual(new Set());
+    });
+
     it('does not map the sibling spack executable or the babel-node alias', () => {
       // `spack` ships with @swc/cli but is deliberately not a candidate, and `babel-node` belongs to
       // `@babel/node`, which has its own verification gate (Step 35). Neither maps here.
