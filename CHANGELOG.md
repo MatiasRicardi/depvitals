@@ -9,6 +9,23 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 No unreleased changes yet.
 
+## [0.1.1] - 2026-10-19
+
+### Fixed
+
+- Declared `typescript` is no longer reported as unused when a supported direct `package.json`
+  script command invokes `tsc`. Script evidence counts only for the matching declared package and
+  never creates a missing finding.
+- Declared `docsify-cli` is no longer reported as unused when a supported direct `package.json`
+  script command invokes `docsify`. Script evidence counts only for the matching declared package
+  and never creates a missing finding.
+
+### Tests
+
+- Added regression coverage for script-command boundaries, shell and runner composition, and
+  mapping collisions. Existing `unused`/`missing` categories and the CLI `0`/`1` exit-status
+  contract are preserved.
+
 ## [0.1.0] - 2026-10-16
 
 ### Added
@@ -53,5 +70,6 @@ No unreleased changes yet.
 - Cross-platform CI foundation.
 
 [Unreleased]: https://github.com/MatiasRicardi/depvitals/commits/main
+[0.1.1]: https://github.com/MatiasRicardi/depvitals/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/MatiasRicardi/depvitals/releases/tag/v0.1.0
 [0.0.1]: https://github.com/MatiasRicardi/depvitals/releases/tag/v0.0.1
