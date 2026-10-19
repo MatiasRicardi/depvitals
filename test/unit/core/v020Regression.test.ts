@@ -28,7 +28,8 @@
  */
 
 import { fileURLToPath } from 'node:url';
-import { join, resolve } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -592,6 +593,52 @@ describe('v0.2.0 script-command executable mappings', () => {
       expect(result.unusedDependencies).toEqual([]);
       expect(result.unusedDevDependencies).toEqual(['webpack-cli']);
       expect(result.missingDependencies).toEqual([]);
+    });
+  });
+
+  describe('Step 37: script boundaries stay read-only and never invent findings', () => {
+    /** Recursively snapshot every file path and content under a project root. */
+    function snapshotProject(root: string): readonly { path: string; content: string }[] {
+      const files: { path: string; content: string }[] = [];
+
+      const walk = (directory: string): void => {
+        for (const entry of readdirSync(directory, { withFileTypes: true })) {
+          const absolute = join(directory, entry.name);
+          if (entry.isDirectory()) {
+            walk(absolute);
+            continue;
+          }
+          files.push({
+            path: relative(root, absolute).split(/[\\/]/).join('/'),
+            content: readFileSync(absolute, 'utf8'),
+          });
+        }
+      };
+
+      walk(root);
+      return files.toSorted((left, right) => left.path.localeCompare(right.path));
+    }
+
+    it('uses declared mapped commands without creating script-derived missing findings', async () => {
+      const result = await analyzeProject(fixturePath('mapped-boundaries'));
+
+      // `tsc` and `docsify serve` credit the declared typescript and docsify-cli. `ng build` and
+      // `eslint .` are undeclared commands and never become missing findings, while the source import
+      // of an undeclared package keeps its original missing behavior.
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual(['zod']);
+    });
+
+    it('does not modify any analyzed project file', async () => {
+      const root = fixturePath('mapped-boundaries');
+      const before = snapshotProject(root);
+
+      expect(before.length).toBeGreaterThan(1);
+
+      await analyzeProject(root);
+
+      expect(snapshotProject(root)).toEqual(before);
     });
   });
 
