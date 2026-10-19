@@ -1,0 +1,11 @@
+{
+  "name": "babel-node-both-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "babel-node": "0.0.1",
+    "@babel/node": "7.22.0"
+  },
+  "scripts": {
+    "start": "babel-node src/server.js"
+  }
+}

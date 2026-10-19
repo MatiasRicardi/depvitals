@@ -518,6 +518,50 @@ describe('v0.2.0 script-command executable mappings', () => {
     });
   });
 
+  describe('Step 35: vue-cli-service and babel-node aliases', () => {
+    it('does not report the declared CLI package as unused when its executable runs', async () => {
+      const vue = await analyzeProject(fixturePath('vue-cli-service-command'));
+      const babel = await analyzeProject(fixturePath('babel-node-command'));
+
+      // The declared CLIs are used; the unrelated lodash dependency keeps its own unused finding.
+      expect(vue.unusedDependencies).toEqual(['lodash']);
+      expect(vue.unusedDevDependencies).toEqual([]);
+      expect(babel.unusedDependencies).toEqual(['lodash']);
+      expect(babel.unusedDevDependencies).toEqual([]);
+      expect(vue.missingDependencies).toEqual([]);
+      expect(babel.missingDependencies).toEqual([]);
+    });
+
+    it('keeps exact-name precedence when the same-name package is also declared', async () => {
+      const vue = await analyzeProject(fixturePath('vue-cli-service-both'));
+      const babel = await analyzeProject(fixturePath('babel-node-both'));
+
+      expect(vue.unusedDevDependencies).toEqual(['@vue/cli-service']);
+      expect(babel.unusedDevDependencies).toEqual(['@babel/node']);
+    });
+
+    it('never infers the matching runtime library from the CLI command', async () => {
+      const vue = await analyzeProject(fixturePath('vue-not-inferred'));
+      const babel = await analyzeProject(fixturePath('babel-core-not-inferred'));
+
+      // `vue` and `@babel/core` receive no evidence from `vue-cli-service` / `babel-node`.
+      expect(vue.unusedDependencies).toEqual(['vue']);
+      expect(vue.unusedDevDependencies).toEqual([]);
+      expect(babel.unusedDependencies).toEqual(['@babel/core']);
+      expect(babel.unusedDevDependencies).toEqual([]);
+    });
+
+    it('does not treat echo mentions as CLI usage evidence', async () => {
+      const vue = await analyzeProject(fixturePath('echo-vue-cli-service'));
+      const babel = await analyzeProject(fixturePath('echo-babel-node'));
+
+      expect(vue.unusedDevDependencies).toEqual(['@vue/cli-service']);
+      expect(babel.unusedDevDependencies).toEqual(['@babel/node']);
+      expect(vue.missingDependencies).toEqual([]);
+      expect(babel.missingDependencies).toEqual([]);
+    });
+  });
+
   describe('negative controls that must stay green now', () => {
     it('does not treat `echo tsc` as TypeScript usage evidence', async () => {
       const result = await analyzeProject(fixturePath('echo-tsc'));
