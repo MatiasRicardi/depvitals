@@ -906,4 +906,38 @@ describe('v0.2.0 script-command executable mappings', () => {
       expect(result.missingDependencies).toEqual([]);
     });
   });
+
+  describe('Step 46: cross-env-shell, lessc, coffee and cake aliases', () => {
+    it('maps cross-env-shell, lessc, coffee and cake to their declared packages', async () => {
+      // The wrapper `cross-env-shell` (with a nested shell string that must not be parsed), the Less
+      // compiler `lessc`, and the CoffeeScript `coffee`/`cake` executables each credit their declared
+      // package. The `echo` halves only add incidental text.
+      const result = await analyzeProject(fixturePath('shell-coffee-command'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('keeps CLI packages unused when every exact-name package also wins', async () => {
+      // All four executable names (`cross-env-shell`, `lessc`, `coffee`, `cake`) are also published as
+      // separate unrelated packages, so all four are collision-sensitive: the declared exact-name
+      // package wins and the real CLI packages (`cross-env`, `less`, `coffeescript`) stay unused.
+      const result = await analyzeProject(fixturePath('shell-coffee-collision'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual(['coffeescript', 'cross-env', 'less']);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('never turns undeclared shell/css/coffee binaries into missing findings', async () => {
+      // None of the four providers is declared, so nothing is used and nothing becomes a missing
+      // finding; `lodash` stays unused and the nested `cross-env-shell` string infers no package.
+      const result = await analyzeProject(fixturePath('shell-coffee-undeclared'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
 });
