@@ -362,6 +362,63 @@ describe('findPackageScriptUsage', () => {
     });
   });
 
+  describe('Step 52: Serverless, Commitizen and Manypkg shortcuts', () => {
+    // `sls` runs the Serverless Framework CLI, `cz` the Commitizen CLI and `manypkg` the monorepo
+    // package-lint CLI.
+    const positives: [string, ReadonlySet<string>, ReadonlySet<string>][] = [
+      ['sls deploy', new Set(['serverless']), new Set(['serverless'])],
+      ['cz', new Set(['commitizen']), new Set(['commitizen'])],
+      ['manypkg check', new Set(['@manypkg/cli']), new Set(['@manypkg/cli'])],
+      [
+        'sls deploy && manypkg check',
+        new Set(['serverless', '@manypkg/cli']),
+        new Set(['serverless', '@manypkg/cli']),
+      ],
+      ['CI=true cz --verify', new Set(['commitizen']), new Set(['commitizen'])],
+      ['"manypkg" fix', new Set(['@manypkg/cli']), new Set(['@manypkg/cli'])],
+    ];
+
+    it.each(positives)(
+      'maps the repo CLI in %p to the declared package',
+      (script, declared, expected) => {
+        expect(findPackageScriptUsage({ release: script }, declared)).toEqual(expected);
+      },
+    );
+
+    // `sls@0.1.0` ships its own `bin/sls`, so exact-name precedence is preserved for that name alone.
+    // `cz@1.8.2` publishes no bin and `manypkg` is not published, so neither same-named candidate nor a
+    // related library absorbs or receives the CLI evidence.
+    const collisions: [string, ReadonlySet<string>, ReadonlySet<string>][] = [
+      ['sls deploy', new Set(['sls']), new Set(['sls'])],
+      ['sls deploy', new Set(['sls', 'serverless']), new Set(['sls'])],
+      ['cz', new Set(['cz']), new Set()],
+      ['cz', new Set(['cz', 'commitizen']), new Set(['commitizen'])],
+      ['cz', new Set(['cz-conventional-changelog']), new Set()],
+      ['manypkg check', new Set(['@manypkg/get-packages']), new Set()],
+    ];
+
+    it.each(collisions)(
+      'keeps repo CLI collision and library precedence for %p',
+      (script, declared, expected) => {
+        expect(findPackageScriptUsage({ release: script }, declared)).toEqual(expected);
+      },
+    );
+
+    const negatives: [string, ReadonlySet<string>][] = [
+      ['echo sls', new Set(['serverless'])],
+      ['echo cz', new Set(['commitizen'])],
+      ['echo manypkg', new Set(['@manypkg/cli'])],
+      ['node scripts/release.js --tool=cz', new Set(['commitizen'])],
+      ['./scripts/sls deploy', new Set(['serverless'])],
+      ['npx sls deploy', new Set(['serverless'])],
+      ['npx cz --verify', new Set(['commitizen'])],
+    ];
+
+    it.each(negatives)('never maps the repo CLI alias in %p', (script, declared) => {
+      expect(findPackageScriptUsage({ release: script }, declared)).toEqual(new Set());
+    });
+  });
+
   describe('no binary-to-package guessing for unverified binaries', () => {
     it('maps a direct tsc executable to the declared typescript package', () => {
       // Step 23: the explicit `tsc` -> `typescript` mapping resolves the direct executable to its
