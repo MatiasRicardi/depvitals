@@ -132,4 +132,37 @@ describe('v0.2.0 script-command executable mappings', () => {
       expect(result.missingDependencies).toEqual([]);
     });
   });
+
+  describe('Step 26: collision-sensitive fixtures before any alias mapping is activated', () => {
+    // These fixtures declare both an exact-name package and its prospective CLI provider, then run
+    // the exact-name command. No Category B mapping is enabled yet, so the exact-name package keeps
+    // its usage evidence and the CLI package stays unused. This only records the current baseline;
+    // each future mapping step must retest the collision with its mapping enabled.
+    const collisionCases = [
+      { fixture: 'gulp-collision', used: 'gulp', unused: 'gulp-cli' },
+      { fixture: 'grunt-collision', used: 'grunt', unused: 'grunt-cli' },
+      { fixture: 'postcss-collision', used: 'postcss', unused: 'postcss-cli' },
+      { fixture: 'dotenv-collision', used: 'dotenv', unused: 'dotenv-cli' },
+    ] as const;
+
+    for (const { fixture, unused } of collisionCases) {
+      it(`${fixture}: exact-name package is used, CLI provider stays unused, no missing`, async () => {
+        const result = await analyzeProject(fixturePath(fixture));
+
+        // Only the exact-name package receives usage evidence; the CLI package has no independent
+        // evidence and remains unused. Script evidence never produces a missing finding.
+        expect(result.unusedDependencies).toEqual([]);
+        expect(result.unusedDevDependencies).toEqual([unused]);
+        expect(result.missingDependencies).toEqual([]);
+      });
+    }
+
+    it('does not map an unknown executable to a guessed package', async () => {
+      const result = await analyzeProject(fixturePath('script-only-undeclared'));
+
+      // `left-pad` is an undeclared executable in command position: no usage evidence and no missing.
+      expect(result.unusedDependencies).toEqual(['left-pad']);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
 });
