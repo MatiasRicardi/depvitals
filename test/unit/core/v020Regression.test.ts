@@ -171,6 +171,80 @@ describe('v0.2.0 script-command executable mappings', () => {
     });
   });
 
+  describe('Step 29: `babel`/`swc` in command position mark the declared CLI package as used', () => {
+    it('does not report @babel/cli as unused when build runs babel', async () => {
+      const result = await analyzeProject(fixturePath('babel-command'));
+
+      // `babel` is the direct executable of the @babel/cli package, so @babel/cli is used and no
+      // longer reported as unused. Script evidence never creates a missing finding.
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('does not report @swc/cli as unused when build runs swc', async () => {
+      const result = await analyzeProject(fixturePath('swc-command'));
+
+      // `swc` is the direct executable of the @swc/cli package, so @swc/cli is used and no longer
+      // reported as unused. Script evidence never creates a missing finding.
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('leaves unrelated declared dependencies unused when build runs babel or swc', async () => {
+      const babelResult = await analyzeProject(fixturePath('babel-with-unrelated'));
+      const swcResult = await analyzeProject(fixturePath('swc-with-unrelated'));
+
+      // Only the mapped CLI package is used; lodash has no evidence and stays unused.
+      expect(babelResult.unusedDependencies).toEqual(['lodash']);
+      expect(babelResult.unusedDevDependencies).toEqual([]);
+      expect(babelResult.missingDependencies).toEqual([]);
+      expect(swcResult.unusedDependencies).toEqual(['lodash']);
+      expect(swcResult.unusedDevDependencies).toEqual([]);
+      expect(swcResult.missingDependencies).toEqual([]);
+    });
+
+    it('never reports a missing finding for undeclared CLI from a babel or swc script', async () => {
+      const babelResult = await analyzeProject(fixturePath('babel-undeclared'));
+      const swcResult = await analyzeProject(fixturePath('swc-undeclared'));
+
+      // The mapped candidates are not declared, so they are dropped, not reported as missing.
+      expect(babelResult.unusedDependencies).toEqual([]);
+      expect(babelResult.unusedDevDependencies).toEqual([]);
+      expect(babelResult.missingDependencies).toEqual([]);
+      expect(swcResult.unusedDependencies).toEqual([]);
+      expect(swcResult.unusedDevDependencies).toEqual([]);
+      expect(swcResult.missingDependencies).toEqual([]);
+    });
+
+    it('does not treat `echo babel`/`echo swc` as CLI usage evidence', async () => {
+      const babelResult = await analyzeProject(fixturePath('echo-babel'));
+      const swcResult = await analyzeProject(fixturePath('echo-swc'));
+
+      // `babel`/`swc` are only the argument of `echo`, never a command position, so the CLI packages
+      // stay unused.
+      expect(babelResult.unusedDevDependencies).toEqual(['@babel/cli']);
+      expect(swcResult.unusedDevDependencies).toEqual(['@swc/cli']);
+      expect(babelResult.missingDependencies).toEqual([]);
+      expect(swcResult.missingDependencies).toEqual([]);
+    });
+
+    it('does not fabricate usage for companion core library packages', async () => {
+      const babelResult = await analyzeProject(fixturePath('babel-core-runtime'));
+      const swcResult = await analyzeProject(fixturePath('swc-core-runtime'));
+
+      // `babel build` maps only to @babel/cli and `swc` only to @swc/cli; the declared companion
+      // core libraries are separate packages and stay unused without their own evidence.
+      expect(babelResult.unusedDependencies).toEqual(['@babel/core']);
+      expect(babelResult.unusedDevDependencies).toEqual([]);
+      expect(babelResult.missingDependencies).toEqual([]);
+      expect(swcResult.unusedDependencies).toEqual(['@swc/core']);
+      expect(swcResult.unusedDevDependencies).toEqual([]);
+      expect(swcResult.missingDependencies).toEqual([]);
+    });
+  });
+
   describe('negative controls that must stay green now', () => {
     it('does not treat `echo tsc` as TypeScript usage evidence', async () => {
       const result = await analyzeProject(fixturePath('echo-tsc'));
