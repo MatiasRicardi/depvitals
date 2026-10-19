@@ -940,4 +940,37 @@ describe('v0.2.0 script-command executable mappings', () => {
       expect(result.missingDependencies).toEqual([]);
     });
   });
+
+  describe('Step 47: uglifyjs and js-beautify binaries', () => {
+    it('maps uglifyjs, css-beautify and html-beautify to their declared packages', async () => {
+      // The minifier `uglifyjs` and two of the three `js-beautify` binaries (`css-beautify`,
+      // `html-beautify`) each credit their declared package when invoked in command position.
+      const result = await analyzeProject(fixturePath('minifier-beautifier-command'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('keeps CLI packages unused when the collision exact-name packages also win', async () => {
+      // `uglifyjs` and `html-beautify` are also published as separate packages, so exact-name wins:
+      // the legacy `uglifyjs` and formatter `html-beautify` packages are used while the real CLI
+      // packages (`uglify-js`, `js-beautify`) stay unused. `css-beautify` is not collision-sensitive.
+      const result = await analyzeProject(fixturePath('minifier-beautifier-collision'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual(['js-beautify', 'uglify-js']);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('never turns undeclared minifier/beautifier binaries into missing findings', async () => {
+      // None of the three providers is declared, so nothing is used and nothing becomes a missing
+      // finding; `lodash` stays unused.
+      const result = await analyzeProject(fixturePath('minifier-beautifier-undeclared'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
 });
