@@ -1,0 +1,11 @@
+{
+  "name": "both-gulp-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "gulp": "5.0.0",
+    "gulp-cli": "3.0.0"
+  },
+  "scripts": {
+    "build": "gulp build"
+  }
+}

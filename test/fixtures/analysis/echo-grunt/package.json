@@ -1,0 +1,10 @@
+{
+  "name": "echo-grunt-control-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "grunt-cli": "1.5.0"
+  },
+  "scripts": {
+    "notes": "echo grunt test"
+  }
+}
