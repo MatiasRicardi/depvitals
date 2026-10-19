@@ -1,0 +1,14 @@
+{
+  "name": "esprima-command-demo",
+  "version": "0.0.0",
+  "dependencies": {
+    "lodash": "4.17.21"
+  },
+  "devDependencies": {
+    "esprima": "4.0.1"
+  },
+  "scripts": {
+    "parse": "esparse file.js",
+    "validate": "esvalidate file.js"
+  }
+}
