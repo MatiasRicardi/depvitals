@@ -915,6 +915,79 @@ describe('findPackageScriptUsage', () => {
     });
   });
 
+  describe('Step 44: Markdown and content quality CLI aliases', () => {
+    const positives: readonly (readonly [string, string, string])[] = [
+      ['markdownlint README.md', 'markdownlint-cli', 'linter in command position'],
+      ['remark . --frail', 'remark-cli', 'CLI with flags'],
+      ['rehype input.html --output out.html', 'rehype-cli', 'CLI with an output flag'],
+      [
+        'tsc -p tsconfig.json && markdownlint README.md',
+        'markdownlint-cli',
+        '&& separated segment',
+      ],
+      ['"remark" .', 'remark-cli', 'quoted command token'],
+      ['CI=true rehype input.html', 'rehype-cli', 'leading environment assignment'],
+    ];
+
+    it.each(positives)('maps %s to %s (%s)', (script, expected) => {
+      expect(findPackageScriptUsage({ docs: script }, new Set([expected]))).toEqual(
+        new Set([expected]),
+      );
+    });
+
+    const negatives: readonly string[] = [
+      'echo markdownlint',
+      'echo remark',
+      'node scripts/run.js --linter=remark',
+      './scripts/rehype input.html',
+      'markdownlint-cli2 .',
+      'remark-stringify .',
+      'npx remark .',
+      'rehype@13 input.html',
+    ];
+
+    it.each(negatives)('rejects %s', (script) => {
+      expect(
+        findPackageScriptUsage(
+          { docs: script },
+          new Set(['markdownlint-cli', 'remark-cli', 'rehype-cli']),
+        ),
+      ).toEqual(new Set());
+    });
+
+    it('keeps exact-name precedence for the markdownlint, remark and rehype libraries', () => {
+      // All three names are published as library packages without a bin, so a declared library wins
+      // and the CLI package stays unused.
+      expect(
+        findPackageScriptUsage(
+          { docs: 'markdownlint README.md' },
+          new Set(['markdownlint', 'markdownlint-cli']),
+        ),
+      ).toEqual(new Set(['markdownlint']));
+      expect(
+        findPackageScriptUsage({ docs: 'remark .' }, new Set(['remark', 'remark-cli'])),
+      ).toEqual(new Set(['remark']));
+      expect(
+        findPackageScriptUsage({ docs: 'rehype input.html' }, new Set(['rehype', 'rehype-cli'])),
+      ).toEqual(new Set(['rehype']));
+    });
+
+    it('never infers remark or rehype libraries and plugins from the CLI command', () => {
+      expect(
+        findPackageScriptUsage(
+          { docs: 'remark .' },
+          new Set(['unified', 'remark-parse', 'remark-stringify']),
+        ),
+      ).toEqual(new Set());
+      expect(
+        findPackageScriptUsage(
+          { docs: 'rehype input.html' },
+          new Set(['rehype-parse', 'rehype-stringify']),
+        ),
+      ).toEqual(new Set());
+    });
+  });
+
   describe('Step 43: Angular compiler-cli and Biome executable aliases', () => {
     const positives: readonly (readonly [string, string])[] = [
       ['ngc -p tsconfig.json', 'compiler CLI in command position'],
