@@ -1079,4 +1079,54 @@ describe('v0.2.0 script-command executable mappings', () => {
       expect(result.missingDependencies).toEqual([]);
     });
   });
+
+  describe('Step 51: cloud and infrastructure CLI aliases', () => {
+    it('maps firebase, netlify and cdk to their declared CLI packages', async () => {
+      // `firebase deploy` credits `firebase-tools`, `netlify deploy` credits `netlify-cli` and `cdk synth`
+      // credits `aws-cdk` when each CLI package is declared and invoked in command position.
+      const result = await analyzeProject(fixturePath('cloud-command'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('credits the cloud CLI packages but keeps the collision exact-name package winning for cdk', async () => {
+      // `firebase` and `netlify` are ordinary mappings because the SDK and the client library publish no
+      // such executable, so `firebase deploy`/`netlify deploy` credit `firebase-tools`/`netlify-cli` while
+      // the same-named runtime packages stay unused. `cdk` is collision-sensitive: `cdk@2.1145.0` ships the
+      // same executable, so the declared `cdk` wins and `aws-cdk` stays unused. `aws-cdk-lib` publishes no
+      // bin at all, so the CDK construct library is never credited by a `cdk` command.
+      const result = await analyzeProject(fixturePath('cloud-collision'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([
+        'aws-cdk',
+        'aws-cdk-lib',
+        'firebase',
+        'netlify',
+      ]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('never credits a declared cloud library from a CLI command', async () => {
+      // Only the CDK construct library, the Firebase SDK and the Netlify client package are declared, so
+      // the three CLI commands provide no usage evidence for them. The undeclared `zod` source import still
+      // produces the only missing finding.
+      const result = await analyzeProject(fixturePath('cloud-libraries'));
+
+      expect(result.unusedDependencies).toEqual(['aws-cdk-lib', 'firebase', 'netlify']);
+      expect(result.missingDependencies).toEqual(['zod']);
+    });
+
+    it('never turns undeclared cloud CLIs into missing findings', async () => {
+      // None of the three CLI packages is declared, so nothing is used and nothing becomes a missing
+      // finding; `lodash` stays unused.
+      const result = await analyzeProject(fixturePath('cloud-undeclared'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
 });

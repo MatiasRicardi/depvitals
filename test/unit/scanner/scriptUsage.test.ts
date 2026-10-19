@@ -307,6 +307,61 @@ describe('findPackageScriptUsage', () => {
     );
   });
 
+  describe('Step 51: cloud and infrastructure CLI aliases', () => {
+    // `firebase` runs the Firebase CLI, `netlify` the Netlify CLI and `cdk` the AWS CDK toolkit.
+    const positives: [string, ReadonlySet<string>, ReadonlySet<string>][] = [
+      ['firebase deploy', new Set(['firebase-tools']), new Set(['firebase-tools'])],
+      ['netlify deploy --prod', new Set(['netlify-cli']), new Set(['netlify-cli'])],
+      ['cdk synth', new Set(['aws-cdk']), new Set(['aws-cdk'])],
+      [
+        'firebase deploy && netlify deploy',
+        new Set(['firebase-tools', 'netlify-cli']),
+        new Set(['firebase-tools', 'netlify-cli']),
+      ],
+      ['CI=true netlify deploy', new Set(['netlify-cli']), new Set(['netlify-cli'])],
+      ['"cdk" --version', new Set(['aws-cdk']), new Set(['aws-cdk'])],
+    ];
+
+    it.each(positives)(
+      'maps the cloud CLI in %p to the declared package',
+      (script, declared, expected) => {
+        expect(findPackageScriptUsage({ deploy: script }, declared)).toEqual(expected);
+      },
+    );
+
+    // `cdk@2.1145.0` is the published wrapper of the same AWS CDK toolkit and ships the identical
+    // executable, so exact-name precedence is preserved and only one provider is credited. The `firebase`
+    // SDK and the `netlify` client library publish no such executable, so a CLI command never credits them.
+    const collisions: [string, ReadonlySet<string>, ReadonlySet<string>][] = [
+      ['cdk synth', new Set(['cdk']), new Set(['cdk'])],
+      ['cdk synth', new Set(['cdk', 'aws-cdk']), new Set(['cdk'])],
+      ['cdk synth', new Set(['aws-cdk-lib']), new Set()],
+      ['firebase deploy', new Set(['firebase', '@firebase/app']), new Set()],
+      ['netlify deploy', new Set(['netlify', '@netlify/functions']), new Set()],
+    ];
+
+    it.each(collisions)(
+      'keeps cloud collision and library precedence for %p',
+      (script, declared, expected) => {
+        expect(findPackageScriptUsage({ deploy: script }, declared)).toEqual(expected);
+      },
+    );
+
+    const negatives: [string, ReadonlySet<string>][] = [
+      ['echo firebase', new Set(['firebase-tools'])],
+      ['echo netlify', new Set(['netlify-cli'])],
+      ['echo cdk', new Set(['aws-cdk'])],
+      ['node scripts/deploy.js --target=cdk', new Set(['aws-cdk'])],
+      ['./scripts/cdk synth', new Set(['aws-cdk'])],
+      ['npx firebase deploy', new Set(['firebase-tools'])],
+      ['npx cdk deploy', new Set(['aws-cdk'])],
+    ];
+
+    it.each(negatives)('never maps the cloud CLI alias in %p', (script, declared) => {
+      expect(findPackageScriptUsage({ deploy: script }, declared)).toEqual(new Set());
+    });
+  });
+
   describe('no binary-to-package guessing for unverified binaries', () => {
     it('maps a direct tsc executable to the declared typescript package', () => {
       // Step 23: the explicit `tsc` -> `typescript` mapping resolves the direct executable to its
