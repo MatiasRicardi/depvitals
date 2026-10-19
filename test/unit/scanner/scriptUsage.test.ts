@@ -419,6 +419,114 @@ describe('findPackageScriptUsage', () => {
     });
   });
 
+  describe('Step 53: dotenvx provider mapping', () => {
+    // `dotenvx` is the published executable of the scoped `@dotenvx/dotenvx` CLI.
+    const positives: [string, ReadonlySet<string>, ReadonlySet<string>][] = [
+      ['dotenvx run -- node app.js', new Set(['@dotenvx/dotenvx']), new Set(['@dotenvx/dotenvx'])],
+      [
+        'dotenvx run -e production -- node app.js',
+        new Set(['@dotenvx/dotenvx']),
+        new Set(['@dotenvx/dotenvx']),
+      ],
+      [
+        'dotenvx exec -- node server.js',
+        new Set(['@dotenvx/dotenvx']),
+        new Set(['@dotenvx/dotenvx']),
+      ],
+      [
+        'NODE_ENV=development dotenvx run -- node app.js',
+        new Set(['@dotenvx/dotenvx']),
+        new Set(['@dotenvx/dotenvx']),
+      ],
+      ['"dotenvx" inject .env.test', new Set(['@dotenvx/dotenvx']), new Set(['@dotenvx/dotenvx'])],
+      [
+        'dotenvx inject .env.test && vitest run',
+        new Set(['@dotenvx/dotenvx', 'vitest']),
+        new Set(['@dotenvx/dotenvx', 'vitest']),
+      ],
+    ];
+
+    it.each(positives)(
+      'maps the dotenvx CLI in %p to the declared package',
+      (script, declared, expected) => {
+        expect(findPackageScriptUsage({ release: script }, declared)).toEqual(expected);
+      },
+    );
+
+    // The bare `dotenvx` name is not published at all (registry 404), so it is not a competing provider and
+    // the mapping keeps the plain precedence: the declared scoped CLI is credited, the same-named manifest
+    // entry is not. `dotenv`/`dotenv-cli` have their own mapping keys, so they never absorb this command.
+    const providers: [string, ReadonlySet<string>, ReadonlySet<string>][] = [
+      [
+        'dotenvx run -- node app.js',
+        new Set(['dotenvx', '@dotenvx/dotenvx']),
+        new Set(['@dotenvx/dotenvx']),
+      ],
+      ['dotenvx run -- node app.js', new Set(['dotenv']), new Set()],
+      ['dotenvx run -- node app.js', new Set(['dotenv-cli']), new Set()],
+      ['dotenvx run -- node app.js', new Set(['dotenv-flow']), new Set()],
+      ['dotenv run -- node app.js', new Set(['@dotenvx/dotenvx']), new Set()],
+    ];
+
+    it.each(providers)(
+      'never credits another dotenv provider for %p',
+      (script, declared, expected) => {
+        expect(findPackageScriptUsage({ release: script }, declared)).toEqual(expected);
+      },
+    );
+
+    const negatives: [string, ReadonlySet<string>][] = [
+      ['echo dotenvx', new Set(['@dotenvx/dotenvx'])],
+      ['node scripts/run.js --loader=dotenvx', new Set(['@dotenvx/dotenvx'])],
+      ['./scripts/dotenvx run -- node app.js', new Set(['@dotenvx/dotenvx'])],
+      ['npx dotenvx run -- node app.js', new Set(['@dotenvx/dotenvx'])],
+      ['dx run -- node app.js', new Set(['@dotenvx/dotenvx'])],
+    ];
+
+    it.each(negatives)('never maps the dotenvx alias in %p', (script, declared) => {
+      expect(findPackageScriptUsage({ release: script }, declared)).toEqual(new Set());
+    });
+  });
+
+  // Hardening for the ambiguous names activated by earlier steps: each one keeps the precedence it was
+  // activated with, so a later mapping can never flip a collision-sensitive name into a double credit.
+  describe('Step 53: ambiguous provider names keep their established precedence', () => {
+    // Collision-sensitive names keep exact-name precedence: one command never credits two providers.
+    const exactNameWins: [string, ReadonlySet<string>, ReadonlySet<string>][] = [
+      ['cap add ios', new Set(['cap', '@capacitor/cli']), new Set(['cap'])],
+      ['coffee -o build -c src', new Set(['coffee', 'coffeescript']), new Set(['coffee'])],
+      ['cake build', new Set(['cake', 'coffeescript']), new Set(['cake'])],
+      ['cdk synth', new Set(['cdk', 'aws-cdk']), new Set(['cdk'])],
+      ['sls deploy', new Set(['sls', 'serverless']), new Set(['sls'])],
+    ];
+
+    it.each(exactNameWins)(
+      '%s keeps the exact-name package winning',
+      (script, declared, expected) => {
+        expect(findPackageScriptUsage({ release: script }, declared)).toEqual(expected);
+      },
+    );
+
+    // Ordinary names keep the mapped provider: the same-named package publishes no such executable.
+    const mappedProviderWins: [string, ReadonlySet<string>, ReadonlySet<string>][] = [
+      ['vue serve', new Set(['vue', '@vue/cli']), new Set(['@vue/cli'])],
+      ['cz', new Set(['cz', 'commitizen']), new Set(['commitizen'])],
+      ['firebase deploy', new Set(['firebase', 'firebase-tools']), new Set(['firebase-tools'])],
+      [
+        'dotenvx run -- node app.js',
+        new Set(['dotenvx', '@dotenvx/dotenvx']),
+        new Set(['@dotenvx/dotenvx']),
+      ],
+    ];
+
+    it.each(mappedProviderWins)(
+      '%s credits only the mapped provider package',
+      (script, declared, expected) => {
+        expect(findPackageScriptUsage({ release: script }, declared)).toEqual(expected);
+      },
+    );
+  });
+
   describe('no binary-to-package guessing for unverified binaries', () => {
     it('maps a direct tsc executable to the declared typescript package', () => {
       // Step 23: the explicit `tsc` -> `typescript` mapping resolves the direct executable to its
