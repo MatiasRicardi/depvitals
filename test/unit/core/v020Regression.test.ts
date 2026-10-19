@@ -803,4 +803,43 @@ describe('v0.2.0 script-command executable mappings', () => {
       expect(result.missingDependencies).toEqual([]);
     });
   });
+
+  describe('Step 44: Markdown and content quality CLI aliases', () => {
+    it('marks markdownlint-cli, remark-cli and rehype-cli used through their commands', async () => {
+      // `markdownlint`, `remark` and `rehype` in command position credit their CLI packages. The
+      // `echo` halves only add incidental text and must not be what makes them used.
+      const result = await analyzeProject(fixturePath('md-clis-command'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('keeps CLI packages unused when the exact-name library also wins', async () => {
+      // `markdownlint`, `remark` and `rehype` are also published as libraries without a bin, so the
+      // collision rule applies: the declared library absorbs the script evidence and its CLI sibling
+      // (`markdownlint-cli`, `remark-cli`, `rehype-cli`) stays unused. Plugins such as `remark-parse`
+      // are never inferred from the CLI command.
+      const result = await analyzeProject(fixturePath('md-clis-libraries'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([
+        'markdownlint-cli',
+        'rehype-cli',
+        'remark-cli',
+        'remark-parse',
+      ]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('never turns undeclared markdown CLIs into missing findings', async () => {
+      // The markdown CLIs are invoked but none of their providers are declared, so nothing is used
+      // and nothing becomes a missing finding; `lodash` stays unused.
+      const result = await analyzeProject(fixturePath('md-clis-undeclared'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
 });

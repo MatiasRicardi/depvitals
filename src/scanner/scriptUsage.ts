@@ -122,6 +122,12 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  *   packages are optional dependencies of that package and are never inferred from the command: only the
  *   declared `@biomejs/biome` receives evidence. `biome` is also an unrelated published package, so it is
  *   collision-sensitive and keeps exact-name precedence. No lint or format run is executed.
+ * - `markdownlint`, `remark` and `rehype` are the executables provided by `markdownlint-cli`,
+ *   `remark-cli` and `rehype-cli`. All three names are also published as unrelated library packages with
+ *   no bin at all, so all three are collision-sensitive and keep exact-name precedence: a project that
+ *   declares the `markdownlint` library and runs `markdownlint README.md` credits the library, not
+ *   `markdownlint-cli`. The libraries, their plugins (`remark-parse`, `rehype-stringify`, ...) and the
+ *   separate `markdownlint-cli2` package are never inferred from these commands, and nothing is executed.
  * - `tsserver` is the language-server executable shipped by the `typescript` package next to `tsc`
  *   (verified for the published 4.x/5.x/6.x line; the 7.x package no longer lists this bin, which is
  *   irrelevant here because no version resolution is performed and `typescript` is the only provider of
@@ -186,6 +192,9 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['ngc', '@angular/compiler-cli'],
   ['ng-xi18n', '@angular/compiler-cli'],
   ['biome', '@biomejs/biome'],
+  ['markdownlint', 'markdownlint-cli'],
+  ['remark', 'remark-cli'],
+  ['rehype', 'rehype-cli'],
 ]);
 
 /**
@@ -211,6 +220,9 @@ const COLLISION_SENSITIVE_BINARIES: ReadonlySet<string> = new Set([
   'ts-node-transpile-only',
   'ngc',
   'biome',
+  'markdownlint',
+  'remark',
+  'rehype',
 ]);
 
 /**
