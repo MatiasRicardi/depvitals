@@ -915,6 +915,87 @@ describe('findPackageScriptUsage', () => {
     });
   });
 
+  describe('Step 42: TypeScript language-server and ts-node executable aliases', () => {
+    it('maps tsserver to the declared typescript package', () => {
+      // `tsserver` ships in the `typescript` package next to `tsc`; the language server is only
+      // recognized as a command token and never started.
+      expect(findPackageScriptUsage({ lsp: 'tsserver --stdio' }, new Set(['typescript']))).toEqual(
+        new Set(['typescript']),
+      );
+      expect(findPackageScriptUsage({ lsp: 'tsserver --stdio' }, new Set(['lodash']))).toEqual(
+        new Set(),
+      );
+    });
+
+    const tsNodeVariants: readonly (readonly [string, string])[] = [
+      ['ts-node-cwd src/main.ts', 'cwd variant in command position'],
+      ['ts-node-esm src/main.ts', 'ESM variant in command position'],
+      ['ts-node-script src/main.ts', 'script variant in command position'],
+      ['ts-node-transpile-only src/main.ts', 'transpile-only variant in command position'],
+      ['tsc -p tsconfig.json && ts-node-esm src/main.ts', '&& separated segment'],
+      ['"ts-node-esm" src/main.ts', 'quoted command token'],
+      ['NODE_ENV=development ts-node-esm src/main.ts', 'leading environment assignment'],
+    ];
+
+    it.each(tsNodeVariants)('maps %s to ts-node (%s)', (script) => {
+      expect(findPackageScriptUsage({ run: script }, new Set(['ts-node']))).toEqual(
+        new Set(['ts-node']),
+      );
+    });
+
+    const negatives: readonly (readonly [string, string])[] = [
+      ['echo tsserver', 'argument of echo'],
+      ['echo ts-node-transpile-only', 'argument of echo'],
+      ['node scripts/run.js --tool=ts-node-esm', 'flag value of another command'],
+      ['./scripts/ts-node-esm', 'path, never a package'],
+      ['npx ts-node-esm src/main.ts', 'runner arguments never use the binary mapping'],
+      ['pnpm exec ts-node-cwd src/main.ts', 'runner arguments never use the binary mapping'],
+      ['tsserver@1 --stdio', 'version suffix is never stripped'],
+    ];
+
+    it.each(negatives)('rejects %s (%s)', (script) => {
+      expect(findPackageScriptUsage({ run: script }, new Set(['ts-node', 'typescript']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('keeps exact-name precedence for the collision-sensitive variant packages', () => {
+      // `ts-node-cwd`, `ts-node-esm`, `ts-node-script` and `ts-node-transpile-only` are each published
+      // as their own packages, so one command never marks both the wrapper and `ts-node` as used.
+      expect(
+        findPackageScriptUsage(
+          { dev: 'ts-node-esm src/main.ts' },
+          new Set(['ts-node', 'ts-node-esm']),
+        ),
+      ).toEqual(new Set(['ts-node-esm']));
+      expect(
+        findPackageScriptUsage(
+          { cwd: 'ts-node-cwd src/main.ts' },
+          new Set(['ts-node', 'ts-node-cwd']),
+        ),
+      ).toEqual(new Set(['ts-node-cwd']));
+      expect(
+        findPackageScriptUsage(
+          { run: 'ts-node-script src/main.ts && ts-node-transpile-only src/main.ts' },
+          new Set(['ts-node', 'ts-node-script', 'ts-node-transpile-only']),
+        ),
+      ).toEqual(new Set(['ts-node-script', 'ts-node-transpile-only']));
+    });
+
+    it('credits ts-node itself only by its exact name, which is not a mapping', () => {
+      expect(findPackageScriptUsage({ dev: 'ts-node src/main.ts' }, new Set(['ts-node']))).toEqual(
+        new Set(['ts-node']),
+      );
+      // A declared `ts-node` is never inferred from a different variant name it does not provide.
+      expect(findPackageScriptUsage({ dev: 'tsx src/main.ts' }, new Set(['ts-node']))).toEqual(
+        new Set(),
+      );
+      expect(
+        findPackageScriptUsage({ dev: 'ts-script src/main.ts' }, new Set(['ts-node'])),
+      ).toEqual(new Set());
+    });
+  });
+
   describe('Step 37: command-boundary matrix for representative mapped binaries', () => {
     // Representative aliases from different steps (`tsc`, `docsify`, `ng`, `babel`, `run-p`) exercised
     // only through the command positions and separators the scanner actually supports.

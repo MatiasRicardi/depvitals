@@ -24,6 +24,7 @@
     "npm-run-all": "1.15.4",
     "postcss-cli": "1.0.6",
     "sequelize-cli": "1.0.3",
+    "ts-node": "1.18.5",
     "typescript": "1.11.5"
   },
   "scripts": {
@@ -49,6 +50,11 @@
     "run-grunt": "grunt --help && echo grunt",
     "run-sequelize": "sequelize --help && echo sequelize",
     "run-vue-cli-service": "vue-cli-service --help && echo vue-cli-service",
-    "run-babel-node": "babel-node --help && echo babel-node"
+    "run-babel-node": "babel-node --help && echo babel-node",
+    "run-tsserver": "tsserver --help && echo tsserver",
+    "run-ts-node-cwd": "ts-node-cwd --help && echo ts-node-cwd",
+    "run-ts-node-esm": "ts-node-esm --help && echo ts-node-esm",
+    "run-ts-node-script": "ts-node-script --help && echo ts-node-script",
+    "run-ts-node-transpile-only": "ts-node-transpile-only --help && echo ts-node-transpile-only"
   }
 }

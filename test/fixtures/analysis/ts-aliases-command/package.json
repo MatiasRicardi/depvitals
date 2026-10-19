@@ -1,0 +1,18 @@
+{
+  "name": "ts-aliases-command-demo",
+  "version": "0.0.0",
+  "dependencies": {
+    "lodash": "4.17.21"
+  },
+  "devDependencies": {
+    "ts-node": "10.9.2",
+    "typescript": "5.4.0"
+  },
+  "scripts": {
+    "language-server": "tsserver --stdio && echo tsserver",
+    "dev": "ts-node-esm src/main.ts",
+    "cwd": "ts-node-cwd src/main.ts && echo ts-node-cwd",
+    "run-script": "ts-node-script src/main.ts",
+    "transpile": "ts-node-transpile-only src/main.ts"
+  }
+}
