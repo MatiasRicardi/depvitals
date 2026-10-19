@@ -21,6 +21,7 @@
     "npm-run-all": "1.15.4",
     "postcss-cli": "1.0.6",
     "sequelize-cli": "1.0.3",
+    "ts-node": "1.18.5",
     "typescript": "1.11.5"
   },
   "scripts": {
@@ -46,6 +47,11 @@
     "echo-grunt": "echo grunt && printf '%s' grunt && node scripts/run.js --tool=grunt",
     "echo-sequelize": "echo sequelize && printf '%s' sequelize && node scripts/run.js --tool=sequelize",
     "echo-vue-cli-service": "echo vue-cli-service && printf '%s' vue-cli-service && node scripts/run.js --tool=vue-cli-service",
-    "echo-babel-node": "echo babel-node && printf '%s' babel-node && node scripts/run.js --tool=babel-node"
+    "echo-babel-node": "echo babel-node && printf '%s' babel-node && node scripts/run.js --tool=babel-node",
+    "echo-tsserver": "echo tsserver && printf '%s' tsserver && node scripts/run.js --tool=tsserver",
+    "echo-ts-node-cwd": "echo ts-node-cwd && printf '%s' ts-node-cwd && node scripts/run.js --tool=ts-node-cwd",
+    "echo-ts-node-esm": "echo ts-node-esm && printf '%s' ts-node-esm && node scripts/run.js --tool=ts-node-esm",
+    "echo-ts-node-script": "echo ts-node-script && printf '%s' ts-node-script && node scripts/run.js --tool=ts-node-script",
+    "echo-ts-node-transpile-only": "echo ts-node-transpile-only && printf '%s' ts-node-transpile-only && node scripts/run.js --tool=ts-node-transpile-only"
   }
 }
