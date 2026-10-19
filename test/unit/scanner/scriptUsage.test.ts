@@ -591,6 +591,81 @@ describe('findPackageScriptUsage', () => {
       ).toEqual(new Set());
     });
 
+    it('maps each verified code-generator alias to the declared @graphql-codegen/cli package', () => {
+      // Step 32: three published executables of the same package each resolve to it individually.
+      expect(
+        findPackageScriptUsage(
+          { generate: 'graphql-codegen --config codegen.yml' },
+          new Set(['@graphql-codegen/cli']),
+        ),
+      ).toEqual(new Set(['@graphql-codegen/cli']));
+      expect(
+        findPackageScriptUsage(
+          { generate: 'gql-gen --config codegen.yml' },
+          new Set(['@graphql-codegen/cli']),
+        ),
+      ).toEqual(new Set(['@graphql-codegen/cli']));
+      expect(
+        findPackageScriptUsage(
+          { generate: 'graphql-code-generator --config codegen.yml' },
+          new Set(['@graphql-codegen/cli']),
+        ),
+      ).toEqual(new Set(['@graphql-codegen/cli']));
+      expect(
+        findPackageScriptUsage(
+          { generate: 'graphql-codegen --config codegen.yml' },
+          new Set(['lodash']),
+        ),
+      ).toEqual(new Set());
+    });
+
+    it('classifies several aliases of one package as a single usage', () => {
+      // Two verified aliases from two different scripts still produce one classification for the one
+      // declared package, never two.
+      expect(
+        findPackageScriptUsage(
+          {
+            'generate:client': 'graphql-codegen --config client.yml',
+            'generate:server': 'gql-gen --config server.yml',
+          },
+          new Set(['@graphql-codegen/cli']),
+        ),
+      ).toEqual(new Set(['@graphql-codegen/cli']));
+    });
+
+    it('maps openapi-generator-cli to the declared @openapitools/openapi-generator-cli package', () => {
+      expect(
+        findPackageScriptUsage(
+          { generate: 'openapi-generator-cli generate' },
+          new Set(['@openapitools/openapi-generator-cli']),
+        ),
+      ).toEqual(new Set(['@openapitools/openapi-generator-cli']));
+      expect(
+        findPackageScriptUsage({ generate: 'openapi-generator-cli generate' }, new Set(['lodash'])),
+      ).toEqual(new Set());
+    });
+
+    it('does not treat echo or node -e mentions as generator usage evidence', () => {
+      expect(
+        findPackageScriptUsage(
+          { notes: 'echo graphql-codegen' },
+          new Set(['@graphql-codegen/cli']),
+        ),
+      ).toEqual(new Set());
+      expect(
+        findPackageScriptUsage(
+          { probe: 'node -e "console.log(\'gql-gen\')"' },
+          new Set(['@graphql-codegen/cli']),
+        ),
+      ).toEqual(new Set());
+      expect(
+        findPackageScriptUsage(
+          { build: 'node scripts/run.js graphql-codegen' },
+          new Set(['@graphql-codegen/cli']),
+        ),
+      ).toEqual(new Set());
+    });
+
     it('does not map the sibling spack executable or the babel-node alias', () => {
       // `spack` ships with @swc/cli but is deliberately not a candidate, and `babel-node` belongs to
       // `@babel/node`, which has its own verification gate (Step 35). Neither maps here.

@@ -95,6 +95,12 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  * - `changeset` (singular only) is the executable provided by the `@changesets/cli` package; the
  *   plural `changesets` is not a published bin and is deliberately not matched.
  * - `commitlint` is the executable provided by the `@commitlint/cli` package.
+ * - `graphql-codegen`, `gql-gen` and `graphql-code-generator` are three published executables of the
+ *   same `@graphql-codegen/cli` package; several commands may map to one package, and the result is
+ *   still a single usage classification. The additional `graphql-codegen-cjs` / `graphql-codegen-esm`
+ *   bins are not candidates and stay unmapped.
+ * - `openapi-generator-cli` is the executable provided by
+ *   `@openapitools/openapi-generator-cli`.
  * Only these lowercase executables map; runner forms such as `npx tsc` keep their own (unmapped)
  * semantics. A CLI executable never stands in for a related library package: `@babel/core` and
  * `@swc/core` are separate declarations and receive no evidence from `babel`/`swc`.
@@ -116,6 +122,10 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['dotenv', 'dotenv-cli'],
   ['changeset', '@changesets/cli'],
   ['commitlint', '@commitlint/cli'],
+  ['graphql-codegen', '@graphql-codegen/cli'],
+  ['gql-gen', '@graphql-codegen/cli'],
+  ['graphql-code-generator', '@graphql-codegen/cli'],
+  ['openapi-generator-cli', '@openapitools/openapi-generator-cli'],
 ]);
 
 /**

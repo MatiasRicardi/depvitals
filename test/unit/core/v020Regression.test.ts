@@ -383,6 +383,55 @@ describe('v0.2.0 script-command executable mappings', () => {
     });
   });
 
+  describe('Step 32: verified code-generator aliases map to one declared package', () => {
+    it('does not report @graphql-codegen/cli as unused for each verified alias', async () => {
+      for (const fixture of ['codegen-command', 'gql-gen-command', 'codegen-generator-command']) {
+        const result = await analyzeProject(fixturePath(fixture));
+
+        expect(result.unusedDependencies).toEqual([]);
+        expect(result.unusedDevDependencies).toEqual([]);
+        expect(result.missingDependencies).toEqual([]);
+      }
+    });
+
+    it('does not report @openapitools/openapi-generator-cli as unused when it runs', async () => {
+      const result = await analyzeProject(fixturePath('openapi-generator-command'));
+
+      // The verified CLI is used; the unrelated lodash dependency keeps its own unused finding.
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('classifies two aliases of the same package as a single used dependency', async () => {
+      const result = await analyzeProject(fixturePath('codegen-two-aliases'));
+
+      // Two scripts using two different aliases produce one classification for the single declared
+      // package; the reported arrays stay duplicate-free.
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('never reports a missing finding for undeclared generators', async () => {
+      const result = await analyzeProject(fixturePath('codegen-undeclared'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('does not treat echo or node -e mentions as generator usage evidence', async () => {
+      const echoResult = await analyzeProject(fixturePath('echo-codegen'));
+      const probeResult = await analyzeProject(fixturePath('node-e-gqlgen'));
+
+      expect(echoResult.unusedDevDependencies).toEqual(['@graphql-codegen/cli']);
+      expect(probeResult.unusedDevDependencies).toEqual(['@graphql-codegen/cli']);
+      expect(echoResult.missingDependencies).toEqual([]);
+      expect(probeResult.missingDependencies).toEqual([]);
+    });
+  });
+
   describe('negative controls that must stay green now', () => {
     it('does not treat `echo tsc` as TypeScript usage evidence', async () => {
       const result = await analyzeProject(fixturePath('echo-tsc'));
