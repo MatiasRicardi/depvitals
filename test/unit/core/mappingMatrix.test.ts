@@ -54,6 +54,11 @@ const PAIRS: readonly (readonly [string, string])[] = [
   ['sequelize', 'sequelize-cli'],
   ['vue-cli-service', '@vue/cli-service'],
   ['babel-node', '@babel/node'],
+  ['tsserver', 'typescript'],
+  ['ts-node-cwd', 'ts-node'],
+  ['ts-node-esm', 'ts-node'],
+  ['ts-node-script', 'ts-node'],
+  ['ts-node-transpile-only', 'ts-node'],
 ];
 
 /** Every mapped package exactly once, sorted. */

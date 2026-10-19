@@ -715,4 +715,35 @@ describe('v0.2.0 script-command executable mappings', () => {
       expect(result.missingDependencies).toEqual([]);
     });
   });
+
+  describe('Step 42: TypeScript language-server and ts-node variant aliases', () => {
+    it('marks typescript and ts-node used through the new aliases only', async () => {
+      // `tsserver` ships with `typescript`; `ts-node-cwd`, `ts-node-esm`, `ts-node-script` and
+      // `ts-node-transpile-only` ship with `ts-node`. Every alias sits in a supported command
+      // position, and the `echo` halves in the same scripts must not be what makes them used.
+      const result = await analyzeProject(fixturePath('ts-aliases-command'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('keeps exact-name precedence when a variant package and ts-node are both declared', async () => {
+      // `ts-node-cwd` and `ts-node-esm` are published under their own names, so the declared
+      // same-name package absorbs the evidence and `ts-node` stays unused.
+      const result = await analyzeProject(fixturePath('ts-aliases-both'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual(['ts-node', 'typescript']);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('never turns undeclared tsserver or ts-node variant commands into missing findings', async () => {
+      const result = await analyzeProject(fixturePath('ts-aliases-undeclared'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
 });
