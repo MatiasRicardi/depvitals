@@ -324,6 +324,65 @@ describe('v0.2.0 script-command executable mappings', () => {
     });
   });
 
+  describe('Step 31: `changeset`/`commitlint` in command position mark the declared CLI package as used', () => {
+    it('does not report @changesets/cli as unused when a script runs changeset', async () => {
+      const result = await analyzeProject(fixturePath('changeset-command'));
+
+      // `changeset version` is a command plus arguments, so the command token maps to @changesets/cli.
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('does not report @commitlint/cli as unused when a script runs commitlint', async () => {
+      const result = await analyzeProject(fixturePath('commitlint-command'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('leaves unrelated declared dependencies unused when changeset or commitlint runs', async () => {
+      const changesetResult = await analyzeProject(fixturePath('changeset-with-unrelated'));
+      const commitlintResult = await analyzeProject(fixturePath('commitlint-with-unrelated'));
+
+      expect(changesetResult.unusedDependencies).toEqual(['lodash']);
+      expect(changesetResult.unusedDevDependencies).toEqual([]);
+      expect(changesetResult.missingDependencies).toEqual([]);
+      expect(commitlintResult.unusedDependencies).toEqual(['lodash']);
+      expect(commitlintResult.unusedDevDependencies).toEqual([]);
+      expect(commitlintResult.missingDependencies).toEqual([]);
+    });
+
+    it('never reports a missing finding for undeclared changesets or commitlint CLI', async () => {
+      const changesetResult = await analyzeProject(fixturePath('changeset-undeclared'));
+      const commitlintResult = await analyzeProject(fixturePath('commitlint-undeclared'));
+
+      expect(changesetResult.unusedDependencies).toEqual([]);
+      expect(changesetResult.unusedDevDependencies).toEqual([]);
+      expect(changesetResult.missingDependencies).toEqual([]);
+      expect(commitlintResult.unusedDependencies).toEqual([]);
+      expect(commitlintResult.unusedDevDependencies).toEqual([]);
+      expect(commitlintResult.missingDependencies).toEqual([]);
+    });
+
+    it('does not treat echo mentions as CLI usage evidence', async () => {
+      const changesetResult = await analyzeProject(fixturePath('echo-changeset'));
+      const commitlintResult = await analyzeProject(fixturePath('echo-commitlint'));
+
+      expect(changesetResult.unusedDevDependencies).toEqual(['@changesets/cli']);
+      expect(commitlintResult.unusedDevDependencies).toEqual(['@commitlint/cli']);
+    });
+
+    it('does not accept the unverified plural changesets spelling', async () => {
+      const result = await analyzeProject(fixturePath('changesets-plural'));
+
+      // The published bin is `changeset` (singular); the plural spelling must leave the CLI unused.
+      expect(result.unusedDevDependencies).toEqual(['@changesets/cli']);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
+
   describe('negative controls that must stay green now', () => {
     it('does not treat `echo tsc` as TypeScript usage evidence', async () => {
       const result = await analyzeProject(fixturePath('echo-tsc'));
