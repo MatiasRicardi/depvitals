@@ -973,4 +973,36 @@ describe('v0.2.0 script-command executable mappings', () => {
       expect(result.missingDependencies).toEqual([]);
     });
   });
+
+  describe('Step 48: esprima auxiliary CLIs', () => {
+    it('maps esparse and esvalidate to the declared esprima package', async () => {
+      // The two auxiliary CLIs of the legacy `esprima` package credit it when declared and invoked in
+      // command position.
+      const result = await analyzeProject(fixturePath('esprima-command'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('keeps esprima unused when the collision exact-name packages also win', async () => {
+      // `esparse` and `esvalidate` are also published as separate packages, so exact-name wins: the
+      // same-named packages are used while the real `esprima` package stays unused.
+      const result = await analyzeProject(fixturePath('esprima-collision'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual(['esprima']);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('never turns undeclared esprima auxiliary CLIs into missing findings', async () => {
+      // Neither provider is declared, so nothing is used and nothing becomes a missing finding; `lodash`
+      // stays unused.
+      const result = await analyzeProject(fixturePath('esprima-undeclared'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
 });
