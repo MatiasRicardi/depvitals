@@ -666,6 +666,60 @@ describe('findPackageScriptUsage', () => {
       ).toEqual(new Set());
     });
 
+    it('maps run-p and run-s to the declared npm-run-all package', () => {
+      // Step 33: both executables ship in `npm-run-all`; each resolves individually.
+      expect(
+        findPackageScriptUsage({ check: 'run-p lint test' }, new Set(['npm-run-all'])),
+      ).toEqual(new Set(['npm-run-all']));
+      expect(
+        findPackageScriptUsage({ build: 'run-s clean build' }, new Set(['npm-run-all'])),
+      ).toEqual(new Set(['npm-run-all']));
+      expect(findPackageScriptUsage({ check: 'run-p lint test' }, new Set(['lodash']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('maps conc to the declared concurrently package and ncu to npm-check-updates', () => {
+      expect(
+        findPackageScriptUsage({ dev: 'conc "vite" "tsc"' }, new Set(['concurrently'])),
+      ).toEqual(new Set(['concurrently']));
+      expect(
+        findPackageScriptUsage({ upgrade: 'ncu --target minor' }, new Set(['npm-check-updates'])),
+      ).toEqual(new Set(['npm-check-updates']));
+      expect(findPackageScriptUsage({ dev: 'conc "vite" "tsc"' }, new Set(['lodash']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('never infers a runner argument as used', () => {
+      // `run-p`/`run-s`/`conc` are recognized as the tool that runs; their arguments (script names or
+      // quoted commands) are never analyzed, so the argument package stays unused.
+      expect(
+        findPackageScriptUsage({ check: 'run-p vite' }, new Set(['npm-run-all', 'vite'])),
+      ).toEqual(new Set(['npm-run-all']));
+      expect(
+        findPackageScriptUsage({ dev: 'conc "vite" "tsc"' }, new Set(['vite', 'typescript'])),
+      ).toEqual(new Set());
+    });
+
+    it('does not treat echo or adjacent-command arguments as runner usage evidence', () => {
+      expect(
+        findPackageScriptUsage({ notes: 'echo run-s build' }, new Set(['npm-run-all'])),
+      ).toEqual(new Set());
+      expect(findPackageScriptUsage({ notes: 'echo ncu' }, new Set(['npm-check-updates']))).toEqual(
+        new Set(),
+      );
+      expect(findPackageScriptUsage({ lint: 'eslint conc' }, new Set(['concurrently']))).toEqual(
+        new Set(),
+      );
+      expect(
+        findPackageScriptUsage(
+          { probe: 'node -e "console.log(\'ncu\')"' },
+          new Set(['npm-check-updates']),
+        ),
+      ).toEqual(new Set());
+    });
+
     it('does not map the sibling spack executable or the babel-node alias', () => {
       // `spack` ships with @swc/cli but is deliberately not a candidate, and `babel-node` belongs to
       // `@babel/node`, which has its own verification gate (Step 35). Neither maps here.

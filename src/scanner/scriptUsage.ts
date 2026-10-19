@@ -101,6 +101,10 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  *   bins are not candidates and stay unmapped.
  * - `openapi-generator-cli` is the executable provided by
  *   `@openapitools/openapi-generator-cli`.
+ * - `run-p` and `run-s` are the executables provided by `npm-run-all`, `conc` by `concurrently`, and
+ *   `ncu` by `npm-check-updates`. These are runners: they are recognized as the tool that runs, never
+ *   followed into their arguments, so `run-p vite` never marks a declared `vite` as used and `conc
+ *   "vite" "tsc"` never marks `vite` or `typescript` as used.
  * Only these lowercase executables map; runner forms such as `npx tsc` keep their own (unmapped)
  * semantics. A CLI executable never stands in for a related library package: `@babel/core` and
  * `@swc/core` are separate declarations and receive no evidence from `babel`/`swc`.
@@ -126,6 +130,10 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['gql-gen', '@graphql-codegen/cli'],
   ['graphql-code-generator', '@graphql-codegen/cli'],
   ['openapi-generator-cli', '@openapitools/openapi-generator-cli'],
+  ['run-p', 'npm-run-all'],
+  ['run-s', 'npm-run-all'],
+  ['conc', 'concurrently'],
+  ['ncu', 'npm-check-updates'],
 ]);
 
 /**
