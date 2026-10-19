@@ -1,0 +1,13 @@
+{
+  "name": "capacitor-undeclared-demo",
+  "version": "0.0.0",
+  "dependencies": {
+    "lodash": "4.17.21"
+  },
+  "scripts": {
+    "app": "cap sync",
+    "cap": "capacitor sync",
+    "desktop": "tauri build",
+    "mobile": "ionic build"
+  }
+}
