@@ -1168,4 +1168,26 @@ describe('v0.2.0 script-command executable mappings', () => {
       expect(result.missingDependencies).toEqual([]);
     });
   });
+
+  describe('Step 53: dotenvx CLI alias', () => {
+    it('maps dotenvx to the declared scoped CLI but never to the dotenv library', async () => {
+      // `dotenvx run -- node app.js` credits `@dotenvx/dotenvx` only. The declared `dotenv` library keeps
+      // its own evidence rules, and `node` after `--` is never a dependency candidate.
+      const result = await analyzeProject(fixturePath('dotenvx-command'));
+
+      expect(result.unusedDependencies).toEqual(['dotenv', 'lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('never turns an undeclared dotenvx into a missing finding', async () => {
+      // The CLI package is not declared, so the command provides no evidence and produces no missing
+      // finding; `lodash` stays unused.
+      const result = await analyzeProject(fixturePath('dotenvx-undeclared'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
 });
