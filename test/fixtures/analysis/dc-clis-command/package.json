@@ -1,0 +1,15 @@
+{
+  "name": "dc-clis-command-demo",
+  "version": "0.0.0",
+  "dependencies": {
+    "lodash": "4.17.21"
+  },
+  "devDependencies": {
+    "dependency-cruiser": "18.6.0"
+  },
+  "scripts": {
+    "check": "depcruise conf/dependency-cruiser.js",
+    "baseline": "depcruise-baseline conf/dependency-cruiser.js",
+    "fmt": "depcruise-fmt -f checkstyle conf/dependency-cruiser.js && echo done"
+  }
+}
