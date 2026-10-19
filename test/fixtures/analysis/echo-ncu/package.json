@@ -1,0 +1,10 @@
+{
+  "name": "echo-ncu-control-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "npm-check-updates": "16.14.0"
+  },
+  "scripts": {
+    "notes": "echo ncu"
+  }
+}
