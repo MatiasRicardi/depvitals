@@ -432,6 +432,57 @@ describe('v0.2.0 script-command executable mappings', () => {
     });
   });
 
+  describe('Step 33: npm-script runner aliases and ncu', () => {
+    it('does not report npm-run-all as unused when run-p or run-s runs', async () => {
+      const parallel = await analyzeProject(fixturePath('run-p-command'));
+      const serial = await analyzeProject(fixturePath('run-s-command'));
+
+      expect(parallel.unusedDependencies).toEqual([]);
+      expect(parallel.unusedDevDependencies).toEqual([]);
+      expect(parallel.missingDependencies).toEqual([]);
+      expect(serial.unusedDependencies).toEqual([]);
+      expect(serial.unusedDevDependencies).toEqual([]);
+      expect(serial.missingDependencies).toEqual([]);
+    });
+
+    it('does not report concurrently as unused when conc runs', async () => {
+      const result = await analyzeProject(fixturePath('conc-command'));
+
+      // `conc "vite" "tsc"` is evidence for concurrently only; the quoted arguments are not analyzed.
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('does not report npm-check-updates as unused when ncu runs', async () => {
+      const result = await analyzeProject(fixturePath('ncu-command'));
+
+      // The declared CLI is used; the unrelated lodash dependency keeps its own unused finding.
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('does not infer a runner script-name argument as used', async () => {
+      const result = await analyzeProject(fixturePath('run-p-arg-vite'));
+
+      // `run-p vite` marks npm-run-all used; `vite` here is only a runner argument, so it stays
+      // unused and no recursive script analysis happens.
+      expect(result.unusedDevDependencies).toEqual(['vite']);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('does not treat echo or adjacent-command arguments as runner usage evidence', async () => {
+      const echoRunAll = await analyzeProject(fixturePath('echo-runp'));
+      const echoNcu = await analyzeProject(fixturePath('echo-ncu'));
+      const lintConc = await analyzeProject(fixturePath('eslint-conc'));
+
+      expect(echoRunAll.unusedDevDependencies).toEqual(['npm-run-all']);
+      expect(echoNcu.unusedDevDependencies).toEqual(['npm-check-updates']);
+      expect(lintConc.unusedDevDependencies).toEqual(['concurrently']);
+    });
+  });
+
   describe('negative controls that must stay green now', () => {
     it('does not treat `echo tsc` as TypeScript usage evidence', async () => {
       const result = await analyzeProject(fixturePath('echo-tsc'));
