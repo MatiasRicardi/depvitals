@@ -115,6 +115,13 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  *   and keep exact-name precedence. Neither command implies the runtime libraries: `vue` and
  *   `@babel/core` receive no evidence from `vue-cli-service` or `babel-node`, and no build or
  *   transpilation is executed.
+ *
+ * Ambiguous providers are deliberately absent from the list. `tailwindcss` is the published executable
+ * of `tailwindcss` in v3 and of `@tailwindcss/cli` in v4, `playwright` is published by both `playwright`
+ * and `@playwright/test`, and `webpack-cli` publishes no `webpack` bin at all. Choosing one provider
+ * statically would invent usage, so those commands only ever credit an exactly declared same-name
+ * package and otherwise produce no evidence.
+ *
  * Only these lowercase executables map; runner forms such as `npx tsc` keep their own (unmapped)
  * semantics. A CLI executable never stands in for a related library package: `@babel/core` and
  * `@swc/core` are separate declarations and receive no evidence from `babel`/`swc`.
