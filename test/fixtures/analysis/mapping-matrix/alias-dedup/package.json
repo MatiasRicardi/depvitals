@@ -1,0 +1,16 @@
+{
+  "name": "mapping-matrix-alias-dedup",
+  "version": "0.0.0",
+  "devDependencies": {
+    "@babel/cli": "1.5.1",
+    "@babel/node": "1.15.6",
+    "@graphql-codegen/cli": "1.4.5",
+    "typescript": "1.11.5"
+  },
+  "scripts": {
+    "generate": "graphql-codegen --config codegen.ts && gql-gen --config codegen.ts && graphql-code-generator --config codegen.ts",
+    "build": "tsc -p tsconfig.json && babel src -d lib",
+    "dev": "babel-node scripts/dev.mjs",
+    "lint": "echo tsc && echo graphql-codegen && echo babel-node && echo 'babel src -d lib'"
+  }
+}
