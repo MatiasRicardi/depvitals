@@ -915,6 +915,100 @@ describe('findPackageScriptUsage', () => {
     });
   });
 
+  describe('Step 37: command-boundary matrix for representative mapped binaries', () => {
+    // Representative aliases from different steps (`tsc`, `docsify`, `ng`, `babel`, `run-p`) exercised
+    // only through the command positions and separators the scanner actually supports.
+    const declared = new Set([
+      '@angular/cli',
+      '@babel/cli',
+      'docsify-cli',
+      'npm-run-all',
+      'typescript',
+      'eslint',
+    ]);
+
+    const positives: readonly [string, string, readonly string[]][] = [
+      ['direct command', 'tsc -p tsconfig.json', ['typescript']],
+      ['direct command', 'docsify serve docs', ['docsify-cli']],
+      ['direct command', 'ng build', ['@angular/cli']],
+      ['direct command', 'babel src -d lib', ['@babel/cli']],
+      ['direct command', 'run-p lint test', ['npm-run-all']],
+      ['&& separator', 'tsc && eslint .', ['eslint', 'typescript']],
+      ['|| separator', 'ng build || ng test', ['@angular/cli']],
+      ['; separator', 'ng build; run-p lint', ['@angular/cli', 'npm-run-all']],
+      ['pipe separator', 'babel src -d lib | tee log', ['@babel/cli']],
+      ['newline separator', 'ng build\nbabel src -d lib', ['@angular/cli', '@babel/cli']],
+      ['quoted command token', '"ng" build', ['@angular/cli']],
+      ['leading environment assignment', 'FOO=1 ng build', ['@angular/cli']],
+    ];
+
+    it.each(positives)('accepts %s: %p', (_label, script, expected) => {
+      expect(findPackageScriptUsage({ run: script }, declared)).toEqual(new Set(expected));
+    });
+
+    const hardNegatives: readonly [string, string][] = [
+      ['echo ng', 'argument of echo'],
+      ['node -e "console.log(\'babel\')"', 'inside a node -e program'],
+      ["printf '%s' run-p", 'argument of printf'],
+      ['./scripts/ng', 'path, never a package'],
+      ['node_modules/.bin/tsc', 'path inside node_modules'],
+      ['node scripts/run.js --tool=babel', 'flag value of another command'],
+      ['TOOL=ng', 'environment assignment only, no command'],
+      ['# ng build', 'comment'],
+      ['echo "$(ng build)"', 'command substitution invalidates the segment'],
+      ['sh -c "ng build"', 'nested shell command is not unwrapped'],
+      ['concurrently "ng serve" "tsc"', 'quoted arguments of another command'],
+      ['cross-env NODE_ENV=production ng build', 'wrapper command is not unwrapped'],
+    ];
+
+    it.each(hardNegatives)('rejects %p (%s)', (script: string) => {
+      expect(findPackageScriptUsage({ run: script }, declared)).toEqual(new Set());
+    });
+
+    it('credits only the real command in a mixed echo segment', () => {
+      // `echo tsc` contributes nothing; the second segment really runs eslint. Only Step 36-style
+      // abstinence would be wrong here: the declared exact-name tool is used.
+      expect(findPackageScriptUsage({ run: 'echo tsc && eslint .' }, declared)).toEqual(
+        new Set(['eslint']),
+      );
+    });
+
+    const unsupportedRunners: readonly [string, string][] = [
+      ['npx ng', 'runner package argument never applies the binary mapping'],
+      ['npm exec ng', 'runner package argument never applies the binary mapping'],
+      ['pnpm exec babel', 'runner package argument never applies the binary mapping'],
+      ['yarn ng build', 'bare yarn exposes no supported package position'],
+      ['npx --no-install ng', 'runner followed by a flag is unsupported'],
+      ['ng@1 build', 'version suffix is never stripped'],
+    ];
+
+    it.each(unsupportedRunners)(
+      'invents nothing for unsupported runner syntax %p (%s)',
+      (script) => {
+        expect(findPackageScriptUsage({ run: script }, declared)).toEqual(new Set());
+      },
+    );
+
+    it('supported runner forms still expose only their exact-name package', () => {
+      // The five supported forms behave exactly as in Step 25 after the catalog grew.
+      expect(findPackageScriptUsage({ run: 'npx eslint .' }, new Set(['eslint']))).toEqual(
+        new Set(['eslint']),
+      );
+      expect(findPackageScriptUsage({ run: 'npm exec eslint' }, new Set(['eslint']))).toEqual(
+        new Set(['eslint']),
+      );
+      expect(findPackageScriptUsage({ run: 'pnpm exec eslint' }, new Set(['eslint']))).toEqual(
+        new Set(['eslint']),
+      );
+      expect(findPackageScriptUsage({ run: 'pnpm dlx create-x' }, new Set(['create-x']))).toEqual(
+        new Set(['create-x']),
+      );
+      expect(findPackageScriptUsage({ run: 'yarn dlx create-x' }, new Set(['create-x']))).toEqual(
+        new Set(['create-x']),
+      );
+    });
+  });
+
   describe('paths do not count', () => {
     it('does not count a package under node_modules/.bin', () => {
       expect(
