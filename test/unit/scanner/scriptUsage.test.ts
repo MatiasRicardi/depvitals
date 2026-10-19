@@ -139,6 +139,36 @@ describe('findPackageScriptUsage', () => {
     });
   });
 
+  describe('shell composition of mapped executables (Step 25)', () => {
+    it('gives evidence to both declared tools across a `&&` separator', () => {
+      // `tsc` maps to `typescript`; `eslint` matches by exact name. Both are command tokens in
+      // separate segments, so both declared packages receive usage evidence.
+      expect(
+        findPackageScriptUsage({ check: 'tsc && eslint .' }, new Set(['typescript', 'eslint'])),
+      ).toEqual(new Set(['eslint', 'typescript']));
+    });
+
+    it('gives evidence to a mapped tool and an exact-name tool across `&&`', () => {
+      expect(
+        findPackageScriptUsage(
+          { check: 'docsify serve docs && eslint .' },
+          new Set(['docsify-cli', 'eslint']),
+        ),
+      ).toEqual(new Set(['docsify-cli', 'eslint']));
+    });
+
+    it('does not treat `echo docsify` as usage even when followed by a real command', () => {
+      // Only the second segment (`eslint`) is a real command token; `docsify` is the argument of
+      // `echo`, so only eslint receives evidence.
+      expect(
+        findPackageScriptUsage(
+          { check: 'echo docsify && eslint .' },
+          new Set(['docsify-cli', 'eslint']),
+        ),
+      ).toEqual(new Set(['eslint']));
+    });
+  });
+
   describe('quoting', () => {
     it('counts a single-quoted command token', () => {
       expect(
@@ -254,6 +284,29 @@ describe('findPackageScriptUsage', () => {
     });
   });
 
+  describe('Step 25: runner recognition vs binary mapping', () => {
+    // Runner recognition (which package position a supported runner exposes) is independent from the
+    // direct executable `BINARY_TO_PACKAGE` mapping. A supported runner still yields its exact-name
+    // package, but the explicit `tsc`/`docsify` translation must NOT be applied to a runner package
+    // argument. Unsupported runner syntax never invents usage evidence.
+    const runnerCases: [string, ReadonlySet<string>, ReadonlySet<string>][] = [
+      // [script, declared, expected]
+      ['npx tsc', new Set(['typescript']), new Set()],
+      ['npx docsify', new Set(['docsify-cli']), new Set()],
+      ['pnpm exec tsc', new Set(['typescript']), new Set()],
+      ['npm exec docsify', new Set(['docsify-cli']), new Set()],
+      ['npx eslint', new Set(['eslint']), new Set(['eslint'])],
+      ['pnpm dlx docsify-cli', new Set(['docsify-cli']), new Set(['docsify-cli'])],
+    ];
+
+    it.each(runnerCases)(
+      'runner form %p recognizes the exact-name package but never applies the binary mapping',
+      (script, declared, expected) => {
+        expect(findPackageScriptUsage({ run: script }, declared)).toEqual(expected);
+      },
+    );
+  });
+
   describe('no binary-to-package guessing for unverified binaries', () => {
     it('maps a direct tsc executable to the declared typescript package', () => {
       // Step 23: the explicit `tsc` -> `typescript` mapping resolves the direct executable to its
@@ -325,6 +378,37 @@ describe('findPackageScriptUsage', () => {
       expect(findPackageScriptUsage({ lint: 'eslinthelper' }, new Set(['eslint']))).toEqual(
         new Set(),
       );
+    });
+  });
+
+  describe('mapped executable quoting and paths (Step 25)', () => {
+    it('counts a double-quoted mapped executable in command position', () => {
+      // Quoting preserves the token, so `"docsify"` is still the command token and maps to
+      // `docsify-cli`.
+      expect(
+        findPackageScriptUsage({ docs: '"docsify" serve docs' }, new Set(['docsify-cli'])),
+      ).toEqual(new Set(['docsify-cli']));
+    });
+
+    it('does not count `echo "tsc"` as usage', () => {
+      expect(findPackageScriptUsage({ docs: 'echo "tsc"' }, new Set(['typescript']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('does not trigger the mapping from a script path', () => {
+      expect(
+        findPackageScriptUsage({ docs: './scripts/docsify serve' }, new Set(['docsify-cli'])),
+      ).toEqual(new Set());
+    });
+
+    it('does not trigger the mapping from a node_modules/.bin path', () => {
+      expect(
+        findPackageScriptUsage(
+          { docs: './node_modules/.bin/docsify serve' },
+          new Set(['docsify-cli']),
+        ),
+      ).toEqual(new Set());
     });
   });
 
