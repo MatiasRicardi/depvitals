@@ -1,0 +1,10 @@
+{
+  "name": "echo-vue-cli-service-control-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "@vue/cli-service": "5.0.0"
+  },
+  "scripts": {
+    "notes": "echo vue-cli-service build"
+  }
+}
