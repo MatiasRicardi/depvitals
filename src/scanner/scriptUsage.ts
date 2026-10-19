@@ -168,6 +168,12 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  *   formatter), so those two are collision-sensitive and keep exact-name precedence, while `css-beautify`
  *   is not published under its own name and simply credits `js-beautify`. The plain `js-beautify`
  *   command keeps its existing exact-name match, and nothing is minified or formatted.
+ * - `esparse` and `esvalidate` are the two auxiliary CLIs provided by the legacy `esprima` package
+ *   (verified in the published 4.0.1 `bin` map). Both names are also published as separate packages
+ *   (`esparse@0.6.11` an older ECMAScript parser, `esvalidate@0.1.3` a validation CLI), so both are
+ *   collision-sensitive and keep exact-name precedence: a project that declares the same-named package
+ *   credits it, and only when that exact-name package is absent does the command credit `esprima`. The
+ *   parser is never run, only recognized as a command token.
  *
  * Ambiguous providers are deliberately absent from the list. `tailwindcss` is the published executable
  * of `tailwindcss` in v3 and of `@tailwindcss/cli` in v4, `playwright` is published by both `playwright`
@@ -230,6 +236,8 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['uglifyjs', 'uglify-js'],
   ['css-beautify', 'js-beautify'],
   ['html-beautify', 'js-beautify'],
+  ['esparse', 'esprima'],
+  ['esvalidate', 'esprima'],
 ]);
 
 /**
@@ -265,6 +273,8 @@ const COLLISION_SENSITIVE_BINARIES: ReadonlySet<string> = new Set([
   'cake',
   'uglifyjs',
   'html-beautify',
+  'esparse',
+  'esvalidate',
 ]);
 
 /**
