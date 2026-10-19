@@ -326,6 +326,63 @@ describe('runCli', () => {
     });
   });
 
+  describe('Step 38: mapping matrix at the CLI boundary', () => {
+    const matrixFixture = (name: string): string => analysisFixture(join('mapping-matrix', name));
+
+    it('exits 1 with only the real findings for the full mapping matrix', async () => {
+      const result = await runCli([matrixFixture('all-used')], OPTIONS);
+
+      // Every mapped CLI tool is used, so only the unrelated unused package and the undeclared
+      // source import are reported. Commands naming undeclared tools add nothing.
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe(
+        'DepVitals\n\nUnused dependencies (1)\n  lodash\n\nMissing dependencies (1)\n  zod\n',
+      );
+      expect(result.stderr).toBe('');
+    });
+
+    it('exits 0 with the clean report when only mapped CLI tools are declared and used', async () => {
+      const result = await runCli([matrixFixture('all-used-clean')], OPTIONS);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe(CLEAN_REPORT);
+      expect(result.stderr).toBe('');
+    });
+
+    it('exits 1 listing every mapped package when executables only appear as arguments', async () => {
+      const result = await runCli([matrixFixture('all-negatives')], OPTIONS);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toContain('Unused devDependencies (20)');
+      expect(result.stdout).toContain('  typescript');
+      expect(result.stdout).not.toContain('Missing dependencies');
+      expect(result.stderr).toBe('');
+    });
+
+    it('keeps the v0.1.0 diagnostic contract for a project path that does not exist', async () => {
+      const result = await runCli(
+        [join(ANALYSIS_FIXTURES, 'mapping-matrix-does-not-exist')],
+        OPTIONS,
+      );
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain('does-not-exist');
+    });
+
+    it('leaves --help and --version semantics untouched by the mapping catalog', async () => {
+      const help = await runCli(['--help'], OPTIONS);
+      const printedVersion = await runCli(['--version'], OPTIONS);
+
+      expect(help.exitCode).toBe(0);
+      expect(help.stdout).toContain('Usage:');
+      expect(help.stdout).toContain('depvitals [project]');
+      expect(printedVersion.exitCode).toBe(0);
+      expect(printedVersion.stdout).toBe(`${version}\n`);
+      expect(printedVersion.stderr).toBe('');
+    });
+  });
+
   describe('stdout/stderr separation', () => {
     it('writes the report to stdout and leaves stderr empty for a finding scan', async () => {
       const result = await runCli([analysisFixture('basic')], OPTIONS);
