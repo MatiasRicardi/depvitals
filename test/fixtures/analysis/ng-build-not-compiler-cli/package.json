@@ -1,0 +1,13 @@
+{
+  "name": "ng-build-not-compiler-cli-demo",
+  "version": "0.0.0",
+  "dependencies": {
+    "lodash": "4.17.21"
+  },
+  "devDependencies": {
+    "@angular/compiler-cli": "22.2.3"
+  },
+  "scripts": {
+    "build": "ng build --configuration production && echo ngc"
+  }
+}

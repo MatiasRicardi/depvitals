@@ -915,6 +915,115 @@ describe('findPackageScriptUsage', () => {
     });
   });
 
+  describe('Step 43: Angular compiler-cli and Biome executable aliases', () => {
+    const positives: readonly (readonly [string, string])[] = [
+      ['ngc -p tsconfig.json', 'compiler CLI in command position'],
+      ['ngc', 'bare command with no arguments'],
+      ['ng-xi18n -p tsconfig.json', 'extraction binary in command position'],
+      ['tsc -p tsconfig.json && ngc -p tsconfig.app.json', '&& separated segment'],
+      ['"ng-xi18n" -p tsconfig.json', 'quoted command token'],
+      ['CI=true ngc -p tsconfig.json', 'leading environment assignment'],
+    ];
+
+    it.each(positives)('maps %s to @angular/compiler-cli (%s)', (script) => {
+      // Only the mapped package is declared here; declaring the colliding `ngc` package instead is
+      // covered separately by the exact-name precedence test below.
+      expect(
+        findPackageScriptUsage(
+          { build: script },
+          new Set(['@angular/compiler-cli', '@angular/cli']),
+        ),
+      ).toEqual(new Set(['@angular/compiler-cli']));
+    });
+
+    it('maps biome to the declared @biomejs/biome package', () => {
+      expect(
+        findPackageScriptUsage({ lint: 'biome check .' }, new Set(['@biomejs/biome'])),
+      ).toEqual(new Set(['@biomejs/biome']));
+      expect(
+        findPackageScriptUsage({ ci: 'biome ci . && echo biome' }, new Set(['@biomejs/biome'])),
+      ).toEqual(new Set(['@biomejs/biome']));
+    });
+
+    const negatives: readonly string[] = [
+      'echo ngc',
+      'echo ng-xi18n',
+      'node scripts/run.js --compiler=ngc',
+      './scripts/ngc -p tsconfig.json',
+      'biome@2 check .',
+      'ngcc -p tsconfig.json',
+      'echo biome ci .',
+    ];
+
+    it.each(negatives)('rejects %s', (script) => {
+      expect(
+        findPackageScriptUsage(
+          { run: script },
+          new Set(['@angular/compiler-cli', '@biomejs/biome', 'ngc', 'biome']),
+        ),
+      ).toEqual(new Set());
+    });
+
+    it('never lets ng imply the Angular compiler-cli', () => {
+      // `ng build` keeps mapping to `@angular/cli` only; the compiler-cli needs its own `ngc` or
+      // `ng-xi18n` command, and one command never credits both Angular CLIs.
+      expect(
+        findPackageScriptUsage({ build: 'ng build' }, new Set(['@angular/compiler-cli'])),
+      ).toEqual(new Set());
+      expect(
+        findPackageScriptUsage(
+          { build: 'ng build' },
+          new Set(['@angular/cli', '@angular/compiler-cli']),
+        ),
+      ).toEqual(new Set(['@angular/cli']));
+      expect(
+        findPackageScriptUsage(
+          { build: 'ngc -p tsconfig.json' },
+          new Set(['ng', '@angular/cli', '@angular/compiler-cli']),
+        ),
+      ).toEqual(new Set(['@angular/compiler-cli']));
+    });
+
+    it('keeps exact-name precedence for the colliding ngc and biome packages', () => {
+      // `ngc@1.0.0` and `biome@0.3.3` are published unrelated packages exposing the same bin names.
+      expect(
+        findPackageScriptUsage(
+          { build: 'ngc -p tsconfig.json' },
+          new Set(['ngc', '@angular/compiler-cli']),
+        ),
+      ).toEqual(new Set(['ngc']));
+      expect(
+        findPackageScriptUsage({ lint: 'biome check .' }, new Set(['biome', '@biomejs/biome'])),
+      ).toEqual(new Set(['biome']));
+    });
+
+    it('never resolves runner arguments through the mapping', () => {
+      // Runner forms credit the literal package name that is declared, never the mapped package.
+      expect(
+        findPackageScriptUsage(
+          { lint: 'npx biome check .' },
+          new Set(['@biomejs/biome', '@angular/compiler-cli']),
+        ),
+      ).toEqual(new Set());
+      expect(
+        findPackageScriptUsage(
+          { build: 'pnpm exec ngc -p tsconfig.json' },
+          new Set(['@angular/compiler-cli']),
+        ),
+      ).toEqual(new Set());
+    });
+
+    it('never infers the Biome platform packages from the biome command', () => {
+      // The platform builds are optional dependencies of `@biomejs/biome` and receive no evidence.
+      expect(
+        findPackageScriptUsage(
+          { lint: 'biome check .' },
+          new Set(['@biomejs/cli-linux-x64', '@biomejs/cli-darwin-arm64']),
+        ),
+      ).toEqual(new Set());
+    });
+  });
+
   describe('Step 42: TypeScript language-server and ts-node executable aliases', () => {
     it('maps tsserver to the declared typescript package', () => {
       // `tsserver` ships in the `typescript` package next to `tsc`; the language server is only

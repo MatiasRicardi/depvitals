@@ -6,8 +6,10 @@
   },
   "devDependencies": {
     "@angular/cli": "1.9.0",
+    "@angular/compiler-cli": "1.13.1",
     "@babel/cli": "1.5.1",
     "@babel/node": "1.15.6",
+    "@biomejs/biome": "1.0.1",
     "@changesets/cli": "1.4.0",
     "@commitlint/cli": "1.11.6",
     "@graphql-codegen/cli": "1.4.5",
@@ -55,6 +57,9 @@
     "run-ts-node-cwd": "ts-node-cwd --help && echo ts-node-cwd",
     "run-ts-node-esm": "ts-node-esm --help && echo ts-node-esm",
     "run-ts-node-script": "ts-node-script --help && echo ts-node-script",
-    "run-ts-node-transpile-only": "ts-node-transpile-only --help && echo ts-node-transpile-only"
+    "run-ts-node-transpile-only": "ts-node-transpile-only --help && echo ts-node-transpile-only",
+    "run-ngc": "ngc --help && echo ngc",
+    "run-ng-xi18n": "ng-xi18n --help && echo ng-xi18n",
+    "run-biome": "biome --help && echo biome"
   }
 }
