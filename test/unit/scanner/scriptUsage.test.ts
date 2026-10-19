@@ -413,6 +413,73 @@ describe('findPackageScriptUsage', () => {
         findPackageScriptUsage({ build: 'ng build' }, new Set(['@angular/core', '@angular/cli'])),
       ).toEqual(new Set(['@angular/cli']));
     });
+
+    it('maps a direct babel executable to the declared @babel/cli package', () => {
+      // Step 29: the explicit `babel` -> `@babel/cli` mapping resolves the direct executable to its
+      // declared package. Undeclared @babel/cli still yields no evidence.
+      expect(
+        findPackageScriptUsage({ build: 'babel src -d dist' }, new Set(['@babel/cli'])),
+      ).toEqual(new Set(['@babel/cli']));
+      expect(findPackageScriptUsage({ build: 'babel src -d dist' }, new Set(['lodash']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('maps a direct swc executable to the declared @swc/cli package', () => {
+      // Step 29: the explicit `swc` -> `@swc/cli` mapping resolves the direct executable to its
+      // declared package. Undeclared @swc/cli still yields no evidence.
+      expect(findPackageScriptUsage({ build: 'swc src -d dist' }, new Set(['@swc/cli']))).toEqual(
+        new Set(['@swc/cli']),
+      );
+      expect(findPackageScriptUsage({ build: 'swc src -d dist' }, new Set(['lodash']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('does not map babel or swc to a companion core library package', () => {
+      // The CLI executable is evidence for the CLI package only; the separately declared core
+      // libraries receive no script evidence.
+      expect(
+        findPackageScriptUsage(
+          { build: 'babel src -d dist' },
+          new Set(['@babel/core', '@babel/cli']),
+        ),
+      ).toEqual(new Set(['@babel/cli']));
+      expect(
+        findPackageScriptUsage({ build: 'swc src -d dist' }, new Set(['@swc/core', '@swc/cli'])),
+      ).toEqual(new Set(['@swc/cli']));
+    });
+
+    it('does not treat `echo babel`/`echo swc` as CLI usage evidence', () => {
+      // `babel`/`swc` are only the argument of `echo`, never a command position.
+      expect(findPackageScriptUsage({ build: 'echo babel' }, new Set(['@babel/cli']))).toEqual(
+        new Set(),
+      );
+      expect(findPackageScriptUsage({ build: 'echo swc' }, new Set(['@swc/cli']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('does not count `babel`/`swc` as an argument of an adjacent command', () => {
+      // Here they are the arguments of `eslint`, never command tokens, so they are not evidence.
+      expect(findPackageScriptUsage({ lint: 'eslint babel' }, new Set(['@babel/cli']))).toEqual(
+        new Set(),
+      );
+      expect(findPackageScriptUsage({ lint: 'eslint swc' }, new Set(['@swc/cli']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('does not map the sibling spack executable or the babel-node alias', () => {
+      // `spack` ships with @swc/cli but is deliberately not a candidate, and `babel-node` belongs to
+      // `@babel/node`, which has its own verification gate (Step 35). Neither maps here.
+      expect(findPackageScriptUsage({ build: 'spack src -o dist' }, new Set(['@swc/cli']))).toEqual(
+        new Set(),
+      );
+      expect(
+        findPackageScriptUsage({ start: 'babel-node src/index.js' }, new Set(['@babel/node'])),
+      ).toEqual(new Set());
+    });
   });
 
   describe('paths do not count', () => {

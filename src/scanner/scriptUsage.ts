@@ -9,9 +9,8 @@
  * It deliberately does not:
  * - execute, expand, substitute, resolve, spawn, source or evaluate anything;
  * - shell-out, read the filesystem or consult `node_modules`;
- * - map arbitrary shell binaries to packages; only the small, explicit `BINARY_TO_PACKAGE` list
- *   (currently `tsc` -> `typescript`, `ng` -> `@angular/cli`, `nest` -> `@nestjs/cli`) is ever
- *   translated, and only against declared packages;
+ * - map arbitrary shell binaries to packages; only the small, explicit `BINARY_TO_PACKAGE` list is
+ *   ever translated, and only against declared packages;
  * - report missing dependencies (undeclared command tokens are ignored);
  * - inspect installed `bin` metadata, config, workspaces or framework detectors.
  *
@@ -21,9 +20,9 @@
  * - a shell segment's first effective command token counts only when that token is exactly a package
  *   name, so paths and package subpaths (`scripts/build.js`, `eslint/bin/cli`) are never usage
  *   evidence for the package they point into;
- * - the small explicit `BINARY_TO_PACKAGE` list translates a recognized direct executable (currently
- *   `tsc` -> `typescript`, `ng` -> `@angular/cli`, `nest` -> `@nestjs/cli`) to its declared package;
- *   every other command keeps exact-name matching.
+ * - the small explicit `BINARY_TO_PACKAGE` list translates a recognized direct executable (for
+ *   example `tsc` -> `typescript`) to its declared package; every other command keeps exact-name
+ *   matching.
  * - the five documented package-runner forms count (`npx`, `npm exec`, `pnpm exec`, `pnpm dlx`,
  *   `yarn dlx`) with the package in its immediate position;
  * - leading POSIX environment assignments (`NODE_ENV=test`, `FOO=1 BAR=2`) are skipped;
@@ -86,8 +85,12 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  * - `docsify` is the executable provided by the `docsify-cli` package.
  * - `ng` is the executable provided by the `@angular/cli` package.
  * - `nest` is the executable provided by the `@nestjs/cli` package.
- * Only these lowercase executables map; runner forms such as `npx tsc`, `npx ng` or `npx nest` keep
- * their own (unmapped) semantics.
+ * - `babel` is the executable provided by the `@babel/cli` package.
+ * - `swc` is one of the executables provided by the `@swc/cli` package; the sibling `spack`
+ *   executable is deliberately not mapped.
+ * Only these lowercase executables map; runner forms such as `npx tsc` keep their own (unmapped)
+ * semantics. A CLI executable never stands in for a related library package: `@babel/core` and
+ * `@swc/core` are separate declarations and receive no evidence from `babel`/`swc`.
  *
  * The mapping is applied after safe command extraction and can only match a package that is actually
  * declared, so it can never create a missing-dependency finding. When both a bare package name and
@@ -100,6 +103,8 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['docsify', 'docsify-cli'],
   ['ng', '@angular/cli'],
   ['nest', '@nestjs/cli'],
+  ['babel', '@babel/cli'],
+  ['swc', '@swc/cli'],
 ]);
 
 /**

@@ -1,0 +1,10 @@
+{
+  "name": "echo-swc-control-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "@swc/cli": "0.4.0"
+  },
+  "scripts": {
+    "build": "echo swc"
+  }
+}
