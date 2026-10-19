@@ -20,10 +20,13 @@
  * - a shell segment's first effective command token counts only when that token is exactly a package
  *   name, so paths and package subpaths (`scripts/build.js`, `eslint/bin/cli`) are never usage
  *   evidence for the package they point into;
- * - the small explicit `BINARY_TO_PACKAGE` list translates a recognized direct executable (for
+ * - the explicit `BINARY_TO_PACKAGE` allowlist translates a recognized direct executable (for
  *   example `tsc` -> `typescript`) to its declared package; every other command keeps exact-name
  *   matching. Collision-sensitive entries keep exact-name precedence instead (see
  *   `COLLISION_SENSITIVE_BINARIES`), so one executable never marks two competing providers as used.
+ * - the catalog is a static allowlist of known executable aliases: every entry was verified against
+ *   the published `bin` metadata of its package before being added. It is not auto-discovery of npm
+ *   `bin` fields and it is not framework support - any other executable keeps exact-name matching;
  * - the five documented package-runner forms count (`npx`, `npm exec`, `pnpm exec`, `pnpm dlx`,
  *   `yarn dlx`) with the package in its immediate position;
  * - leading POSIX environment assignments (`NODE_ENV=test`, `FOO=1 BAR=2`) are skipped;
