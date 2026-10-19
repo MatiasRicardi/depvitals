@@ -1043,4 +1043,40 @@ describe('v0.2.0 script-command executable mappings', () => {
       expect(result.missingDependencies).toEqual([]);
     });
   });
+
+  describe('Step 50: Vue, Electron Forge and Expo EAS CLI aliases', () => {
+    it('maps vue, electron-forge and eas to their declared CLI packages', async () => {
+      // The legacy `vue` CLI executable credits `@vue/cli`, `electron-forge` credits `@electron-forge/cli`,
+      // and `eas` credits `eas-cli` when declared and invoked in command position. None of these
+      // mappings imply a companion package (`vue`, `electron`, or `expo`).
+      const result = await analyzeProject(fixturePath('vue-command'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('credits @vue/cli and eas-cli via vue/eas commands but keeps exact-name and CLI packages unused', async () => {
+      // `vue` and `eas` are not published by the `vue` or `eas` packages, so those commands are ordinary
+      // mappings: `vue create` credits `@vue/cli` and `eas build` credits `eas-cli`. Only `electron-forge`
+      // is collision-sensitive: `electron-forge@5.2.4` publishes the same executable, so the exact-name
+      // package wins when declared and `@electron-forge/cli` stays unused. The never-used framework,
+      // templating, and core runtime packages (`vue`, `eas`) are correctly reported as unused.
+      const result = await analyzeProject(fixturePath('vue-collision'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual(['@electron-forge/cli', 'eas', 'vue']);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('never turns undeclared Vue/Electron/Expo CLIs into missing findings', async () => {
+      // None of the three CLI packages is declared, so nothing is used and nothing becomes a missing
+      // finding; `lodash` stays unused.
+      const result = await analyzeProject(fixturePath('vue-undeclared'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
 });

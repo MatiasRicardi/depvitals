@@ -183,6 +183,16 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  *   the same-named package credits it, and only when that exact-name package is absent does the command
  *   credit `@capacitor/cli`, `@tauri-apps/cli` or `@ionic/cli`. These mappings never imply the
  *   companion runtime packages (`@tauri-apps/api`, `@ionic/core`); the apps are never built.
+ * - `vue` is the legacy Vue CLI executable of `@vue/cli` (5.0.9). `eas` the Expo EAS CLI of
+ *   `eas-cli` (25.2.0). Neither `vue@3.5.44` nor `eas@0.1.0` publishes those executable names, so
+ *   both mappings are ordinary (Category B) and always credit the real CLI package when declared:
+ *   `vue create` credits `@vue/cli` and `eas build` credits `eas-cli`. These mappings never imply
+ *   companion packages (`vue` never implies the framework, `eas` never implies `expo`).
+ * - `electron-forge` is the desktop tooling CLI of `@electron-forge/cli` (8.0.1). Unlike the two
+ *   names above, `electron-forge@5.2.4` does publish an `electron-forge` executable, so the exact-name
+ *   package is a real competing provider: `electron-forge` is collision-sensitive and keeps exact-name
+ *   precedence, crediting `@electron-forge/cli` only when the `electron-forge` package is absent.
+ *   Neither command implies the core `electron` runtime; the apps are never built.
  *
  * Ambiguous providers are deliberately absent from the list. `tailwindcss` is the published executable
  * of `tailwindcss` in v3 and of `@tailwindcss/cli` in v4, `playwright` is published by both `playwright`
@@ -251,6 +261,9 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['capacitor', '@capacitor/cli'],
   ['tauri', '@tauri-apps/cli'],
   ['ionic', '@ionic/cli'],
+  ['vue', '@vue/cli'],
+  ['electron-forge', '@electron-forge/cli'],
+  ['eas', 'eas-cli'],
 ]);
 
 /**
@@ -292,6 +305,7 @@ const COLLISION_SENSITIVE_BINARIES: ReadonlySet<string> = new Set([
   'capacitor',
   'tauri',
   'ionic',
+  'electron-forge',
 ]);
 
 /**
