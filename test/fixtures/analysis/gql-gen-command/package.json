@@ -1,0 +1,10 @@
+{
+  "name": "gql-gen-command-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "@graphql-codegen/cli": "5.0.0"
+  },
+  "scripts": {
+    "generate": "gql-gen --config codegen.yml"
+  }
+}
