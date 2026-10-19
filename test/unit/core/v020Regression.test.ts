@@ -1005,4 +1005,42 @@ describe('v0.2.0 script-command executable mappings', () => {
       expect(result.missingDependencies).toEqual([]);
     });
   });
+
+  describe('Step 49: hybrid/mobile app CLI aliases', () => {
+    it('maps cap, capacitor, tauri and ionic to their declared CLI packages', async () => {
+      // The short `cap` and `capacitor` executables credit `@capacitor/cli`, `tauri` credits
+      // `@tauri-apps/cli`, and `ionic` credits `@ionic/cli` when declared and invoked in command
+      // position. None of these mappings imply companion runtime packages.
+      const result = await analyzeProject(fixturePath('capacitor-command'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('keeps hybrid/mobile CLI packages unused when the collision exact-name packages also win', async () => {
+      // Every executable name (`cap`, `capacitor`, `tauri`, `ionic`) is also published as a separate,
+      // unrelated package, so exact-name wins: the same-named packages are used while the real CLI
+      // packages stay unused.
+      const result = await analyzeProject(fixturePath('capacitor-collision'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([
+        '@capacitor/cli',
+        '@ionic/cli',
+        '@tauri-apps/cli',
+      ]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('never turns undeclared hybrid/mobile CLI aliases into missing findings', async () => {
+      // None of the three CLI packages is declared, so nothing is used and nothing becomes a missing
+      // finding; `lodash` stays unused.
+      const result = await analyzeProject(fixturePath('capacitor-undeclared'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
 });

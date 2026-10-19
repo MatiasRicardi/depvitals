@@ -174,6 +174,15 @@ const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
  *   collision-sensitive and keep exact-name precedence: a project that declares the same-named package
  *   credits it, and only when that exact-name package is absent does the command credit `esprima`. The
  *   parser is never run, only recognized as a command token.
+ * - `cap` and `capacitor` are the two executables provided by the hybrid-app CLI `@capacitor/cli`
+ *   (verified in the published 8.5.3 `bin` map). `tauri` is the desktop-app CLI of `@tauri-apps/cli`
+ *   (2.12.3) and `ionic` the mobile-app CLI of `@ionic/cli` (7.2.1). Every one of these four names is
+ *   also published as a separate, unrelated package (`cap@0.2.1` packet capture, `capacitor@0.5.6`
+ *   an old Flux library, `tauri@0.15.0` a multi-binding toolkit, `ionic@5.4.16` an old framework
+ *   tool), so all four are collision-sensitive and keep exact-name precedence: a project that declares
+ *   the same-named package credits it, and only when that exact-name package is absent does the command
+ *   credit `@capacitor/cli`, `@tauri-apps/cli` or `@ionic/cli`. These mappings never imply the
+ *   companion runtime packages (`@tauri-apps/api`, `@ionic/core`); the apps are never built.
  *
  * Ambiguous providers are deliberately absent from the list. `tailwindcss` is the published executable
  * of `tailwindcss` in v3 and of `@tailwindcss/cli` in v4, `playwright` is published by both `playwright`
@@ -238,6 +247,10 @@ const BINARY_TO_PACKAGE: ReadonlyMap<string, string> = new Map([
   ['html-beautify', 'js-beautify'],
   ['esparse', 'esprima'],
   ['esvalidate', 'esprima'],
+  ['cap', '@capacitor/cli'],
+  ['capacitor', '@capacitor/cli'],
+  ['tauri', '@tauri-apps/cli'],
+  ['ionic', '@ionic/cli'],
 ]);
 
 /**
@@ -275,6 +288,10 @@ const COLLISION_SENSITIVE_BINARIES: ReadonlySet<string> = new Set([
   'html-beautify',
   'esparse',
   'esvalidate',
+  'cap',
+  'capacitor',
+  'tauri',
+  'ionic',
 ]);
 
 /**
