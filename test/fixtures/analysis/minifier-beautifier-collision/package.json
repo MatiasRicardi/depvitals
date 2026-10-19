@@ -1,0 +1,14 @@
+{
+  "name": "minifier-beautifier-collision-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "uglify-js": "3.19.3",
+    "uglifyjs": "2.4.11",
+    "js-beautify": "2.0.3",
+    "html-beautify": "1.0.4"
+  },
+  "scripts": {
+    "min": "uglifyjs input.js",
+    "html": "html-beautify index.html"
+  }
+}
