@@ -1,0 +1,11 @@
+{
+  "name": "playwright-both-providers-demo",
+  "version": "0.0.0",
+  "devDependencies": {
+    "@playwright/test": "1.44.0",
+    "playwright": "1.44.0"
+  },
+  "scripts": {
+    "e2e": "playwright test"
+  }
+}

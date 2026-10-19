@@ -562,6 +562,39 @@ describe('v0.2.0 script-command executable mappings', () => {
     });
   });
 
+  describe('Step 36: ambiguous binary providers stay unclassified', () => {
+    it('credits only the exactly declared same-name package', async () => {
+      const tailwind = await analyzeProject(fixturePath('tailwind-both-providers'));
+      const playwright = await analyzeProject(fixturePath('playwright-both-providers'));
+      const webpack = await analyzeProject(fixturePath('webpack-both-providers'));
+
+      // The sibling provider keeps its own unused finding instead of being marked used speculatively.
+      expect(tailwind.unusedDevDependencies).toEqual(['@tailwindcss/cli']);
+      expect(playwright.unusedDevDependencies).toEqual(['@playwright/test']);
+      expect(webpack.unusedDevDependencies).toEqual(['webpack-cli']);
+    });
+
+    it('abstains when only the unmapped provider package is declared', async () => {
+      const playwright = await analyzeProject(fixturePath('playwright-test-only'));
+      const tailwind = await analyzeProject(fixturePath('tailwind-cli-only'));
+
+      // `playwright test` / `tailwindcss ...` cannot be attributed to a single provider, so the
+      // declared package stays reported unused rather than receiving invented evidence.
+      expect(playwright.unusedDevDependencies).toEqual(['@playwright/test']);
+      expect(tailwind.unusedDevDependencies).toEqual(['@tailwindcss/cli']);
+      expect(playwright.missingDependencies).toEqual([]);
+      expect(tailwind.missingDependencies).toEqual([]);
+    });
+
+    it('infers nothing from the node and pnpm binaries', async () => {
+      const result = await analyzeProject(fixturePath('node-binary'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual(['webpack-cli']);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
+
   describe('negative controls that must stay green now', () => {
     it('does not treat `echo tsc` as TypeScript usage evidence', async () => {
       const result = await analyzeProject(fixturePath('echo-tsc'));
