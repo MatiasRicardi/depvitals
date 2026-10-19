@@ -1129,4 +1129,43 @@ describe('v0.2.0 script-command executable mappings', () => {
       expect(result.missingDependencies).toEqual([]);
     });
   });
+
+  describe('Step 52: Serverless, Commitizen and Manypkg CLI aliases', () => {
+    it('maps sls, cz and manypkg to their declared CLI packages', async () => {
+      // `sls deploy` credits `serverless`, `cz` credits `commitizen` and `manypkg check` credits
+      // `@manypkg/cli` when each CLI package is declared and invoked in command position.
+      const result = await analyzeProject(fixturePath('repo-clis-command'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('credits the repo CLI packages but keeps the collision exact-name package winning for sls', async () => {
+      // `sls@0.1.0` ships its own executable, so the declared `sls` wins and `serverless` stays unused.
+      // `cz` is an ordinary mapping because `cz@1.8.2` publishes no bin, so `cz` credits `commitizen` while
+      // the same-named package stays unused. The Commitizen adapter and the `@manypkg` library publish no
+      // executable and are never credited by these commands.
+      const result = await analyzeProject(fixturePath('repo-clis-collision'));
+
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([
+        '@manypkg/get-packages',
+        'cz',
+        'cz-conventional-changelog',
+        'serverless',
+      ]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('never turns undeclared repo CLIs into missing findings', async () => {
+      // None of the three CLI packages is declared, so nothing is used and nothing becomes a missing
+      // finding; `lodash` stays unused.
+      const result = await analyzeProject(fixturePath('repo-clis-undeclared'));
+
+      expect(result.unusedDependencies).toEqual(['lodash']);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual([]);
+    });
+  });
 });
