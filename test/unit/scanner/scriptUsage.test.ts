@@ -356,6 +356,63 @@ describe('findPackageScriptUsage', () => {
         findPackageScriptUsage({ build: 'vue-cli-service serve' }, new Set(['@vue/cli-service'])),
       ).toEqual(new Set());
     });
+
+    it('maps a direct ng executable to the declared @angular/cli package', () => {
+      // Step 28: the explicit `ng` -> `@angular/cli` mapping resolves the direct executable to its
+      // declared package. Undeclared @angular/cli still yields no evidence.
+      expect(findPackageScriptUsage({ build: 'ng build' }, new Set(['@angular/cli']))).toEqual(
+        new Set(['@angular/cli']),
+      );
+      expect(findPackageScriptUsage({ build: 'ng build' }, new Set(['lodash']))).toEqual(new Set());
+    });
+
+    it('maps a direct nest executable to the declared @nestjs/cli package', () => {
+      // Step 28: the explicit `nest` -> `@nestjs/cli` mapping resolves the direct executable to its
+      // declared package. Undeclared @nestjs/cli still yields no evidence.
+      expect(findPackageScriptUsage({ build: 'nest build' }, new Set(['@nestjs/cli']))).toEqual(
+        new Set(['@nestjs/cli']),
+      );
+      expect(findPackageScriptUsage({ build: 'nest build' }, new Set(['lodash']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('does not treat `echo ng`/`echo nest` as CLI usage evidence', () => {
+      // `ng`/`nest` are only the argument of `echo`, never a command position.
+      expect(findPackageScriptUsage({ build: 'echo ng' }, new Set(['@angular/cli']))).toEqual(
+        new Set(),
+      );
+      expect(findPackageScriptUsage({ build: 'echo nest' }, new Set(['@nestjs/cli']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('does not treat `node -e "ng"` as CLI usage evidence', () => {
+      expect(
+        findPackageScriptUsage(
+          { probe: 'node -e "console.log(\'ng\')"' },
+          new Set(['@angular/cli']),
+        ),
+      ).toEqual(new Set());
+    });
+
+    it('does not count `ng`/`nest` as an argument of an adjacent command', () => {
+      // `ng`/`nest` here are the arguments of `eslint`, never command tokens, so they are not
+      // evidence for the mapped CLI packages.
+      expect(findPackageScriptUsage({ lint: 'eslint ng' }, new Set(['@angular/cli']))).toEqual(
+        new Set(),
+      );
+      expect(findPackageScriptUsage({ lint: 'eslint nest' }, new Set(['@nestjs/cli']))).toEqual(
+        new Set(),
+      );
+    });
+
+    it('does not map ng to a framework runtime package', () => {
+      // `ng build` maps only to @angular/cli, never to the declared @angular/core runtime.
+      expect(
+        findPackageScriptUsage({ build: 'ng build' }, new Set(['@angular/core', '@angular/cli'])),
+      ).toEqual(new Set(['@angular/cli']));
+    });
   });
 
   describe('paths do not count', () => {
