@@ -169,4 +169,18 @@ describe('Step 54: the catalog parsers fail loudly instead of reporting an empty
     expect(() => parseExecutableMappings('\n')).toThrow(/no entries/);
     expect(() => parseCollisionSensitiveBinaries('\n')).toThrow(/no entries/);
   });
+
+  it('rejects an entry it cannot read instead of skipping it', () => {
+    // A double-quoted or reflowed entry must not disappear from the derived matrix while the pinned totals
+    // keep passing.
+    expect(() => parseExecutableMappings("\n  ['a', 'pkg-a'],\n  ['b', 'pkg-b']\n")).toThrow(
+      /Unsupported BINARY_TO_PACKAGE entry/,
+    );
+    expect(() => parseExecutableMappings("\n  ['a', 'pkg-a'],\n  [\"b\", 'pkg-b'],\n")).toThrow(
+      /Unsupported BINARY_TO_PACKAGE entry/,
+    );
+    expect(() => parseCollisionSensitiveBinaries('\n  \'a\',\n  "b",\n')).toThrow(
+      /Unsupported COLLISION_SENSITIVE_BINARIES entry/,
+    );
+  });
 });

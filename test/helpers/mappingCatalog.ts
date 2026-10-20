@@ -7,7 +7,7 @@
  * here from it, nothing is executed, and nothing is written back. The parsers are pure string
  * transformations so they can be exercised directly, independently of the real source file.
  *
- * A parse failure throws instead of returning an empty catalog, so a restructured mapping block fails
+ * A parse failure throws instead of returning a partial catalog, so a restructured mapping block fails
  * loudly rather than silently shrinking the asserted coverage.
  */
 
@@ -59,6 +59,30 @@ function literalBody(source: string, marker: string): string {
   return source.slice(bodyStart, end);
 }
 
+const MAPPING_ENTRY = /^\['([^']*)',\s*'([^']*)'\],$/;
+const COLLISION_ENTRY = /^'([^']+)',$/;
+
+/**
+ * Turn one trimmed literal line into a matched entry, or throw.
+ *
+ * Content these helpers cannot read is rejected instead of skipped: a silently dropped entry would shrink
+ * the derived matrix and let a mapping stay untested while the pinned totals still pass.
+ */
+function requireEntry(
+  line: string,
+  pattern: RegExp,
+  literal: string,
+  expected: string,
+): RegExpExecArray {
+  const entry = pattern.exec(line);
+
+  if (entry === null) {
+    throw new Error(`Unsupported ${literal} entry: ${line} (expected ${expected})`);
+  }
+
+  return entry;
+}
+
 /**
  * Parse the `BINARY_TO_PACKAGE` literal body into `[executable, packageName]` pairs.
  *
@@ -69,11 +93,19 @@ export function parseExecutableMappings(body: string): ExecutableMapping[] {
   const mappings: ExecutableMapping[] = [];
 
   for (const line of body.split('\n')) {
-    const entry = /^\s*\['([^']*)',\s*'([^']*)'\],$/.exec(line);
+    const trimmed = line.trim();
 
-    if (entry?.[1] !== undefined && entry[2] !== undefined) {
-      mappings.push([entry[1], entry[2]]);
+    if (trimmed === '') {
+      continue;
     }
+
+    const entry = requireEntry(
+      trimmed,
+      MAPPING_ENTRY,
+      'BINARY_TO_PACKAGE',
+      "['<executable>', '<package>'],",
+    );
+    mappings.push([entry[1] ?? '', entry[2] ?? '']);
   }
 
   if (mappings.length === 0) {
@@ -90,11 +122,20 @@ export function parseCollisionSensitiveBinaries(body: string): string[] {
   const names: string[] = [];
 
   for (const line of body.split('\n')) {
-    const entry = /^\s*'([^']+)',$/.exec(line);
+    const trimmed = line.trim();
 
-    if (entry?.[1] !== undefined) {
-      names.push(entry[1]);
+    if (trimmed === '') {
+      continue;
     }
+
+    names.push(
+      requireEntry(
+        trimmed,
+        COLLISION_ENTRY,
+        'COLLISION_SENSITIVE_BINARIES',
+        "'<executable>',",
+      )[1] ?? '',
+    );
   }
 
   if (names.length === 0) {
