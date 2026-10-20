@@ -11,14 +11,18 @@
  * - `alias-dedup` resolves several aliases to one package and overlaps script evidence with a source
  *   import, proving findings stay sorted and deduplicated.
  *
- * The alias table below is the catalog under test. If production dropped a mapping its positive case
- * fails; if production ever credited an argument position, a negative case fails.
+ * The alias table below is derived from the production catalog (Step 54) rather than copied by hand,
+ * so it cannot drift into a subset. If production dropped a mapping its positive case fails; if
+ * production ever credited an argument position, a negative case fails. `mappingCatalog.test.ts` proves
+ * that every derived alias has a positive and a negative script in these fixtures.
  */
 
 import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+
+import { readMappingCatalog } from '../../helpers/mappingCatalog.js';
 
 import { analyzeProject, type AnalysisResult } from '../../../src/core/analyzeProject.js';
 
@@ -29,40 +33,8 @@ function fixturePath(name: string): string {
   return resolve(join(FIXTURE_DIR, 'mapping-matrix', name));
 }
 
-/** Activated executable/package pairs, keyed by executable. */
-const PAIRS: readonly (readonly [string, string])[] = [
-  ['tsc', 'typescript'],
-  ['docsify', 'docsify-cli'],
-  ['ng', '@angular/cli'],
-  ['nest', '@nestjs/cli'],
-  ['babel', '@babel/cli'],
-  ['swc', '@swc/cli'],
-  ['postcss', 'postcss-cli'],
-  ['dotenv', 'dotenv-cli'],
-  ['changeset', '@changesets/cli'],
-  ['commitlint', '@commitlint/cli'],
-  ['graphql-codegen', '@graphql-codegen/cli'],
-  ['gql-gen', '@graphql-codegen/cli'],
-  ['graphql-code-generator', '@graphql-codegen/cli'],
-  ['openapi-generator-cli', '@openapitools/openapi-generator-cli'],
-  ['run-p', 'npm-run-all'],
-  ['run-s', 'npm-run-all'],
-  ['conc', 'concurrently'],
-  ['ncu', 'npm-check-updates'],
-  ['gulp', 'gulp-cli'],
-  ['grunt', 'grunt-cli'],
-  ['sequelize', 'sequelize-cli'],
-  ['vue-cli-service', '@vue/cli-service'],
-  ['babel-node', '@babel/node'],
-  ['tsserver', 'typescript'],
-  ['ts-node-cwd', 'ts-node'],
-  ['ts-node-esm', 'ts-node'],
-  ['ts-node-script', 'ts-node'],
-  ['ts-node-transpile-only', 'ts-node'],
-  ['ngc', '@angular/compiler-cli'],
-  ['ng-xi18n', '@angular/compiler-cli'],
-  ['biome', '@biomejs/biome'],
-];
+/** Activated executable/package pairs, read from the production catalog. */
+const PAIRS: readonly (readonly [string, string])[] = readMappingCatalog();
 
 /** Every mapped package exactly once, sorted. */
 const MAPPED_PACKAGES = [...new Set(PAIRS.map(([, packageName]) => packageName))].sort();
