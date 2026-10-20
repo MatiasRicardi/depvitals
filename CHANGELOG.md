@@ -9,6 +9,35 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 No unreleased changes yet.
 
+## [0.1.2] - 2026-10-20
+
+### Added
+
+- Script executable mapping expanded from the two v0.1.1 aliases to a static allowlist of 60 known
+  executable names resolving to 46 declared packages, so a declared dependency invoked through its real
+  CLI executable in a supported direct `package.json` script command is no longer reported as unused.
+  Examples: `tsserver` → `typescript`, `ng` → `@angular/cli`, `ngc` → `@angular/compiler-cli`,
+  `nest` → `@nestjs/cli`, `babel-node` → `@babel/node`, `vue-cli-service` → `@vue/cli-service`,
+  `electron-forge` → `@electron-forge/cli`, `eas` → `eas-cli`, `tauri` → `@tauri-apps/cli`,
+  `depcruise` → `dependency-cruiser`, `ts-node-esm` → `ts-node`, `sls` → `serverless`,
+  `cdk` → `aws-cdk`, `dotenvx` → `@dotenvx/dotenvx`, `cz` → `commitizen`, `manypkg` → `@manypkg/cli`,
+  `markdownlint` → `markdownlint-cli`, `lessc` → `less`, `gulp` → `gulp-cli`, `sequelize` →
+  `sequelize-cli`.
+- 32 of the mapped executables are collision-sensitive: when a package with exactly the same name as the
+  executable is also declared, that same-name package keeps precedence and the mapped provider receives
+  no evidence, so a single command never marks two competing providers as used.
+- Every alias was verified against published `bin` metadata before being added. The catalog remains a
+  fixed allowlist: no `bin` field is auto-discovered, `node_modules` is never inspected, ambiguous
+  provider families (`tailwindcss`, `playwright`, `webpack`) stay unmapped, and script evidence still
+  only suppresses `unused` findings and never creates a `missing` finding.
+
+### Tests
+
+- Added an integrated mapping matrix derived from the production catalog, so all 60 aliases are asserted
+  in both directions at the analyzer boundary, plus fixture lockstep checks, composition fixtures, and
+  tricky-text negatives that must never be credited. The existing `unused`/`missing` categories and the
+  CLI `0`/`1` exit-status contract are preserved.
+
 ## [0.1.1] - 2026-10-19
 
 ### Fixed
@@ -70,6 +99,7 @@ No unreleased changes yet.
 - Cross-platform CI foundation.
 
 [Unreleased]: https://github.com/MatiasRicardi/depvitals/commits/main
+[0.1.2]: https://github.com/MatiasRicardi/depvitals/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/MatiasRicardi/depvitals/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/MatiasRicardi/depvitals/releases/tag/v0.1.0
 [0.0.1]: https://github.com/MatiasRicardi/depvitals/releases/tag/v0.0.1
