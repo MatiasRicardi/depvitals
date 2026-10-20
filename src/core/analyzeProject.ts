@@ -24,20 +24,27 @@
  * once and parsed once. No concurrency pool, cache or index is introduced before a measured need
  * appears.
  *
- * Usage/missing formulas (`usedNames` is the union of source-external package roots and script-used
- * package names; `declaredDependencyNames` is the union of every declared dependency section):
+ * Usage/missing formulas (`usedNames` is the union of source-external package roots, script-used
+ * package names and validated configuration-only package names; `declaredDependencyNames` is the
+ * union of every declared dependency section):
  *
  * ```text
  * sourceUsedNames = external package roots extracted from source files
  * scriptUsedNames = findPackageScriptUsage(scripts, dependencies ∪ devDependencies)
- * usedNames       = sourceUsedNames ∪ scriptUsedNames
+ * configUsedNames = validated configuration-only names handed to the analyzer (empty for now)
+ * usedNames       = sourceUsedNames ∪ scriptUsedNames ∪ configUsedNames
  * unusedDependencies    = dependencies    − usedNames
  * unusedDevDependencies = devDependencies − usedNames
  * missingDependencies   = sourceUsedNames − declaredDependencyNames
  * ```
  *
- * Scripts never generate missing-dependency findings, and peer/optional declarations suppress false
- * missing results through `declaredDependencyNames`.
+ * The evidence sources are deliberately asymmetric:
+ * - source imports and requires may contribute to `missingDependencies`;
+ * - package scripts and validated static tool configuration may only suppress an unused finding and
+ *   can never create a missing finding, because a command or configuration string is not evidence
+ *   that source code references the package.
+ *
+ * Peer/optional declarations suppress false missing results through `declaredDependencyNames`.
  */
 
 import { readFile } from 'node:fs/promises';
@@ -65,6 +72,37 @@ export type AnalysisResult = {
   unusedDevDependencies: readonly string[];
   /** External packages referenced by source but not declared anywhere, sorted alphabetically. */
   missingDependencies: readonly string[];
+};
+
+/**
+ * Internal handoff for package names recognized by a validated static configuration reader.
+ *
+ * This is deliberately not the future public `why` evidence model: it carries no location, kind, or
+ * explanation, and it is never rendered or exposed. A configuration reader hands the package names it
+ * recognized to the analyzer through this set; only {@link analyzeProject} turns them into final
+ * unused/missing categories, so no configuration reader may edit report arrays directly.
+ *
+ * The analyzer validates every entry with {@link classifyPackageSpecifier} before using it, so
+ * arbitrary configuration text can never be treated as a package name. Accepted entries are collapsed
+ * to their package root and deduplicated case-sensitively, matching package-specifier classification
+ * (names are compared case-sensitively throughout DepVitals).
+ *
+ * The set may only suppress unused findings; it is never merged into the source-derived names that
+ * produce missing findings.
+ */
+export type ConfigUsageHints = ReadonlySet<string>;
+
+/**
+ * Optional inputs for {@link analyzeProject}.
+ */
+export type AnalysisOptions = {
+  /**
+   * Validated configuration-only package names, see {@link ConfigUsageHints}.
+   *
+   * Omitted or empty is the default, which is the state of the released product: no configuration
+   * rule is active yet, so the default keeps every report byte-for-byte identical.
+   */
+  readonly configUsedNames?: ConfigUsageHints | undefined;
 };
 
 /**
@@ -101,11 +139,16 @@ export class AnalysisError extends Error {
  * The supplied root is resolved to an absolute path; `process.cwd()` is never changed and the target
  * project is never written to.
  *
+ * @param projectRoot - Directory to analyze.
+ * @param options - Optional {@link ConfigUsageHints}; an omitted or empty set changes nothing.
  * @throws {AnalysisError} when a discovered source file cannot be read or cannot be safely analyzed.
  * @throws {ProjectManifestError} when the manifest is missing, unreadable, invalid or malformed.
  * @throws {SourceFilesError} when the root is missing, is not a directory, or cannot be read.
  */
-export async function analyzeProject(projectRoot: string): Promise<AnalysisResult> {
+export async function analyzeProject(
+  projectRoot: string,
+  options: AnalysisOptions = {},
+): Promise<AnalysisResult> {
   const manifest = await loadProjectManifest(projectRoot);
 
   const sourceFiles = await discoverSourceFiles(manifest.root);
@@ -134,7 +177,11 @@ export async function analyzeProject(projectRoot: string): Promise<AnalysisResul
 
   const scriptUsedNames = findPackageScriptUsage(manifest.scripts, declaredCandidates);
 
-  const usedNames = unionNames([[...sourceUsedNames], [...scriptUsedNames]]);
+  // Configuration evidence never reaches `sourceUsedNames`, which is the only input able to produce
+  // a missing finding; it can only make `usedNames` bigger and therefore suppress unused findings.
+  const configUsedNames = normalizeConfigHints(options.configUsedNames);
+
+  const usedNames = unionNames([[...sourceUsedNames], [...scriptUsedNames], [...configUsedNames]]);
 
   const unusedDependencies = declaredMinus(Object.keys(manifest.dependencies), usedNames);
 
@@ -187,6 +234,34 @@ async function readAndExtract(file: string): Promise<readonly string[]> {
 
     throw error;
   }
+}
+
+/**
+ * Turn the internal configuration handoff into validated package roots.
+ *
+ * The entries come from configuration reading code, not from the trusted analyzer, so each one is
+ * re-validated with the same utility that classifies source specifiers. Builtins, relative or
+ * absolute paths, malformed scoped names, URIs, whitespace and version suffixes are dropped instead
+ * of being trusted as package names. Accepted entries collapse to their package root and are
+ * deduplicated case-sensitively; an omitted set behaves exactly like an empty one.
+ */
+function normalizeConfigHints(hints: ConfigUsageHints | undefined): ReadonlySet<string> {
+  const names = new Set<string>();
+
+  if (hints === undefined) {
+    return names;
+  }
+
+  for (const hint of hints) {
+    const classified = classifyPackageSpecifier(hint);
+
+    if (classified.kind === 'external') {
+      names.add(classified.packageName);
+    }
+  }
+
+  // Rebuilt from sorted names so iteration order never depends on the caller's set insertion order.
+  return new Set<string>([...names].sort(compareNames));
 }
 
 /**
