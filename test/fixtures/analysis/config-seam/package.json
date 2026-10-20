@@ -1,0 +1,16 @@
+{
+  "name": "config-seam-demo",
+  "version": "0.0.0",
+  "dependencies": {
+    "all-sources": "1.0.0",
+    "source-only": "1.0.0",
+    "config-only": "1.0.0",
+    "unused-pkg": "1.0.0"
+  },
+  "devDependencies": {
+    "config-only-dev": "1.0.0"
+  },
+  "scripts": {
+    "build": "all-sources build"
+  }
+}
