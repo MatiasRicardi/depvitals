@@ -40,8 +40,8 @@ describe('project bootstrap', () => {
   });
 
   describe('cli package wiring', () => {
-    it('pins the v0.1.1 release version', () => {
-      expect(manifest).toMatchObject({ version: '0.1.1' });
+    it('pins the v0.1.2 release version', () => {
+      expect(manifest).toMatchObject({ version: '0.1.2' });
     });
 
     it('exposes the depvitals binary pointing to the built CLI', () => {

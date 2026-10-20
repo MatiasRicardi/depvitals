@@ -19,7 +19,7 @@ Run it from a project directory to scan the current directory, or provide a path
 
 **Requirements:** Node.js `>=22.13.0`.
 
-**Version note:** Dependency scanning was introduced in v0.1.0. The earlier v0.0.1 release contains only the initial CLI bootstrap.
+**Version note:** Dependency scanning was introduced in v0.1.0, and v0.1.2 expanded the script executable allowlist. The earlier v0.0.1 release contains only the initial CLI bootstrap.
 
 **Exit status:**
 
@@ -65,6 +65,7 @@ Missing dependencies (1)
 - **Literal dynamic imports:** expressions such as `import("express")`.
 - **Literal CommonJS requires:** expressions such as `require("express")`.
 - **Basic `package.json` script awareness:** a declared dependency invoked by a supported script command counts as used, for example `eslint` in `"lint": "eslint ."`. Script usage can prevent unused findings but does not generate missing-dependency findings.
+- **Known executable names:** since v0.1.2, a static allowlist of 60 known executable commands resolves to 46 declared packages, so a real CLI executable credits the package that declares it, for example `tsserver` → `typescript`, `ng` → `@angular/cli`, `vue-cli-service` → `@vue/cli-service`, `depcruise` → `dependency-cruiser`, `sls` → `serverless`, and `gulp` → `gulp-cli`. Each alias was verified against published `bin` metadata beforehand: nothing is auto-discovered from `bin` fields or from `node_modules`. 32 of them are collision-sensitive, meaning a same-named declared package wins and the mapped provider gets no evidence.
 - **Node.js builtins:** built-in modules, with or without the `node:` prefix, are excluded from missing-dependency findings.
 - **Scoped packages and subpaths:** package specifiers are normalized to their package root. For example, `@scope/ui/button` counts as `@scope/ui`, and `lodash/chunk` counts as `lodash`.
 - **Ignored directories:** generated and vendor trees are skipped, including `node_modules`, `dist`, `build`, `coverage`, `out`, `.next`, `.nuxt`, `.cache`, `.turbo`, and `.git`.
@@ -77,7 +78,7 @@ Detection uses a lightweight static lexical scanner rather than a full JavaScrip
 - **Single-project analysis:** only one `package.json` is analyzed. Workspaces, monorepos, and parent-manifest lookup are not supported.
 - **No configuration-aware resolution:** framework-specific configurations, plugins, TypeScript `paths`, and bundler aliases are not resolved.
 - **Static specifiers only:** non-literal dynamic `import()`, template-literal specifiers, `require.resolve()`, and property calls such as `obj.require()` are not recognized as usage evidence.
-- **Limited script detection:** Script usage relies on supported command patterns. In v0.1.1, two verified explicit binary-to-package mappings are supported: `tsc` → `typescript` and `docsify` → `docsify-cli`. These mappings apply only when the executable appears in a supported direct command position and the corresponding package is declared. Other executable names that differ from their package names are not automatically mapped (e.g., `gulp` does not mark `gulp-cli` as used). Some package runner forms are recognized, but explicit binary mappings are not applied to runner arguments such as `npx tsc` or `pnpm exec tsc`.
+- **Limited script detection:** script usage relies on supported command patterns, and only the executables in the static allowlist above are translated to their declaring package, and only when the executable appears in a supported direct command position. Every other executable name keeps exact-name matching, mappings are never applied to runner arguments such as `npx tsc` or `pnpm exec tsc`, and ambiguous provider families such as `tailwindcss`, `playwright`, and `webpack` are deliberately unmapped, so only an exactly declared same-name package is credited.
 - **Fixed directory exclusions:** source discovery uses the built-in ignored-directory list above. `.gitignore` and custom ignore rules are not interpreted.
 - **Conservative error handling:** unreadable source files or source content the lexical scanner cannot safely finish scanning, such as unterminated strings, comments, templates, or regular expressions, abort the scan rather than producing partial results.
 - **No remediation features yet:** automatic fixes, custom configuration files, and per-dependency explanations are not available.
