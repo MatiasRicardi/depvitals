@@ -1,0 +1,26 @@
+{
+  "name": "mapping-matrix-integration-tricky-negatives",
+  "version": "0.0.0",
+  "dependencies": {
+    "lodash": "4.17.21",
+    "react": "18.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.0.1",
+    "@manypkg/cli": "1.0.0",
+    "@playwright/test": "1.0.0",
+    "@tailwindcss/cli": "1.0.0",
+    "commitizen": "1.0.0",
+    "docsify-cli": "1.10.4",
+    "serverless": "1.0.0",
+    "typescript": "1.11.5",
+    "webpack-cli": "1.0.0"
+  },
+  "scripts": {
+    "args": "echo biome && printf '%s' sls && echo 'cz --verify' && echo manypkg",
+    "quoted": "node scripts/tool.js --run=manypkg --bin=tsc && echo \"dotenvx run -- node app.js\"",
+    "shell-wrapper": "sh -c \"tsc --noEmit\" && bash -c 'docsify serve docs' && node -e \"console.log('biome')\"",
+    "interpolated": "node scripts/run.js --config=${npm_package_json} --tool=serverless",
+    "ambiguous": "tailwindcss build -c tailwind.config.js && playwright test && webpack --mode production"
+  }
+}
