@@ -1,0 +1,5 @@
+# Synthetic lockfile: never parsed, never usage evidence.
+react@18.0.0:
+  version "18.0.0"
+phantom-pkg@1.0.0:
+  version "1.0.0"

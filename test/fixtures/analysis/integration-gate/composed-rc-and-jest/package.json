@@ -1,0 +1,30 @@
+{
+  "name": "gate-composed-rc-and-jest",
+  "version": "0.0.0",
+  "dependencies": {
+    "eslint-config-airbnb": "19.0.0",
+    "eslint-plugin-react": "7.0.0",
+    "react": "18.0.0",
+    "ts-jest": "29.0.0",
+    "unused-pkg": "1.0.0"
+  },
+  "devDependencies": {
+    "docsify-cli": "4.0.0",
+    "typescript": "5.0.0"
+  },
+  "peerDependencies": {
+    "react-dom": "18.0.0"
+  },
+  "optionalDependencies": {
+    "fsevents": "2.0.0"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "docs": "docsify serve .",
+    "lint": "echo eslint",
+    "test": "jest --config jest.config.js"
+  },
+  "jest": {
+    "preset": "ts-jest"
+  }
+}
