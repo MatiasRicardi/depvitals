@@ -158,6 +158,25 @@ package is reported as missing nor as unused.
 A source file with a lexical error (an unterminated string literal). The analyzer must reject with an
 `AnalysisError` of code `invalid-source`, never return a partial result.
 
+### `integration-gate/`
+
+Step 62 composition fixtures, used together by `test/unit/core/detectionIntegrationGate.test.ts` and
+`test/cliGate.test.ts` to prove binary evidence (Steps 23-55) and configuration evidence (Steps 56-61)
+combine without changing any contract. Each subdirectory is one project:
+
+- `composed-all-sources/` - a source import, a `tsc` and `docsify` script, `package.json#eslintConfig`
+  and `package.json#jest` in one project, with every credited package credited exactly once;
+- `composed-negatives/` - the same names as inert text: script arguments, `echo`/`node -e`/`printf`
+  commands, import-like string literals and unsupported ESLint/Jest config shapes; nothing is credited
+  and no missing finding is created;
+- `composed-rc-and-jest/` - the external `.eslintrc.json` channel composed with `package.json#jest`,
+  where `jest --config jest.config.js` is an argument and must not disable the manifest hints;
+- `composed-aliases-and-collisions/` - activated executable aliases (including two aliases of one
+  `@graphql-codegen/cli` package), the `gulp`/`gulp-cli` collision, ambiguous providers reachable only
+  through the pre-existing exact-name rule, and misleading `echo ng` / `node -e "ng babel"` commands;
+- `project-boundary/` - a workspace parent with `workspaces`, three lockfiles and a child package whose
+  own manifest is never consulted from the parent scan.
+
 ### Missing / unreadable sources (no fixture)
 
 The unreadable-source case is exercised at runtime with a narrowly targeted mock of

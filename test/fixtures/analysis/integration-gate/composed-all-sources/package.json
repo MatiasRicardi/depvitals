@@ -1,0 +1,44 @@
+{
+  "name": "gate-composed-all-sources",
+  "version": "0.0.0",
+  "dependencies": {
+    "eslint-config-prettier": "9.0.0",
+    "eslint-plugin-react": "7.0.0",
+    "jest-environment-jsdom": "29.0.0",
+    "lodash": "4.0.0",
+    "react": "18.0.0",
+    "ts-jest": "29.0.0",
+    "zod": "3.0.0"
+  },
+  "devDependencies": {
+    "docsify-cli": "4.0.0",
+    "echo-only": "1.0.0",
+    "eslint": "9.0.0",
+    "jest": "29.0.0",
+    "typescript": "5.0.0"
+  },
+  "peerDependencies": {
+    "react-dom": "18.0.0"
+  },
+  "optionalDependencies": {
+    "fsevents": "2.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "docs": "docsify serve docs",
+    "lint": "eslint .",
+    "test": "jest --preset ts-jest --env jest-environment-jsdom echo-only lodash",
+    "echo": "echo tsc docsify eslint jest ts-jest"
+  },
+  "eslintConfig": {
+    "extends": ["prettier", "airbnb"],
+    "plugins": ["react"]
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "jest-environment-jsdom",
+    "transform": {
+      "^.+\\.tsx$": "ts-jest"
+    }
+  }
+}

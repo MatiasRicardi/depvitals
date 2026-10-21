@@ -1,0 +1,10 @@
+{
+  "name": "@gate/child",
+  "version": "0.0.0",
+  "dependencies": {
+    "child-only-dep": "1.0.0"
+  },
+  "devDependencies": {
+    "child-unused-dep": "1.0.0"
+  }
+}
