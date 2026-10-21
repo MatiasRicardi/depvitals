@@ -1,38 +1,31 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 
-import { runCli } from './runCli.js';
+import { runCliEntry } from './entry.js';
 
 /**
- * Thin executable adapter for the `v0.1.0` CLI.
+ * Thin executable adapter for the CLI.
  *
  * Its only responsibilities are:
  * 1. resolve the package version from the single source of truth (`package.json`);
- * 2. collect `process.argv`, `process.cwd()` and the version;
- * 3. await the pure orchestration in `runCli`;
- * 4. render the returned stdout/stderr;
- * 5. assign `process.exitCode` (never call `process.exit()`).
+ * 2. hand `process.argv`, `process.cwd()`, `process.env` and the two output streams to
+ *    `runCliEntry`, which prints the report, then optionally appends the update notice to stderr;
+ * 3. assign `process.exitCode` from the returned status (never call `process.exit()`, so the
+ *    optional update check is never truncated and can never change the status).
  *
- * All argument handling, scanning orchestration and error mapping live in `runCli`, so this file
- * only wires process I/O to that orchestration. The relative path works both from the TypeScript
- * source (`src/cli/index.ts`) and from the built output (`dist/cli/index.js`), because both resolve
- * to the repository root `package.json`.
+ * All argument handling, scanning orchestration, error mapping and the notifier sequencing live in
+ * `runCli`/`runCliEntry`, so this file only wires process objects to them. The relative path works
+ * both from the TypeScript source (`src/cli/index.ts`) and from the built output
+ * (`dist/cli/index.js`), because both resolve to the repository root `package.json`.
  */
 const version = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
 ) as { version: string };
 
-const result = await runCli(process.argv.slice(2), {
+process.exitCode = await runCliEntry(process.argv.slice(2), {
   version: version.version,
   cwd: process.cwd(),
+  env: process.env,
+  stdout: process.stdout,
+  stderr: process.stderr,
 });
-
-if (result.stdout.length > 0) {
-  process.stdout.write(result.stdout);
-}
-
-if (result.stderr.length > 0) {
-  process.stderr.write(result.stderr);
-}
-
-process.exitCode = result.exitCode;
