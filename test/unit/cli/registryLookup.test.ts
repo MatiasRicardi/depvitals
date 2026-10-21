@@ -19,7 +19,7 @@
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it, vi } from 'vitest';
@@ -528,11 +528,19 @@ describe('Step 66: the lookup stays private to the notifier and offline for anal
     const importers: string[] = [];
 
     for (const directory of ANALYSIS_DIRECTORIES) {
-      for (const entry of readdirSync(join(SRC, directory), { recursive: true })) {
-        const content = readFileSync(join(SRC, directory, String(entry)), 'utf8');
+      for (const entry of readdirSync(join(SRC, directory), {
+        recursive: true,
+        withFileTypes: true,
+      })) {
+        if (!entry.isFile() || !entry.name.endsWith('.ts')) {
+          continue;
+        }
+
+        const filePath = join(entry.parentPath, entry.name);
+        const content = readFileSync(filePath, 'utf8');
 
         if (content.includes('registryLookup')) {
-          importers.push(`${directory}/${String(entry).split(/[\\/]/).join('/')}`);
+          importers.push(relative(SRC, filePath).split(/[\\/]/).join('/'));
         }
       }
     }
