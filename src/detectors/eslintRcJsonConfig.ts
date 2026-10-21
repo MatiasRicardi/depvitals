@@ -13,7 +13,12 @@
  *   The file is read as UTF-8 text and parsed with `JSON.parse`;
  * - support any other legacy format: `.eslintrc.js` / `.cjs` / `.mjs` (JavaScript config modules),
  *   `.eslintrc.yml` / `.yaml` and extensionless `.eslintrc` are explicitly dismissed in this
- *   release, as is JSON5 or comment-tolerant JSON;
+ *   release, as is JSON5 or comment-tolerant JSON. A `.eslintrc.json` that uses JavaScript-style
+ *   comments is therefore reported as the operational error described below rather than parsed by a
+ *   second JSON dialect: DepVitals reads one strict JSON document, and a hand-written comment
+ *   stripper that mis-handled a `//` inside a string value could alter the document and invent
+ *   evidence. A leading UTF-8 BOM is different - it is an encoding artifact of the very same
+ *   document, so it is removed before parsing;
  * - traverse parent directories, nested packages or workspaces looking for further config files, or
  *   resolve `extends` references to other configuration files;
  * - read anything besides the `extends`/`plugins` subset that {@link findEslintConfigUsage} accepts;
@@ -139,10 +144,11 @@ export async function findEslintRcJsonUsage(projectRoot: string): Promise<Readon
   let parsed: unknown;
 
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(withoutByteOrderMark(text));
   } catch (error) {
     throw new EslintRcJsonError(
-      `${ESLINTRC_FILENAME} at ${eslintRcPath} is not valid JSON`,
+      `${ESLINTRC_FILENAME} at ${eslintRcPath} is not valid JSON. DepVitals reads strict JSON ` +
+        `only, so JavaScript-style comments inside ${ESLINTRC_FILENAME} are not supported.`,
       'invalid-json',
       error,
     );
@@ -219,6 +225,16 @@ async function hasManifestEslintConfig(packageJsonPath: string): Promise<boolean
   }
 
   return isPlainRecord(parsed) && Object.hasOwn(parsed, 'eslintConfig');
+}
+
+/**
+ * Remove a leading UTF-8 BOM, which `readFile(..., 'utf8')` keeps verbatim.
+ *
+ * A BOM is an encoding artifact of the same JSON document rather than a different configuration
+ * format, so it must not turn a readable configuration into an `invalid-json` failure.
+ */
+function withoutByteOrderMark(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }
 
 /**

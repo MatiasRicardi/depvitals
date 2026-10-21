@@ -174,6 +174,35 @@ describe('findEslintRcJsonUsage (external .eslintrc.json reader)', () => {
     expect((error as Error).message).toContain(root);
   });
 
+  it('reads a .eslintrc.json saved with a leading UTF-8 byte order mark', async () => {
+    // A byte order mark is an encoding artifact of the same JSON document (common from Windows
+    // editors), so it must not turn a readable configuration into a failed scan.
+    await withScratchProject(
+      {
+        'package.json': MANIFEST_DECLARING_REACT,
+        '.eslintrc.json': `\uFEFF${ESLINTRC_DECLARING_REACT}`,
+      },
+      async (root) => {
+        expect(await findEslintRcJsonUsage(root)).toEqual(new Set(['eslint-plugin-react']));
+      },
+    );
+  });
+
+  it('fails on a commented .eslintrc.json instead of parsing a second JSON dialect', async () => {
+    const root = fixturePath('commented-json-negative');
+
+    // Documented limitation: ESLint's legacy loader strips comments, but DepVitals reads one strict
+    // JSON document in this release. The file fails loudly rather than inventing evidence through a
+    // hand-written comment stripper or letting `eslint-plugin-react` look unused.
+    await expect(findEslintRcJsonUsage(root)).rejects.toThrow(EslintRcJsonError);
+
+    const error = await findEslintRcJsonUsage(root).catch((thrown: unknown) => thrown);
+
+    expect((error as EslintRcJsonError).code).toBe('invalid-json');
+    expect((error as Error).message).toContain('is not valid JSON');
+    expect((error as Error).message).toContain('JavaScript-style comments');
+  });
+
   it('defers to package.json#eslintConfig instead of unioning the two legacy sources', async () => {
     const root = fixturePath('manifest-precedence');
     const configUsedNames = await findEslintRcJsonUsage(root);
@@ -382,6 +411,15 @@ describe('CLI scan wiring for external .eslintrc.json hints', () => {
     expect(result.stdout).toBe('');
     expect(result.stderr).toContain('.eslintrc.json');
     expect(result.stderr).toContain('is not valid JSON');
+  });
+
+  it('fails with exit 1 and an empty stdout for a commented .eslintrc.json', async () => {
+    const result = await runCli([fixturePath('commented-json-negative')], OPTIONS);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('is not valid JSON');
+    expect(result.stderr).toContain('JavaScript-style comments');
   });
 
   it('changes nothing for a project without an .eslintrc.json', async () => {
