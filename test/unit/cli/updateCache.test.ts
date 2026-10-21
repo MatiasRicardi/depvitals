@@ -16,7 +16,7 @@
 
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, posix } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -53,6 +53,9 @@ const WRITABLE_MODE = 0o700;
 
 /** Reading `/proc/self/uid`-style privilege checks is unavailable on Windows, hence the optional. */
 const IS_ROOT = typeof process.getuid === 'function' && process.getuid() === 0;
+
+/** POSIX mode bits are advisory on Windows and meaningless for the super-user. */
+const SKIP_PERMISSION_CASES = IS_ROOT || process.platform === 'win32';
 
 /**
  * Create a throwaway directory outside the repository, run `run` inside it and remove only that
@@ -108,7 +111,7 @@ describe('Step 65: the update-version cache location is user-scoped, never proje
       platform: 'linux',
     });
 
-    expect(resolved).toBe(join('/var/cache', 'depvitals', UPDATE_CACHE_FILE_NAME));
+    expect(resolved).toBe(posix.join('/var/cache', 'depvitals', UPDATE_CACHE_FILE_NAME));
   });
 
   it.each([
@@ -121,7 +124,7 @@ describe('Step 65: the update-version cache location is user-scoped, never proje
     const env = value === undefined ? {} : { XDG_CACHE_HOME: value };
 
     expect(resolveUpdateCacheFile({ env, homedir: () => POSIX_HOME, platform: 'linux' })).toBe(
-      join(POSIX_HOME, '.cache', 'depvitals', UPDATE_CACHE_FILE_NAME),
+      posix.join(POSIX_HOME, '.cache', 'depvitals', UPDATE_CACHE_FILE_NAME),
     );
   });
 
@@ -164,7 +167,7 @@ describe('Step 65: the update-version cache location is user-scoped, never proje
         homedir: () => POSIX_HOME,
         platform: 'darwin',
       }),
-    ).toBe(join(POSIX_HOME, '.cache', 'depvitals', UPDATE_CACHE_FILE_NAME));
+    ).toBe(posix.join(POSIX_HOME, '.cache', 'depvitals', UPDATE_CACHE_FILE_NAME));
   });
 
   it('ignores unrelated variables that merely mention cache or CI paths', () => {
@@ -177,7 +180,7 @@ describe('Step 65: the update-version cache location is user-scoped, never proje
     };
 
     expect(resolveUpdateCacheFile({ env, homedir: () => POSIX_HOME, platform: 'linux' })).toBe(
-      join(POSIX_HOME, '.cache', 'depvitals', UPDATE_CACHE_FILE_NAME),
+      posix.join(POSIX_HOME, '.cache', 'depvitals', UPDATE_CACHE_FILE_NAME),
     );
   });
 
@@ -380,7 +383,7 @@ describe('Step 65: cached data is untrusted, so anything else is a silent miss',
 
   // POSIX mode bits do not restrict the super-user, so this case only holds for normal accounts.
   // The permission-independent equivalent (a parent that is a regular file) is covered below.
-  it.skipIf(IS_ROOT)('misses when the cache file is unreadable', async () => {
+  it.skipIf(SKIP_PERMISSION_CASES)('misses when the cache file is unreadable', async () => {
     await withScratch(async (root) => {
       await seed(root, record(NOW));
       await chmod(join(root, UPDATE_CACHE_FILE_NAME), 0o000);
@@ -513,7 +516,7 @@ describe('Step 65: writes are atomic, minimal and completely best-effort', () =>
 });
 
 describe('Step 65: an unwritable cache never affects the scan', () => {
-  it.skipIf(IS_ROOT)(
+  it.skipIf(SKIP_PERMISSION_CASES)(
     'fails silently on a read-only cache directory, leaving the report untouched',
     async () => {
       await withScratch(async (root) => {
@@ -643,8 +646,13 @@ describe('Step 65: the cache stays outside the analyzed project', () => {
       const { project, userCache, userHome } = await seedProjectAndCache(root);
       const before = await projectFiles(project);
 
+      // The user cache variable is platform-specific: LOCALAPPDATA on Windows, XDG_CACHE_HOME
+      // elsewhere. Everything else in this test is platform-independent.
+      const userCacheEnv =
+        process.platform === 'win32' ? { LOCALAPPDATA: userCache } : { XDG_CACHE_HOME: userCache };
+
       const resolved = resolveUpdateCacheFile({
-        env: { XDG_CACHE_HOME: userCache },
+        env: userCacheEnv,
         homedir: () => userHome,
       });
 
@@ -653,7 +661,7 @@ describe('Step 65: the cache stays outside the analyzed project', () => {
       expect(resolved?.startsWith(project)).toBe(false);
 
       await writeCachedLatest(LATEST, {
-        env: { XDG_CACHE_HOME: userCache },
+        env: userCacheEnv,
         homedir: () => userHome,
         now: NOW,
       });
@@ -671,11 +679,7 @@ describe('Step 65: the cache stays outside the analyzed project', () => {
         await readFile(join(project, '.cache', 'depvitals', UPDATE_CACHE_FILE_NAME), 'utf8'),
       ).toBe('{"decoy":"in-project-cache-dir"}');
       await expect(
-        readCachedLatest({
-          env: { XDG_CACHE_HOME: userCache },
-          homedir: () => userHome,
-          now: NOW,
-        }),
+        readCachedLatest({ env: userCacheEnv, homedir: () => userHome, now: NOW }),
       ).resolves.toBe(LATEST);
     });
   });
