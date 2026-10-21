@@ -1,0 +1,11 @@
+{
+  "name": "eslint-extends-array-builtins",
+  "version": "0.0.0",
+  "dependencies": {
+    "eslint": "9.0.0",
+    "eslint-config-airbnb": "19.2.5"
+  },
+  "eslintConfig": {
+    "extends": ["eslint:recommended", "airbnb"]
+  }
+}

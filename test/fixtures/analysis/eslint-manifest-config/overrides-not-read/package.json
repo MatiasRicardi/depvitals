@@ -1,0 +1,21 @@
+{
+  "name": "eslint-overrides-not-read",
+  "version": "0.0.0",
+  "devDependencies": {
+    "eslint-config-prettier": "9.1.0",
+    "eslint-plugin-react": "7.37.0"
+  },
+  "eslintConfig": {
+    "overrides": [
+      {
+        "files": [
+          "*.ts"
+        ],
+        "extends": "prettier",
+        "plugins": [
+          "react"
+        ]
+      }
+    ]
+  }
+}

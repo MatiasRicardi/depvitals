@@ -1,0 +1,19 @@
+{
+  "name": "eslint-malformed-shapes",
+  "version": "0.0.0",
+  "devDependencies": {
+    "eslint-config-prettier": "9.1.0",
+    "eslint-plugin-react": "7.37.0"
+  },
+  "eslintConfig": {
+    "extends": 42,
+    "plugins": "react",
+    "rules": null,
+    "settings": [
+      "react"
+    ],
+    "env": {
+      "es2022": true
+    }
+  }
+}
