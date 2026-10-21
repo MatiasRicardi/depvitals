@@ -296,6 +296,22 @@ describe('findEslintManifestUsage (package.json#eslintConfig reader)', () => {
     );
   });
 
+  it('matches the flat-config entry name case-insensitively, which only drops hints', async () => {
+    // Case-insensitive filesystems (Windows, and macOS by default) resolve `ESLint.Config.JS` to the
+    // same file as `eslint.config.js`, so DepVitals must not credit legacy hints it cannot prove.
+    // On a case-sensitive filesystem the comparison is deliberately conservative: it can only skip
+    // hints, never invent them.
+    await withScratchProject(
+      {
+        'package.json': MANIFEST_WITH_PRETTIER_ALIAS,
+        'ESLint.Config.JS': 'export default [];\n',
+      },
+      async (root) => {
+        expect(await findEslintManifestUsage(root)).toEqual(new Set<string>());
+      },
+    );
+  });
+
   it('keeps legacy hints once no flat-config entry exists in the same project', async () => {
     await withScratchProject({ 'package.json': MANIFEST_WITH_PRETTIER_ALIAS }, async (root) => {
       expect(await findEslintManifestUsage(root)).toEqual(new Set(['eslint-config-prettier']));

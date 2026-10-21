@@ -17,10 +17,11 @@
  * - report anything about a package the manifest does not declare;
  * - mutate the analyzed project.
  *
- * The manifest model intentionally does not carry `eslintConfig`, so the raw manifest JSON is read
- * here. Every unusable shape is ignored rather than diagnosed: manifest validity stays with the
- * manifest loader and the analyzer, which report a genuinely invalid `package.json` as they always
- * have.
+ * The manifest model intentionally does not carry `eslintConfig`, so `package.json` is read a second
+ * time here as plain text: the loader is reused as the validity gate, and one extra small read beats
+ * widening the manifest model for one detector. Every unusable shape is ignored rather than
+ * diagnosed: manifest validity stays with the manifest loader and the analyzer, which report a
+ * genuinely invalid `package.json` as they always have.
  *
  * A conservative precedence guard applies before anything is read: when a modern flat-config
  * entrypoint exists at the project root, the legacy block is not provably the active configuration,
@@ -70,6 +71,10 @@ const PLUGIN_PACKAGE_NAMES: ReadonlyMap<string, string> = new Map([
  * The list is fixed: `eslint.config.mts` / `eslint.config.cts` are not part of it, which only makes
  * the guard narrower (it can drop hints, never add them). Presence of any of these names at the
  * project root is enough; the entry itself is never read or executed.
+ *
+ * Compared case-insensitively (see {@link hasFlatConfigEntry}) because case-insensitive filesystems
+ * treat `ESLint.Config.js` as the same file, and DepVitals must not disagree with itself about one
+ * project depending on the platform it runs on.
  */
 const FLAT_CONFIG_ENTRY_NAMES: ReadonlySet<string> = new Set([
   'eslint.config.js',
@@ -151,9 +156,7 @@ export async function findEslintManifestUsage(projectRoot: string): Promise<Read
     throw error;
   }
 
-  const eslintConfig = await readEslintConfigValue(packageJsonPath);
-
-  return findEslintConfigUsage(eslintConfig, declaredPackageNames);
+  return findEslintConfigUsage(await readEslintConfigValue(packageJsonPath), declaredPackageNames);
 }
 
 /**
@@ -161,6 +164,8 @@ export async function findEslintManifestUsage(projectRoot: string): Promise<Read
  *
  * The root directory is listed by name only (`readdir`), so no entry is opened, stat-followed, read
  * or executed. An unreadable or missing root simply means no flat config is known to be present.
+ * Names are compared case-insensitively so a case-insensitive filesystem (typical on Windows and
+ * macOS) cannot hide a flat config from this guard.
  */
 async function hasFlatConfigEntry(root: string): Promise<boolean> {
   let entries: string[];
@@ -171,13 +176,13 @@ async function hasFlatConfigEntry(root: string): Promise<boolean> {
     return false;
   }
 
-  return entries.some((entry) => FLAT_CONFIG_ENTRY_NAMES.has(entry));
+  return entries.some((entry) => FLAT_CONFIG_ENTRY_NAMES.has(entry.toLowerCase()));
 }
 
 /**
  * Read the raw `package.json#eslintConfig` value, ignoring everything that cannot be used.
  *
- * The manifest is re-read as text and parsed with `JSON.parse`, so no target-project code runs. An
+ * The manifest is read as text and parsed with `JSON.parse`, so no target-project code runs. An
  * unreadable file, invalid JSON, a non-object document or an absent `eslintConfig` all yield
  * `undefined`; the loader-facing diagnosis of a broken manifest stays in {@link loadProjectManifest}.
  */
