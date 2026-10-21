@@ -1,0 +1,12 @@
+{
+  "name": "jest-transform-subpath",
+  "version": "0.0.0",
+  "devDependencies": {
+    "ts-jest": "29.2.0"
+  },
+  "jest": {
+    "transform": {
+      "^.+\\.ts$": "ts-jest/preprocessor.js"
+    }
+  }
+}

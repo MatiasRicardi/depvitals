@@ -1,0 +1,19 @@
+{
+  "name": "jest-transform-malformed-shapes",
+  "version": "0.0.0",
+  "devDependencies": {
+    "ts-jest": "29.2.0"
+  },
+  "jest": {
+    "transform": {
+      "one-element": ["ts-jest"],
+      "three-elements": ["ts-jest", { "isolatedModules": true }, "extra"],
+      "options-not-object": ["ts-jest", "isolatedModules"],
+      "options-null": ["ts-jest", null],
+      "object-value": { "name": "ts-jest" },
+      "empty-string": "",
+      "nested-array": [["ts-jest", {}]],
+      "null-value": null
+    }
+  }
+}
