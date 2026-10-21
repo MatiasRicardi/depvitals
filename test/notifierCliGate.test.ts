@@ -80,13 +80,19 @@ function newestMtime(directory: string): number {
  *
  * `pnpm run check` (and CI) run the tests before the build step, so a plain existence check would let
  * this gate silently exercise a stale artifact that predates the notifier wiring under test. Building
- * here keeps the promise of the file honest on a fresh clone as well as on a dirty worktree. A build
- * that still leaves no usable entry point is reported instead of degrading into a skipped gate.
+ * here keeps the promise of the file honest on a fresh clone as well as on a dirty worktree. Any build
+ * failure - non-zero exit, no entry point, or an entry point that is still older than `src/` - is
+ * reported instead of degrading into a skipped gate.
+ *
+ * This runs at collection time, before any test of this file starts, and this file is the only one
+ * that reads `dist/` (verified by `grep -r "dist/cli" test/`), so no other worker can observe a
+ * half-written artifact and the shared Vitest configuration stays untouched.
  */
 function ensureBuiltCli(): void {
+  const sourceTime = newestMtime(join(REPO_ROOT, 'src'));
   const entryTime = existsSync(BUILT_ENTRY) ? statSync(BUILT_ENTRY).mtimeMs : 0;
 
-  if (entryTime >= newestMtime(join(REPO_ROOT, 'src'))) {
+  if (entryTime >= sourceTime) {
     return;
   }
 
@@ -96,9 +102,11 @@ function ensureBuiltCli(): void {
     { cwd: REPO_ROOT, encoding: 'utf8' },
   );
 
-  if (!existsSync(BUILT_ENTRY)) {
+  const rebuiltTime = existsSync(BUILT_ENTRY) ? statSync(BUILT_ENTRY).mtimeMs : 0;
+
+  if (build.status !== 0 || rebuiltTime < sourceTime) {
     throw new Error(
-      `could not build the CLI for the notifier gate (status ${String(build.status)}): ${build.stderr.trim().slice(0, 500)}`,
+      `could not build the CLI for the notifier gate (status ${String(build.status)}, entry mtime ${String(rebuiltTime)}, source mtime ${String(sourceTime)}): ${(build.stderr + build.stdout).trim().slice(0, 500)}`,
     );
   }
 }
