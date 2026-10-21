@@ -1,16 +1,19 @@
 /**
  * `package.json#jest` usage detection.
  *
- * This module answers exactly one narrow question: which declared dependencies are named by the two
+ * This module answers exactly one narrow question: which declared dependencies are named by the three
  * explicit Jest fields this release understands inside the `jest` block of `package.json` — the
- * top-level `preset` and `testEnvironment` strings? The result is a set of configuration-only package
- * names handed to the Step 56 analyzer seam, so a recognized name can only suppress an `unused`
- * finding and can never create a `missing` one.
+ * top-level `preset` and `testEnvironment` strings and the values of the top-level `transform` map?
+ * The result is a set of configuration-only package names handed to the Step 56 analyzer seam, so a
+ * recognized name can only suppress an `unused` finding and can never create a `missing` one.
  *
  * It deliberately does not:
  * - execute Jest, `import()`/`require()` its configuration loader, or evaluate any target code;
- * - implement the Jest configuration schema. Only `preset` and `testEnvironment` are read, and only
- *   through the fixed allowlists below;
+ * - implement the Jest configuration schema. Only `preset`, `testEnvironment` and `transform` are
+ *   read, and only through the fixed allowlists below;
+ * - read the `transform` map *keys*. Every key of that map is a regular expression selecting the
+ *   files a transformer applies to, so a key is a pattern and never a package name, even when it
+ *   literally reads `"ts-jest"`; no regular expression is ever evaluated here;
  * - expand Jest shorthands. In particular `testEnvironment: "jsdom"` is *not* credited to
  *   `jest-environment-jsdom`: whether that shorthand is a package reference at all depends on the
  *   Jest major version in use, which DepVitals does not read, so it stays outside the supported
@@ -68,6 +71,18 @@ const PRESET_PACKAGE_NAMES: ReadonlySet<string> = new Set(['ts-jest']);
 const TEST_ENVIRONMENT_PACKAGE_NAMES: ReadonlySet<string> = new Set(['jest-environment-jsdom']);
 
 /**
+ * The only `transform` packages recognized by this release.
+ *
+ * A separate fixed allowlist rather than a reuse of the `preset` one: `ts-jest` is the only
+ * transformer credited, and it is supported for the same reason as the preset — the string is already
+ * the complete published package name, so nothing has to be resolved or versioned to interpret it.
+ * `jest-environment-jsdom` is deliberately absent, because a test environment is not a transformer;
+ * no other transform module is resolved, guessed, searched for in `node_modules` or matched by
+ * prefix, and transform maps are never flattened or searched recursively.
+ */
+const TRANSFORM_PACKAGE_NAMES: ReadonlySet<string> = new Set(['ts-jest']);
+
+/**
  * Root Jest configuration file names that disable `package.json#jest` hints.
  *
  * The list is fixed to the extensions named by the supported contract; `jest.config.mts` and other
@@ -88,13 +103,13 @@ const JEST_CONFIG_ENTRY_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Match the allowlisted subset of one `jest` configuration value against the declared packages.
+ * Match the allowlisted subset of one `jest` configuration against the declared packages.
  *
  * Pure and side-effect free: it takes the raw `package.json#jest` JSON value (any shape, including
  * something that is not an object) and the declared dependency names, and returns the declared
- * packages named by `preset` or `testEnvironment`, in alphabetical order. Neither argument is
- * mutated, and a candidate that is not declared is dropped, so this function can never describe an
- * undeclared package as used.
+ * packages named by `preset`, `testEnvironment` or the values of `transform`, in alphabetical order.
+ * Neither argument is mutated, and a candidate that is not declared is dropped, so this function can
+ * never describe an undeclared package as used.
  *
  * @param jestConfig - The raw `package.json#jest` value, validated here and never trusted.
  * @param declaredPackageNames - Declared dependency names, the only names this may return.
@@ -110,6 +125,7 @@ export function findJestConfigUsage(
   const candidates: string[] = [
     ...matchAllowedPackage(jestConfig['preset'], PRESET_PACKAGE_NAMES),
     ...matchAllowedPackage(jestConfig['testEnvironment'], TEST_ENVIRONMENT_PACKAGE_NAMES),
+    ...matchTransformValues(jestConfig['transform'], TRANSFORM_PACKAGE_NAMES),
   ];
 
   const used = new Set<string>();
@@ -238,6 +254,66 @@ function matchAllowedPackage(
   }
 
   return allowedPackages.has(specifier.packageName) ? [specifier.packageName] : [];
+}
+
+/**
+ * The allowlisted packages named by the *values* of one `jest.transform` map.
+ *
+ * Only values are read: `Object.values` is used precisely so that a key can never become evidence.
+ * Every key of a Jest transform map is a regular expression such as `"^.+\\.tsx?$"`, and a key that
+ * happens to read `"ts-jest"` is still only a pattern, so it credits nothing. A `transform` field
+ * that is not a plain JSON object (an array, a string, a number, `null`, absent) contributes nothing.
+ */
+function matchTransformValues(
+  transform: unknown,
+  allowedPackages: ReadonlySet<string>,
+): readonly string[] {
+  if (!isPlainRecord(transform)) {
+    return [];
+  }
+
+  const matches: string[] = [];
+
+  for (const value of Object.values(transform)) {
+    matches.push(...matchTransformValue(value, allowedPackages));
+  }
+
+  return matches;
+}
+
+/**
+ * The allowlisted package named by one `jest.transform` value, if any.
+ *
+ * Exactly two shapes are supported, and no others:
+ *
+ * - the transformer string itself, `"ts-jest"`, matched by the same rules as the other supported
+ *   Jest fields - the value is classified first and must then be an exact member of
+ *   `allowedPackages`, so `"./local-transform.js"`, `"<rootDir>/transform.js"`, `"file:./t.js"`,
+ *   `""`, `"ts jest"`, `"ts-jest-extras"` and every other module yield nothing. As in `preset`, a
+ *   literal subpath of an allowlisted package collapses to its package root
+ *   (`"ts-jest/preprocessor.js"`, the historical ts-jest transformer path), because the first path
+ *   segment still names the package that provides the transformer;
+ * - the `[transformer, options]` tuple: exactly two elements, the second a JSON options object, the
+ *   first matched as above. The options object is only checked for being an object and is never
+ *   inspected, so a supported package name that appears only inside it - as a label or an option
+ *   value - is not evidence.
+ *
+ * A one- or three-element array, a non-object second tuple element, an object used in place of the
+ * whole value or any other shape is outside the supported subset and yields nothing.
+ */
+function matchTransformValue(
+  value: unknown,
+  allowedPackages: ReadonlySet<string>,
+): readonly string[] {
+  if (Array.isArray(value)) {
+    if (value.length !== 2 || !isPlainRecord(value[1])) {
+      return [];
+    }
+
+    return matchAllowedPackage(value[0], allowedPackages);
+  }
+
+  return matchAllowedPackage(value, allowedPackages);
 }
 
 /**
