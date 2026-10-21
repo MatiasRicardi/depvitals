@@ -486,8 +486,10 @@ describe('Step 62: the analysis path has no network or execution capability', ()
   });
 
   it('pins the pre-notifier source surface, so no notifier module exists yet', () => {
+    // Separator-normalized so the pinned list is one POSIX-style list on Linux, macOS and Windows
+    // (`readdirSync` reports `scanner\moduleSpecifiers.ts` on Windows).
     const modules = readdirSync(SRC, { recursive: true })
-      .map((entry) => String(entry))
+      .map((entry) => String(entry).split(/[\\/]/).join('/'))
       .filter((entry) => entry.endsWith('.ts'))
       .sort();
 
