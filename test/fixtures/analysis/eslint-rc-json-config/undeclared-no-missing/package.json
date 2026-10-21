@@ -1,0 +1,7 @@
+{
+  "name": "eslintrc-undeclared-no-missing",
+  "version": "0.0.0",
+  "dependencies": {
+    "left-pad": "2.2.0"
+  }
+}

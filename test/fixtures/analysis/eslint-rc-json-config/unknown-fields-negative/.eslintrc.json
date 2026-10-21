@@ -1,0 +1,30 @@
+{
+  "env": {
+    "es2022": true,
+    "node": true
+  },
+  "globals": {
+    "react": "readonly"
+  },
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module"
+  },
+  "settings": {
+    "react": {
+      "version": "detect"
+    },
+    "note": "prettier and airbnb appear here as free text only"
+  },
+  "rules": {
+    "react/jsx-uses-react": "error",
+    "prettier/prettier": "error"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.ts"],
+      "extends": ["prettier", "airbnb"],
+      "plugins": ["react"]
+    }
+  ]
+}

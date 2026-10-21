@@ -1,0 +1,11 @@
+{
+  "name": "eslintrc-manifest-precedence",
+  "version": "0.0.0",
+  "devDependencies": {
+    "eslint-config-airbnb": "19.2.0",
+    "eslint-plugin-react": "7.37.0"
+  },
+  "eslintConfig": {
+    "extends": "airbnb"
+  }
+}

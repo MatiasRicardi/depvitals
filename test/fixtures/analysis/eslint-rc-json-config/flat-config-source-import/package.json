@@ -1,0 +1,8 @@
+{
+  "name": "eslintrc-flat-config-source-import",
+  "version": "0.0.0",
+  "devDependencies": {
+    "@eslint/js": "10.0.0",
+    "eslint-plugin-react": "7.37.0"
+  }
+}
