@@ -39,10 +39,20 @@ import { loadProjectManifest, ProjectManifestError } from '../scanner/projectMan
  *
  * The table is a fixed allowlist, not a resolution algorithm. It contains the three documented
  * shorthand aliases (`prettier`, `airbnb` and the single `plugin:react/recommended` form) plus the
- * already complete package name of the package each alias points at, which is also a valid
- * `extends` value in ESLint. Anything else is unsupported on purpose: `eslint:recommended`,
- * `eslint:all`, `plugin:other/recommended`, `prettier/react`, a scoped config, an unknown alias or
- * any other string contributes no evidence, because a guessed alias would create false confidence.
+ * already complete package name of each shareable config they point at, because a complete
+ * `eslint-config-*` name is a valid `extends` value in its own right.
+ *
+ * There is deliberately no plugin package name in this table. Legacy ESLint resolves `extends` as a
+ * shareable config name, so `extends: "eslint-plugin-react"` refers to a package named
+ * `eslint-config-eslint-plugin-react`, not to `eslint-plugin-react`; the only valid `extends` form
+ * for a plugin is `plugin:<name>/<config>`. A plugin is therefore credited through
+ * {@link PLUGIN_PACKAGE_NAMES} (or through an allowlisted `plugin:` form), never through a bare
+ * plugin name in `extends`, which would suppress a real `unused` finding based on a value ESLint
+ * cannot load.
+ *
+ * Anything else is unsupported on purpose: `eslint:recommended`, `eslint:all`,
+ * `plugin:other/recommended`, `prettier/react`, a scoped config, an unknown alias or any other
+ * string contributes no evidence, because a guessed alias would create false confidence.
  */
 const EXTENDS_PACKAGE_NAMES: ReadonlyMap<string, string> = new Map([
   ['prettier', 'eslint-config-prettier'],
@@ -50,7 +60,6 @@ const EXTENDS_PACKAGE_NAMES: ReadonlyMap<string, string> = new Map([
   ['plugin:react/recommended', 'eslint-plugin-react'],
   ['eslint-config-prettier', 'eslint-config-prettier'],
   ['eslint-config-airbnb', 'eslint-config-airbnb'],
-  ['eslint-plugin-react', 'eslint-plugin-react'],
 ]);
 
 /**
@@ -59,6 +68,9 @@ const EXTENDS_PACKAGE_NAMES: ReadonlyMap<string, string> = new Map([
  * Same rule as {@link EXTENDS_PACKAGE_NAMES}: only the documented `react` shorthand and the already
  * complete package name are supported. Invented plugin names, scoped shorthands such as
  * `@acme/eslint-plugin` and any other plugin string produce no evidence.
+ *
+ * `plugins` is where the complete `eslint-plugin-react` name is valid, unlike in `extends` (see
+ * {@link EXTENDS_PACKAGE_NAMES}).
  */
 const PLUGIN_PACKAGE_NAMES: ReadonlyMap<string, string> = new Map([
   ['react', 'eslint-plugin-react'],

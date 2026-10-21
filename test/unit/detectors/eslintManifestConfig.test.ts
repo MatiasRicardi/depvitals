@@ -110,6 +110,17 @@ describe('findEslintConfigUsage (pure allowlist matcher)', () => {
     );
   });
 
+  it('credits a complete plugin name only in plugins, never in extends', () => {
+    // `extends: "eslint-plugin-react"` resolves to `eslint-config-eslint-plugin-react` in legacy
+    // ESLint, so it is not evidence of usage of the declared plugin.
+    expect(findEslintConfigUsage({ extends: 'eslint-plugin-react' }, SUPPORTING)).toEqual(
+      new Set<string>(),
+    );
+    expect(findEslintConfigUsage({ plugins: ['eslint-plugin-react'] }, SUPPORTING)).toEqual(
+      new Set(['eslint-plugin-react']),
+    );
+  });
+
   it('never generalizes an unknown alias, plugin name or casing', () => {
     const unsupported = {
       extends: [
@@ -128,6 +139,9 @@ describe('findEslintConfigUsage (pure allowlist matcher)', () => {
         ' prettier',
         'prettier ',
         'eslint-config-prettier/react',
+        // A plugin is only extendable as `plugin:<name>/<config>`; legacy ESLint prefixes a bare
+        // name with `eslint-config-`, so this value cannot refer to `eslint-plugin-react`.
+        'eslint-plugin-react',
       ],
       plugins: ['invented', 'jsx-plus', 'React', 'eslint', '@acme', 'eslint-plugin-Vue'],
     };
@@ -236,6 +250,12 @@ describe('findEslintManifestUsage (package.json#eslintConfig reader)', () => {
 
   it('produces nothing for unknown aliases and invented plugin names', async () => {
     expect(await findEslintManifestUsage(fixturePath('unknown-alias-negative'))).toEqual(
+      new Set<string>(),
+    );
+  });
+
+  it('produces nothing for a plugin package name used as an extends value', async () => {
+    expect(await findEslintManifestUsage(fixturePath('extends-plugin-name-negative'))).toEqual(
       new Set<string>(),
     );
   });
@@ -426,6 +446,20 @@ describe('eslintConfig names through the Step 56 analyzer handoff', () => {
       'eslint-plugin-react',
     ]);
     expect(hinted.unusedDevDependencies).toEqual([]);
+    expect(hinted.missingDependencies).toEqual([]);
+  });
+
+  it('leaves a declared plugin unused when it is named only as an extends value', async () => {
+    const root = fixturePath('extends-plugin-name-negative');
+    const configUsedNames = await findEslintManifestUsage(root);
+
+    const baseline = await analyzeProject(root);
+    const hinted = await analyzeProject(root, { configUsedNames });
+
+    // The value is not a loadable `extends` reference for legacy ESLint, so nothing is credited.
+    expect(configUsedNames).toEqual(new Set<string>());
+    expect(hinted).toEqual(baseline);
+    expect(hinted.unusedDevDependencies).toEqual(['eslint-plugin-react']);
     expect(hinted.missingDependencies).toEqual([]);
   });
 

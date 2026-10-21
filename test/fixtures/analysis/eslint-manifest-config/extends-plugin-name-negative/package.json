@@ -1,0 +1,10 @@
+{
+  "name": "eslint-extends-plugin-name",
+  "version": "0.0.0",
+  "devDependencies": {
+    "eslint-plugin-react": "7.37.0"
+  },
+  "eslintConfig": {
+    "extends": ["eslint:recommended", "eslint-plugin-react"]
+  }
+}
