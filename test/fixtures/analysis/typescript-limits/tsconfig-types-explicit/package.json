@@ -1,0 +1,8 @@
+{
+  "name": "ts-limits-tsconfig-types-explicit",
+  "version": "0.0.0",
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "22.10.1"
+  }
+}

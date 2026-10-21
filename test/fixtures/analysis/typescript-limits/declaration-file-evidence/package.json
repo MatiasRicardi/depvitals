@@ -1,0 +1,11 @@
+{
+  "name": "ts-limits-declaration-file-evidence",
+  "version": "0.0.0",
+  "dependencies": {},
+  "devDependencies": {
+    "other-pkg": "1.0.0",
+    "referenced-pkg": "1.0.0",
+    "untyped-lib": "1.0.0",
+    "zod": "3.23.8"
+  }
+}
