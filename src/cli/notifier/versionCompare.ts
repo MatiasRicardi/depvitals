@@ -46,8 +46,11 @@ function parseComponent(value: string | undefined): number | undefined {
  * Returns `undefined` for a `v` prefix, empty input, whitespace, missing or extra components
  * (`0.2`, `1.2.3.4`), prerelease tags (`0.2.0-rc.1`), build metadata (`1.2.3+build.5`), partial
  * tokens (`1.x.3`), leading zeros (`01.2.3`) and any other malformed metadata.
+ *
+ * Exported for the notifier's own consumers (Step 66 validates untrusted registry text with this
+ * single grammar) so exactly one place defines what "an exact stable DepVitals version" means.
  */
-function parseStableVersion(value: string): ParsedVersion | undefined {
+export function parseStableVersion(value: string): ParsedVersion | undefined {
   const parts = value.split('.');
 
   if (parts.length !== 3) {

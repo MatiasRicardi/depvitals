@@ -24,7 +24,8 @@
  * - a workspace child manifest and lockfile/package-manager metadata are outside the scanned
  *   project boundary and contribute no evidence in either direction;
  * - the analysis path can reach neither the network nor a process/eval primitive, and the source
- *   surface stays closed to unrequested modules (only the Step 63 pure version helper may exist);
+ *   surface stays closed to unrequested modules (only the notifier helpers of Steps 63-66, which
+ *   live under src/cli/notifier/ and are unreachable from the analysis path, may exist);
  * - the analysis result gained no new finding category and `src/index.ts` gained no public entry point.
  *
  * Everything is static and offline: fixtures are read as text, no analyzed project code, script,
@@ -495,11 +496,13 @@ describe('Step 62: the analysis path has no network or execution capability', ()
 
     // Steps 63-68 deliberately extend this list; anything else appearing here is feature creep.
     // Step 63 adds only the pure, I/O-free notifier comparison helper, Step 64 only the pure,
-    // import-free notifier eligibility predicate, and Step 65 only the private best-effort
-    // update-version cache (no network, no CLI wiring yet).
+    // import-free notifier eligibility predicate, Step 65 only the private best-effort
+    // update-version cache, and Step 66 only the private bounded registry lookup (no CLI wiring
+    // yet, and - unlike the analysis path below - confined to src/cli/notifier/).
     expect(modules).toEqual([
       'cli/index.ts',
       'cli/notifier/eligibility.ts',
+      'cli/notifier/registryLookup.ts',
       'cli/notifier/updateCache.ts',
       'cli/notifier/versionCompare.ts',
       'cli/parseCliArgs.ts',
