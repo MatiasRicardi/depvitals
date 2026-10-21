@@ -1,0 +1,22 @@
+{
+  "name": "eslint-unknown-alias",
+  "version": "0.0.0",
+  "devDependencies": {
+    "eslint-config-standardish": "1.0.0",
+    "eslint-plugin-invented": "1.0.0",
+    "react": "19.0.0"
+  },
+  "eslintConfig": {
+    "extends": [
+      "some-unknown-config",
+      "plugin:jsx-plus/recommended",
+      "prettier/react",
+      "eslint:all"
+    ],
+    "plugins": [
+      "invented",
+      "jsx-plus",
+      "React"
+    ]
+  }
+}
