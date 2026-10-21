@@ -20,6 +20,7 @@
 
 import { AnalysisError, type AnalysisResult, analyzeProject } from '../core/analyzeProject.js';
 import { findEslintManifestUsage } from '../detectors/eslintManifestConfig.js';
+import { EslintRcJsonError, findEslintRcJsonUsage } from '../detectors/eslintRcJsonConfig.js';
 import { formatTerminalReport, hasDependencyIssues } from '../reporters/terminalReporter.js';
 import { ProjectManifestError } from '../scanner/projectManifest.js';
 import { SourceFilesError } from '../scanner/sourceFiles.js';
@@ -95,10 +96,10 @@ async function runScan(projectPath: string): Promise<CliResult> {
   let result: AnalysisResult;
 
   try {
-    // Legacy `package.json#eslintConfig` contributes configuration-only names. They are passed
-    // through the analyzer's config handoff, which merges them into `usedNames` only, so they can
-    // suppress an unused finding and can never create a missing one.
-    const configUsedNames = await findEslintManifestUsage(projectPath);
+    // Legacy ESLint configuration contributes configuration-only names. They are passed through the
+    // analyzer's config handoff, which merges them into `usedNames` only, so they can suppress an
+    // unused finding and can never create a missing one.
+    const configUsedNames = await collectConfigUsedNames(projectPath);
 
     result = await analyzeProject(projectPath, { configUsedNames });
   } catch (error) {
@@ -119,16 +120,34 @@ async function runScan(projectPath: string): Promise<CliResult> {
 }
 
 /**
+ * Collect the configuration-only package names of one project.
+ *
+ * Both legacy ESLint sources are consulted in a fixed order: the in-manifest block first, then the
+ * external `.eslintrc.json`. Their own precedence rules make them mutually exclusive - the external
+ * reader returns nothing once `package.json#eslintConfig` or a root flat config is present - so the
+ * union never combines contradictory configuration. The analyzer re-validates and sorts the merged
+ * hints, so no ordering is imposed here.
+ */
+async function collectConfigUsedNames(projectPath: string): Promise<ReadonlySet<string>> {
+  const manifestNames = await findEslintManifestUsage(projectPath);
+  const eslintRcJsonNames = await findEslintRcJsonUsage(projectPath);
+
+  return new Set<string>([...manifestNames, ...eslintRcJsonNames]);
+}
+
+/**
  * Whether the thrown value is a scanner error the CLI knows how to render. Only the existing typed
- * error classes count; everything else is treated as an unexpected internal failure.
+ * error classes plus the unusable-`.eslintrc.json` error count; everything else is treated as an
+ * unexpected internal failure.
  */
 function isOperationalError(
   error: unknown,
-): error is ProjectManifestError | SourceFilesError | AnalysisError {
+): error is ProjectManifestError | SourceFilesError | AnalysisError | EslintRcJsonError {
   return (
     error instanceof ProjectManifestError ||
     error instanceof SourceFilesError ||
-    error instanceof AnalysisError
+    error instanceof AnalysisError ||
+    error instanceof EslintRcJsonError
   );
 }
 

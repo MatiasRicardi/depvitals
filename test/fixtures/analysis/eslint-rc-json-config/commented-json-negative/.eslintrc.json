@@ -1,0 +1,4 @@
+{
+  // A commented .eslintrc.json is loadable by ESLint's legacy loader but is not strict JSON.
+  "plugins": ["react"]
+}

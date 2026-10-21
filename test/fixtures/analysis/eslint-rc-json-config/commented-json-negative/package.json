@@ -1,0 +1,9 @@
+{
+  "name": "eslint-rc-json-commented-json-negative",
+  "version": "0.0.0",
+  "type": "module",
+  "devDependencies": {
+    "eslint": "9.39.2",
+    "eslint-plugin-react": "7.37.5"
+  }
+}
