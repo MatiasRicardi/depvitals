@@ -1,0 +1,23 @@
+{
+  "name": "jest-unrelated-text-negative",
+  "version": "0.0.0",
+  "devDependencies": {
+    "jest-environment-jsdom": "29.2.0",
+    "ts-jest": "29.2.0"
+  },
+  "scripts": {
+    "test": "jest --config ts-jest",
+    "notes": "echo jest-environment-jsdom in prose"
+  },
+  "jest": {
+    "coverageReportName": "ts-jest",
+    "testMatch": ["**/tests/ts-jest/**/*.test.js"],
+    "globals": {
+      "label": "jest-environment-jsdom",
+      "ts-jest": {
+        "isolatedModules": true
+      }
+    },
+    "runner": "jest-environment-jsdom"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "jest-root-config-precedence",
+  "version": "0.0.0",
+  "devDependencies": {
+    "ts-jest": "29.2.0"
+  },
+  "jest": {
+    "preset": "ts-jest"
+  }
+}
