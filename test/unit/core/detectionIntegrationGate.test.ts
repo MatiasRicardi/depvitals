@@ -24,7 +24,7 @@
  * - a workspace child manifest and lockfile/package-manager metadata are outside the scanned
  *   project boundary and contribute no evidence in either direction;
  * - the analysis path can reach neither the network nor a process/eval primitive, and the source
- *   surface contains no notifier module (Steps 63-68 are not implemented early);
+ *   surface stays closed to unrequested modules (only the Step 63 pure version helper may exist);
  * - the analysis result gained no new finding category and `src/index.ts` gained no public entry point.
  *
  * Everything is static and offline: fixtures are read as text, no analyzed project code, script,
@@ -485,7 +485,7 @@ describe('Step 62: the analysis path has no network or execution capability', ()
     expect(offenders).toEqual([]);
   });
 
-  it('pins the pre-notifier source surface, so no notifier module exists yet', () => {
+  it('pins the source surface, so no unrequested module exists yet', () => {
     // Separator-normalized so the pinned list is one POSIX-style list on Linux, macOS and Windows
     // (`readdirSync` reports `scanner\moduleSpecifiers.ts` on Windows).
     const modules = readdirSync(SRC, { recursive: true })
@@ -494,8 +494,10 @@ describe('Step 62: the analysis path has no network or execution capability', ()
       .sort();
 
     // Steps 63-68 deliberately extend this list; anything else appearing here is feature creep.
+    // Step 63 adds only the pure, I/O-free notifier comparison helper.
     expect(modules).toEqual([
       'cli/index.ts',
+      'cli/notifier/versionCompare.ts',
       'cli/parseCliArgs.ts',
       'cli/runCli.ts',
       'core/analyzeProject.ts',
