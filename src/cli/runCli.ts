@@ -7,6 +7,8 @@
  *
  * The responsibilities here are:
  * - delegate argument validation to the pure {@link parseCliArgs};
+ * - hand the configuration-only package names recognized in the project to the analyzer, which is
+ *   the only component allowed to turn evidence into an unused/missing category;
  * - run the static dependency scan with `analyzeProject`;
  * - render the report with the pure terminal reporter;
  * - decide the scan exit code from `hasDependencyIssues`, not from the report string;
@@ -17,6 +19,7 @@
  */
 
 import { AnalysisError, type AnalysisResult, analyzeProject } from '../core/analyzeProject.js';
+import { findEslintManifestUsage } from '../detectors/eslintManifestConfig.js';
 import { formatTerminalReport, hasDependencyIssues } from '../reporters/terminalReporter.js';
 import { ProjectManifestError } from '../scanner/projectManifest.js';
 import { SourceFilesError } from '../scanner/sourceFiles.js';
@@ -92,7 +95,12 @@ async function runScan(projectPath: string): Promise<CliResult> {
   let result: AnalysisResult;
 
   try {
-    result = await analyzeProject(projectPath);
+    // Legacy `package.json#eslintConfig` contributes configuration-only names. They are passed
+    // through the analyzer's config handoff, which merges them into `usedNames` only, so they can
+    // suppress an unused finding and can never create a missing one.
+    const configUsedNames = await findEslintManifestUsage(projectPath);
+
+    result = await analyzeProject(projectPath, { configUsedNames });
   } catch (error) {
     if (isOperationalError(error)) {
       return { exitCode: 1, stdout: '', stderr: `${error.message}\n` };

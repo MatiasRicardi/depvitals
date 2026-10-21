@@ -1,0 +1,10 @@
+{
+  "name": "eslint-flat-config-precedence",
+  "version": "0.0.0",
+  "devDependencies": {
+    "eslint-config-prettier": "9.1.0"
+  },
+  "eslintConfig": {
+    "extends": "prettier"
+  }
+}
