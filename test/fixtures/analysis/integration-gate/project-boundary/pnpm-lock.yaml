@@ -1,0 +1,5 @@
+# Synthetic lockfile: never parsed, never usage evidence, never a missing-dependency source.
+lockfileVersion: '9.0'
+packages:
+  react@18.0.0: {}
+  phantom-pkg@1.0.0: {}
