@@ -100,8 +100,10 @@ describe('findJestConfigUsage (pure allowlist matcher)', () => {
   });
 
   it('does not expand the historical "jsdom" shorthand', () => {
-    // Older Jest versions resolve `jsdom` to `jest-environment-jsdom` and newer ones do not, and
-    // DepVitals does not know the Jest version, so the shorthand stays unsupported.
+    // Where Jest accepts `jsdom` it resolves it to the separately installed
+    // jest-environment-jsdom, but whether the shorthand is available at all depends on the Jest
+    // major version, which DepVitals does not read. This release supports explicit package names
+    // only, so the shorthand stays unsupported by design rather than by assumption.
     expect(findJestConfigUsage({ testEnvironment: 'jsdom' }, SUPPORTING)).toEqual(
       new Set<string>(),
     );

@@ -12,8 +12,9 @@
  * - implement the Jest configuration schema. Only `preset` and `testEnvironment` are read, and only
  *   through the fixed allowlists below;
  * - expand Jest shorthands. In particular `testEnvironment: "jsdom"` is *not* credited to
- *   `jest-environment-jsdom`, because whether that shorthand exists (and how it resolves) depends on
- *   the Jest version in use, which DepVitals does not know;
+ *   `jest-environment-jsdom`: whether that shorthand is a package reference at all depends on the
+ *   Jest major version in use, which DepVitals does not read, so it stays outside the supported
+ *   subset of explicit package names;
  * - interpret `<rootDir>/...`, `./...`, absolute paths, URLs or any other resolver-looking string as a
  *   package reference;
  * - read `jest.config.js`/`.cjs`/`.mjs`/`.ts`/`.json` contents. Those files are only checked for
@@ -56,10 +57,13 @@ const PRESET_PACKAGE_NAMES: ReadonlySet<string> = new Set(['ts-jest']);
 /**
  * The only `testEnvironment` packages recognized by this release.
  *
- * Again the complete package name only. The historical `"jsdom"` shorthand is deliberately absent:
- * older Jest versions map it to `jest-environment-jsdom`, newer ones do not resolve it at all, and
- * DepVitals does not know (or read) the Jest version, so crediting the package from the shorthand
- * would be an unsupported inference.
+ * Again the complete package name only; the `"jsdom"` shorthand is deliberately absent from this
+ * release. Where Jest accepts `"jsdom"`, it does resolve it to the separately installed
+ * `jest-environment-jsdom` package - but whether that shorthand is available at all depends on the
+ * Jest major version (up to v27 the jsdom environment shipped inside Jest itself, so such a project
+ * declares no package to credit), and DepVitals neither reads nor resolves the Jest version of an
+ * analyzed project. The supported subset is therefore fixed to the exact package name; shorthand
+ * resolution is a separate change that must first define which Jest versions it applies to.
  */
 const TEST_ENVIRONMENT_PACKAGE_NAMES: ReadonlySet<string> = new Set(['jest-environment-jsdom']);
 
