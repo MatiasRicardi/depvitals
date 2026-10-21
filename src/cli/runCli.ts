@@ -21,6 +21,7 @@
 import { AnalysisError, type AnalysisResult, analyzeProject } from '../core/analyzeProject.js';
 import { findEslintManifestUsage } from '../detectors/eslintManifestConfig.js';
 import { EslintRcJsonError, findEslintRcJsonUsage } from '../detectors/eslintRcJsonConfig.js';
+import { findJestManifestUsage } from '../detectors/jestManifestConfig.js';
 import { formatTerminalReport, hasDependencyIssues } from '../reporters/terminalReporter.js';
 import { ProjectManifestError } from '../scanner/projectManifest.js';
 import { SourceFilesError } from '../scanner/sourceFiles.js';
@@ -125,14 +126,16 @@ async function runScan(projectPath: string): Promise<CliResult> {
  * Both legacy ESLint sources are consulted in a fixed order: the in-manifest block first, then the
  * external `.eslintrc.json`. Their own precedence rules make them mutually exclusive - the external
  * reader returns nothing once `package.json#eslintConfig` or a root flat config is present - so the
- * union never combines contradictory configuration. The analyzer re-validates and sorts the merged
- * hints, so no ordering is imposed here.
+ * union never combines contradictory configuration. The `package.json#jest` reader is independent of
+ * the ESLint rules but obeys the same style of guard, producing nothing once a root `jest.config.*`
+ * file exists. The analyzer re-validates and sorts the merged hints, so no ordering is imposed here.
  */
 async function collectConfigUsedNames(projectPath: string): Promise<ReadonlySet<string>> {
   const manifestNames = await findEslintManifestUsage(projectPath);
   const eslintRcJsonNames = await findEslintRcJsonUsage(projectPath);
+  const jestNames = await findJestManifestUsage(projectPath);
 
-  return new Set<string>([...manifestNames, ...eslintRcJsonNames]);
+  return new Set<string>([...manifestNames, ...eslintRcJsonNames, ...jestNames]);
 }
 
 /**
