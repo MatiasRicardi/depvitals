@@ -1,0 +1,8 @@
+{
+  // A real tsconfig.json is JSON-with-comments; DepVitals reads only strict JSON documents.
+  "compilerOptions": {
+    "target": "ES2023",
+    "types": ["node"]
+  },
+  "include": ["src"]
+}

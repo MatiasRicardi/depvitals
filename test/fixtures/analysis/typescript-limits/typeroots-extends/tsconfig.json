@@ -1,0 +1,9 @@
+// This document only redirects: the effective "types" list is inherited and a local root shadows the
+// installed packages, so a "types" entry such as "jest" does not necessarily name an npm package.
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "typeRoots": ["./typings", "./node_modules/@types"]
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,8 @@
+{
+  "name": "ts-limits-types-ambient-with-source-import",
+  "version": "0.0.0",
+  "dependencies": {},
+  "devDependencies": {
+    "@types/express": "4.17.21"
+  }
+}

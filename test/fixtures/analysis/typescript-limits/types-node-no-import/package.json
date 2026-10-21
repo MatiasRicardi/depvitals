@@ -1,0 +1,8 @@
+{
+  "name": "ts-limits-types-node-no-import",
+  "version": "0.0.0",
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "22.10.1"
+  }
+}
