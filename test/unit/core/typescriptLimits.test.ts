@@ -17,8 +17,9 @@
  * - `typeRoots` / `extends` -> never read, and a `types` entry can name a local folder rather than a
  *   package, which is exactly why the name cannot be guessed from the entry alone;
  * - a type-only `import type { Request } from 'express'` with only `@types/express` declared -> the
- *   runtime package stays `missing` and the stub stays `unused`, so crediting `@types/*` through the
- *   source name would hide a real missing dependency;
+ *   scanner keeps reporting `express` as missing and `@types/express` as unused. TypeScript erases
+ *   `import type`, so this source reference is no proof that `express` is needed at runtime; crediting
+ *   the stub from the `express` specifier would silently silence only the unused side;
  * - type-level imports (`import type`, `import('pkg')`) inside a `.d.ts` file already count as usage,
  *   while `declare module 'pkg'` and `/// <reference types="pkg" />` produce no evidence.
  *
@@ -103,18 +104,24 @@ describe('tsconfig.json is not read, so compiler options change nothing (Step 61
   });
 
   it('shows that a "types" entry is not a package name', () => {
-    // These are the strings a `compilerOptions.types` list may contain. They are resolved against
-    // type roots by TypeScript, so they are not `@types/*` package names and must not be handed to
-    // the analyzer as if they were: the credited name would differ from the declared one.
+    // These are the strings a `compilerOptions.types` list may contain. TypeScript resolves them
+    // against type roots, so they are not `@types/*` package names: a hint reader built on them would
+    // credit nothing for `node` (the declared package is `@types/node`) or the wrong package for
+    // `jest` whenever a runtime package of that same name happens to be declared.
     expect(classifyPackageSpecifier('node')).toEqual({ kind: 'external', packageName: 'node' });
     expect(classifyPackageSpecifier('jest')).toEqual({ kind: 'external', packageName: 'jest' });
     expect(classifyPackageSpecifier('./typings/jest')).toEqual({ kind: 'internal' });
   });
 });
 
-describe('a declared @types package does not stand in for its runtime package (Step 61)', () => {
+describe('a type-only import of an undeclared package keeps both findings (Step 61)', () => {
   it('keeps express missing while @types/express stays unused', async () => {
     const result = await analyzeProject(fixturePath('types-ambient-with-source-import'));
+
+    // The reference is in type position, which TypeScript erases, so nothing here proves a runtime
+    // dependency on `express`; the scanner does not distinguish type position from value position, and
+    // it never equates the `express` specifier with the declared `@types/express` stub. Both findings
+    // therefore stay as reported, which is what a future rule must preserve explicitly.
 
     expect(result).toMatchObject({
       unusedDependencies: [],
