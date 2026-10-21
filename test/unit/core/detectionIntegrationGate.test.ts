@@ -494,11 +494,13 @@ describe('Step 62: the analysis path has no network or execution capability', ()
       .sort();
 
     // Steps 63-68 deliberately extend this list; anything else appearing here is feature creep.
-    // Step 63 adds only the pure, I/O-free notifier comparison helper and Step 64 only the pure,
-    // import-free notifier eligibility predicate.
+    // Step 63 adds only the pure, I/O-free notifier comparison helper, Step 64 only the pure,
+    // import-free notifier eligibility predicate, and Step 65 only the private best-effort
+    // update-version cache (no network, no CLI wiring yet).
     expect(modules).toEqual([
       'cli/index.ts',
       'cli/notifier/eligibility.ts',
+      'cli/notifier/updateCache.ts',
       'cli/notifier/versionCompare.ts',
       'cli/parseCliArgs.ts',
       'cli/runCli.ts',
