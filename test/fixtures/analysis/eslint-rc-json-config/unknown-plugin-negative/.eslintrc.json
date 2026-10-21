@@ -1,0 +1,4 @@
+{
+  "extends": ["plugin:jsx-plus/recommended", "plugin:vue/all", "airbnb"],
+  "plugins": ["jsx-plus", "vue", "eslint", "React"]
+}

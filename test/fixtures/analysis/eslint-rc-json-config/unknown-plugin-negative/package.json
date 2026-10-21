@@ -1,0 +1,8 @@
+{
+  "name": "eslintrc-unknown-plugin-negative",
+  "version": "0.0.0",
+  "devDependencies": {
+    "eslint-plugin-jsx-plus": "0.1.0",
+    "eslint-plugin-vue": "9.32.0"
+  }
+}

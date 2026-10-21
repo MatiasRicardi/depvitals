@@ -12,7 +12,8 @@
  * - implement the ESLint configuration schema. Only `extends` and `plugins` are read, and only
  *   through the fixed allowlists below;
  * - resolve `overrides`, scoped plugin shorthands, `plugin:<name>/<config>` forms other than the one
- *   allowlisted string, shareable-config subpaths, or external `.eslintrc.*` files (Step 58);
+ *   allowlisted string, shareable-config subpaths, or external `.eslintrc.*` files, which are read
+ *   by the sibling `findEslintRcJsonUsage` reader instead of duplicating these tables;
  * - guess a package from arbitrary configuration text, substring-match a value, or invent a name;
  * - report anything about a package the manifest does not declare;
  * - mutate the analyzed project.
@@ -87,6 +88,9 @@ const PLUGIN_PACKAGE_NAMES: ReadonlyMap<string, string> = new Map([
  * Compared case-insensitively (see {@link hasFlatConfigEntry}) because case-insensitive filesystems
  * treat `ESLint.Config.js` as the same file, and DepVitals must not disagree with itself about one
  * project depending on the platform it runs on.
+ *
+ * The same guard is shared with the external `.eslintrc.json` reader, so both legacy sources are
+ * disabled by exactly the same set of root entrypoint names.
  */
 const FLAT_CONFIG_ENTRY_NAMES: ReadonlySet<string> = new Set([
   'eslint.config.js',
@@ -178,8 +182,11 @@ export async function findEslintManifestUsage(projectRoot: string): Promise<Read
  * or executed. An unreadable or missing root simply means no flat config is known to be present.
  * Names are compared case-insensitively so a case-insensitive filesystem (typical on Windows and
  * macOS) cannot hide a flat config from this guard.
+ *
+ * Shared with the external `.eslintrc.json` reader: legacy configuration hints from either source
+ * are uncertain once a modern entrypoint exists, and one guard keeps the two readers consistent.
  */
-async function hasFlatConfigEntry(root: string): Promise<boolean> {
+export async function hasFlatConfigEntry(root: string): Promise<boolean> {
   let entries: string[];
 
   try {
