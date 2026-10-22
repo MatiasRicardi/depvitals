@@ -18,7 +18,7 @@
  * outside the DepVitals repository, and the tests are offline.
  */
 
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
@@ -66,28 +66,26 @@ async function withScratchProject(
 }
 
 /**
- * Whether the local filesystem distinguishes filenames by case.
+ * Whether the two ESLint config spellings are stored as two distinct files in `root`.
  *
  * The "both spellings exist" regression only makes sense on a case-sensitive root: on macOS and
- * Windows `.eslintrc.json` and `.ESLINTRC.JSON` resolve to the same file, so the test would read
- * whichever entry was written last instead of both. Detect the filesystem with two dedicated probe
- * files that differ only in case and skip there. The probes use a unique prefix so they never
- * collide with a target file and are removed before the code under test runs.
+ * Windows `.eslintrc.json` and `.ESLINTRC.JSON` resolve to a single file, so the test would read
+ * whichever entry was written last instead of both. Compare inodes rather than directory listing
+ * order, since a case-insensitive filesystem reports both names as the same inode regardless of how
+ * `readdir` happens to order its entries. Skip when they are the same file.
  */
-async function isCaseSensitiveDirectory(root: string): Promise<boolean> {
-  const probeLower = '.depvitals-case-probe-lower';
-  const probeUpper = '.DEPVITALS-CASE-PROBE-UPPER';
-
-  await writeFile(join(root, probeLower), '', 'utf8');
-  await writeFile(join(root, probeUpper), '', 'utf8');
-
+async function areDistinctEslintNames(root: string): Promise<boolean> {
+  const stLower = await stat(join(root, '.eslintrc.json'));
+  let stUpper;
   try {
-    const entries = await readdir(root);
-    return entries.includes(probeLower) && entries.includes(probeUpper);
-  } finally {
-    await rm(join(root, probeLower), { force: true });
-    await rm(join(root, probeUpper), { force: true });
+    stUpper = await stat(join(root, '.ESLINTRC.JSON'));
+  } catch {
+    // A name that cannot be opened at all means the uppercase copy is absent: treat as distinct so
+    // the canonical-lowercase assertion still runs.
+    return true;
   }
+
+  return stLower.ino !== stUpper.ino;
 }
 
 const MANIFEST_DECLARING_REACT = JSON.stringify({
@@ -133,7 +131,7 @@ describe('findEslintRcJsonUsage (external .eslintrc.json reader)', () => {
         '.ESLINTRC.JSON': '{ "plugins": ["not-declared-plugin"] }\n',
       },
       async (root) => {
-        if (!(await isCaseSensitiveDirectory(root))) {
+        if (!(await areDistinctEslintNames(root))) {
           return;
         }
 
