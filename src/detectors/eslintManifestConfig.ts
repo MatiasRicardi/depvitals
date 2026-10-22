@@ -174,7 +174,11 @@ export async function readLegacyEslintPrecedence(
   // The legacy `.eslintrc.json` name is matched case-insensitively (Windows/macOS resolve the
   // same file under a different casing), so remember the actual entry that was found. The JSON
   // reader reuses this exact entry name instead of assuming the canonical lowercase spelling.
-  const legacyRcJsonEntryName = entries.find((entry) => entry.toLowerCase() === '.eslintrc.json');
+  // Prefer the canonical lowercase entry when both it and an uppercase copy exist in a
+  // case-sensitive root, so directory order cannot make the reader open the wrong file.
+  const legacyRcJsonEntryName = entries.includes('.eslintrc.json')
+    ? '.eslintrc.json'
+    : entries.find((entry) => entry.toLowerCase() === '.eslintrc.json');
 
   return {
     hardBarrier: has(FLAT_CONFIG_ENTRY_NAMES) || has(LEGACY_BARRIER_ENTRY_NAMES),

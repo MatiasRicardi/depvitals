@@ -97,6 +97,21 @@ describe('findEslintRcJsonUsage (external .eslintrc.json reader)', () => {
     expect(configUsedNames).toEqual(new Set(['eslint-plugin-react']));
   });
 
+  it('reads the canonical lowercase .eslintrc.json when an uppercase copy also exists', async () => {
+    // A case-sensitive root can list both spellings. The canonical lowercase file wins so the
+    // reader never opens the uppercase copy by directory order.
+    await withScratchProject(
+      {
+        'package.json': MANIFEST_DECLARING_REACT,
+        '.eslintrc.json': ESLINTRC_DECLARING_REACT,
+        '.ESLINTRC.JSON': '{ "plugins": ["not-declared-plugin"] }\n',
+      },
+      async (root) => {
+        expect(await findEslintRcJsonUsage(root)).toEqual(new Set(['eslint-plugin-react']));
+      },
+    );
+  });
+
   it('suppresses an unused devDependency named by an extends alias', async () => {
     const root = fixturePath('extends-prettier');
     const configUsedNames = await findEslintRcJsonUsage(root);
