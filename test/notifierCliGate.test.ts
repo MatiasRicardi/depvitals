@@ -497,11 +497,13 @@ describe('Step 67 gate: eligibility and the request bound hold for the built CLI
         );
 
         // The deterministic report never changes and the notice only ever rides on stderr, so the
-        // three runs keep byte-identical stdout and identical exit status across the whole lifecycle.
+        // three runs keep byte-identical stdout and stderr across the whole lifecycle. CANNED_LATEST
+        // is strictly newer than the installed version, so every run emits the same notice on stderr;
+        // pinning stderr on all three also catches any unexpected output on the initial or expired run.
         for (const run of [firstRun, secondRun, thirdRun]) {
           expect(run.stdout).toBe(await reportOf(cleanProject));
+          expect(run.stderr).toBe(expectedNotice(CURRENT_VERSION, CANNED_LATEST));
         }
-        expect(secondRun.stderr).toBe(expectedNotice(CURRENT_VERSION, CANNED_LATEST));
 
         // Exactly one request on the first and third runs, none on the fresh-cache second run.
         expect(await readRequests(first)).toEqual([NPM_DIST_TAGS_ENDPOINT]);
