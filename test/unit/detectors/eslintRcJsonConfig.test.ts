@@ -18,7 +18,7 @@
  * outside the DepVitals repository, and the tests are offline.
  */
 
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
@@ -65,6 +65,29 @@ async function withScratchProject(
   }
 }
 
+/**
+ * Whether the two ESLint config spellings are stored as two distinct files in `root`.
+ *
+ * The "both spellings exist" regression only makes sense on a case-sensitive root: on macOS and
+ * Windows `.eslintrc.json` and `.ESLINTRC.JSON` resolve to a single file, so the test would read
+ * whichever entry was written last instead of both. Compare inodes rather than directory listing
+ * order, since a case-insensitive filesystem reports both names as the same inode regardless of how
+ * `readdir` happens to order its entries. Skip when they are the same file.
+ */
+async function areDistinctEslintNames(root: string): Promise<boolean> {
+  const stLower = await stat(join(root, '.eslintrc.json'));
+  let stUpper;
+  try {
+    stUpper = await stat(join(root, '.ESLINTRC.JSON'));
+  } catch {
+    // A name that cannot be opened at all means the uppercase copy is absent: treat as distinct so
+    // the canonical-lowercase assertion still runs.
+    return true;
+  }
+
+  return stLower.ino !== stUpper.ino;
+}
+
 const MANIFEST_DECLARING_REACT = JSON.stringify({
   name: 'scratch-eslintrc',
   version: '0.0.0',
@@ -85,6 +108,36 @@ describe('findEslintRcJsonUsage (external .eslintrc.json reader)', () => {
     expect(baseline.unusedDevDependencies).toEqual(['eslint-plugin-react']);
     expect(hinted.unusedDevDependencies).toEqual([]);
     expect(hinted.missingDependencies).toEqual([]);
+  });
+
+  it('reads a legacy .eslintrc.json stored under an uppercase name (case-insensitive precedence)', async () => {
+    // A case-sensitive root that only has `.ESLINTRC.JSON` sets legacyRcByName, so the manifest
+    // reader skips package.json#eslintConfig. Without reusing the matched entry name the JSON
+    // reader would look for the lowercase spelling, find nothing, and lose this evidence.
+    const root = fixturePath('eslintrc-uppercase');
+    const configUsedNames = await findEslintRcJsonUsage(root);
+
+    expect(configUsedNames).toEqual(new Set(['eslint-plugin-react']));
+  });
+
+  it('reads the canonical lowercase .eslintrc.json when an uppercase copy also exists', async () => {
+    // A case-sensitive root can list both spellings. The canonical lowercase file wins so the
+    // reader never opens the uppercase copy by directory order. On a case-insensitive filesystem
+    // the two names are the same file, so this scenario cannot occur and the test skips.
+    await withScratchProject(
+      {
+        'package.json': MANIFEST_DECLARING_REACT,
+        '.eslintrc.json': ESLINTRC_DECLARING_REACT,
+        '.ESLINTRC.JSON': '{ "plugins": ["not-declared-plugin"] }\n',
+      },
+      async (root) => {
+        if (!(await areDistinctEslintNames(root))) {
+          return;
+        }
+
+        expect(await findEslintRcJsonUsage(root)).toEqual(new Set(['eslint-plugin-react']));
+      },
+    );
   });
 
   it('suppresses an unused devDependency named by an extends alias', async () => {
@@ -393,6 +446,14 @@ describe('CLI scan wiring for external .eslintrc.json hints', () => {
     expect(result.stdout).toContain('Unused devDependencies (1)');
     expect(result.stdout).toContain('eslint-config-airbnb');
     expect(result.stdout).not.toContain('eslint-plugin-react');
+    expect(result.stderr).toBe('');
+  });
+
+  it('reports a config-only used dependency named by an uppercase .ESLINTRC.JSON', async () => {
+    const result = await runCli([fixturePath('eslintrc-uppercase')], OPTIONS);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('No dependency issues found.');
     expect(result.stderr).toBe('');
   });
 

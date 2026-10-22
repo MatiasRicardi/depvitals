@@ -137,6 +137,7 @@ const LEGACY_RC_BY_NAME_ENTRY_NAMES: ReadonlySet<string> = new Set(['.eslintrc.j
 export type LegacyEslintPrecedence = {
   readonly hardBarrier: boolean;
   readonly legacyRcByName: boolean;
+  readonly legacyRcJsonEntryName: string | undefined;
 };
 
 /**
@@ -146,6 +147,9 @@ export type LegacyEslintPrecedence = {
  * this so a hard barrier disables both, `.eslintrc.json` wins over the manifest block, and an
  * extensionless `.eslintrc` displaces only the manifest block. Neither reader unions the displaced
  * source, so two contradictory legacy configurations are never combined.
+ *
+ * The legacy `.eslintrc.json` name is resolved case-insensitively, so the matched directory entry
+ * name is returned as `legacyRcJsonEntryName` for the JSON reader to reuse.
  *
  * @param projectRoot - Project directory to inspect; resolved to an absolute path.
  */
@@ -158,15 +162,28 @@ export async function readLegacyEslintPrecedence(
   try {
     entries = await readdir(root);
   } catch {
-    return { hardBarrier: false, legacyRcByName: false };
+    return {
+      hardBarrier: false,
+      legacyRcByName: false,
+      legacyRcJsonEntryName: undefined,
+    };
   }
 
   const has = (names: ReadonlySet<string>): boolean =>
     entries.some((entry) => names.has(entry.toLowerCase()));
+  // The legacy `.eslintrc.json` name is matched case-insensitively (Windows/macOS resolve the
+  // same file under a different casing), so remember the actual entry that was found. The JSON
+  // reader reuses this exact entry name instead of assuming the canonical lowercase spelling.
+  // Prefer the canonical lowercase entry when both it and an uppercase copy exist in a
+  // case-sensitive root, so directory order cannot make the reader open the wrong file.
+  const legacyRcJsonEntryName = entries.includes('.eslintrc.json')
+    ? '.eslintrc.json'
+    : entries.find((entry) => entry.toLowerCase() === '.eslintrc.json');
 
   return {
     hardBarrier: has(FLAT_CONFIG_ENTRY_NAMES) || has(LEGACY_BARRIER_ENTRY_NAMES),
     legacyRcByName: has(LEGACY_RC_BY_NAME_ENTRY_NAMES),
+    legacyRcJsonEntryName,
   };
 }
 
@@ -253,18 +270,37 @@ export async function findEslintManifestUsage(projectRoot: string): Promise<Read
 }
 
 /**
+ * Whether the on-disk directory entries contain a modern flat-config entrypoint (see
+ * {@link FLAT_CONFIG_ENTRY_NAMES}).
+ *
+ * A legacy `.eslintrc.*` file is not a flat-config entrypoint, so this predicate checks only the
+ * flat-config names.
+ */
+function hasFlatConfigEntryEntries(entries: readonly string[]): boolean {
+  return entries.some((entry) => FLAT_CONFIG_ENTRY_NAMES.has(entry.toLowerCase()));
+}
+
+/**
  * Whether the project rooted at `projectRoot` contains a modern flat-config entrypoint (see
  * {@link FLAT_CONFIG_ENTRY_NAMES}).
  *
  * A flat config is a hard barrier: its presence disables every legacy hint, including the
  * `package.json#eslintConfig` block, so it is checked before any legacy reader contributes a hint.
- * This is a thin convenience over {@link readLegacyEslintPrecedence} for callers that only need the
- * flat-config question.
+ * This is a thin convenience for callers that only need the flat-config question. Only flat-config
+ * entrypoints count: a legacy `.eslintrc.*` file reports `false`, even though it still participates
+ * in the hard-barrier check inside the legacy readers.
  *
  * @param projectRoot - Project directory to inspect; resolved to an absolute path.
  */
 export async function hasFlatConfigEntry(projectRoot: string): Promise<boolean> {
-  return (await readLegacyEslintPrecedence(projectRoot)).hardBarrier;
+  let entries: string[];
+  try {
+    entries = await readdir(resolve(projectRoot));
+  } catch {
+    return false;
+  }
+
+  return hasFlatConfigEntryEntries(entries);
 }
 
 /**

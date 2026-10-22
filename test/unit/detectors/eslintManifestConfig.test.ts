@@ -25,6 +25,7 @@ import { analyzeProject } from '../../../src/core/analyzeProject.js';
 import {
   findEslintConfigUsage,
   findEslintManifestUsage,
+  hasFlatConfigEntry,
 } from '../../../src/detectors/eslintManifestConfig.js';
 
 const FIXTURE_DIR = fileURLToPath(new URL('../../fixtures/analysis/', import.meta.url));
@@ -557,5 +558,28 @@ describe('CLI scan wiring for eslintConfig hints', () => {
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toContain('Unused devDependencies (1)');
     expect(result.stdout).toContain('eslint-plugin-react');
+  });
+});
+
+describe('hasFlatConfigEntry (flat-config predicate)', () => {
+  it('returns true only for a modern flat-config entrypoint', async () => {
+    await withScratchProject({ 'eslint.config.mjs': 'export default {};' }, async (root) => {
+      expect(await hasFlatConfigEntry(root)).toBe(true);
+    });
+  });
+
+  it('returns false for a legacy .eslintrc.cjs with no flat-config file', async () => {
+    // .eslintrc.cjs is a legacy config, not a flat-config entrypoint. The hard-barrier check that
+    // still counts it lives in the readers, not in this predicate.
+    await withScratchProject(
+      { '.eslintrc.cjs': 'module.exports = { root: true };' },
+      async (root) => {
+        expect(await hasFlatConfigEntry(root)).toBe(false);
+      },
+    );
+  });
+
+  it('returns false when the directory does not exist', async () => {
+    expect(await hasFlatConfigEntry(join(tmpdir(), 'depvitals-does-not-exist'))).toBe(false);
   });
 });

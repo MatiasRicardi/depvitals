@@ -130,7 +130,11 @@ export async function findEslintRcJsonUsage(projectRoot: string): Promise<Readon
     throw error;
   }
 
-  const eslintRcPath = join(root, ESLINTRC_FILENAME);
+  // Reuse the on-disk entry name when the legacy `.eslintrc.json` was found under a different
+  // casing, so the reader opens the file that actually exists instead of assuming the canonical
+  // lowercase spelling.
+  const eslintRcFilename = precedence.legacyRcJsonEntryName ?? ESLINTRC_FILENAME;
+  const eslintRcPath = join(root, eslintRcFilename);
   const text = await readEslintRcText(eslintRcPath);
 
   if (text === undefined) {
@@ -143,8 +147,8 @@ export async function findEslintRcJsonUsage(projectRoot: string): Promise<Readon
     parsed = JSON.parse(withoutByteOrderMark(text));
   } catch (error) {
     throw new EslintRcJsonError(
-      `${ESLINTRC_FILENAME} at ${eslintRcPath} is not valid JSON. DepVitals reads strict JSON ` +
-        `only, so JavaScript-style comments inside ${ESLINTRC_FILENAME} are not supported.`,
+      `${eslintRcFilename} at ${eslintRcPath} is not valid JSON. DepVitals reads strict JSON ` +
+        `only, so JavaScript-style comments inside ${eslintRcFilename} are not supported.`,
       'invalid-json',
       error,
     );
