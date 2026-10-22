@@ -87,6 +87,16 @@ describe('findEslintRcJsonUsage (external .eslintrc.json reader)', () => {
     expect(hinted.missingDependencies).toEqual([]);
   });
 
+  it('reads a legacy .eslintrc.json stored under an uppercase name (case-insensitive precedence)', async () => {
+    // A case-sensitive root that only has `.ESLINTRC.JSON` sets legacyRcByName, so the manifest
+    // reader skips package.json#eslintConfig. Without reusing the matched entry name the JSON
+    // reader would look for the lowercase spelling, find nothing, and lose this evidence.
+    const root = fixturePath('eslintrc-uppercase');
+    const configUsedNames = await findEslintRcJsonUsage(root);
+
+    expect(configUsedNames).toEqual(new Set(['eslint-plugin-react']));
+  });
+
   it('suppresses an unused devDependency named by an extends alias', async () => {
     const root = fixturePath('extends-prettier');
     const configUsedNames = await findEslintRcJsonUsage(root);
@@ -393,6 +403,14 @@ describe('CLI scan wiring for external .eslintrc.json hints', () => {
     expect(result.stdout).toContain('Unused devDependencies (1)');
     expect(result.stdout).toContain('eslint-config-airbnb');
     expect(result.stdout).not.toContain('eslint-plugin-react');
+    expect(result.stderr).toBe('');
+  });
+
+  it('reports a config-only used dependency named by an uppercase .ESLINTRC.JSON', async () => {
+    const result = await runCli([fixturePath('eslintrc-uppercase')], OPTIONS);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('No dependency issues found.');
     expect(result.stderr).toBe('');
   });
 
