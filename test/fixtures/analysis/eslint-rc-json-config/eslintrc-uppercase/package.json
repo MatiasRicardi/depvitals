@@ -1,0 +1,7 @@
+{
+  "name": "eslintrc-uppercase",
+  "version": "0.0.0",
+  "devDependencies": {
+    "eslint-plugin-react": "7.37.0"
+  }
+}
