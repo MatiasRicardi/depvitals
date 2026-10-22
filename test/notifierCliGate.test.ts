@@ -26,7 +26,7 @@
  */
 
 import { execFile, spawnSync } from 'node:child_process';
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
@@ -454,6 +454,69 @@ describe('Step 67 gate: eligibility and the request bound hold for the built CLI
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  itBuilt(
+    'runs the full cache lifecycle through the built CLI: lookup, reuse, then refresh',
+    async () => {
+      // Three eligible runs share one throwaway cache root. The first asks the registry once and
+      // writes the cache; the second reuses that fresh cache with no request; the third, after the
+      // cached timestamp is aged past the 24h TTL, performs exactly one new bounded lookup and
+      // refreshes the cache. Nothing here waits on real time: the timestamp is rewritten in place.
+      const root = await mkdtemp(join(tmpdir(), 'depvitals-step68-lifecycle-'));
+      const cacheFile = join(root, 'cache-root', 'depvitals', UPDATE_CACHE_FILE_NAME);
+
+      try {
+        const HOUR_MS = 60 * 60 * 1000;
+        const argv = [cleanProject];
+        const first = join(root, 'first.txt');
+        const second = join(root, 'second.txt');
+        const third = join(root, 'third.txt');
+        const options: RunOptions = { tty: true, latest: CANNED_LATEST };
+
+        const firstRun = await runChild(
+          argv,
+          probeEnvironment(root, { ...options, requestLog: first }),
+        );
+        const secondRun = await runChild(
+          argv,
+          probeEnvironment(root, { ...options, requestLog: second }),
+        );
+
+        // Age the cache record past the 24h TTL so the third run must look up again.
+        const entry = JSON.parse(await readFile(cacheFile, 'utf8')) as { latest: string };
+
+        await writeFile(
+          cacheFile,
+          JSON.stringify({ latest: entry.latest, checkedAt: Date.now() - 25 * HOUR_MS }),
+          'utf8',
+        );
+
+        const thirdRun = await runChild(
+          argv,
+          probeEnvironment(root, { ...options, requestLog: third }),
+        );
+
+        // The deterministic report never changes and the notice only ever rides on stderr, so the
+        // three runs keep byte-identical stdout and identical exit status across the whole lifecycle.
+        for (const run of [firstRun, secondRun, thirdRun]) {
+          expect(run.stdout).toBe(await reportOf(cleanProject));
+        }
+        expect(secondRun.stderr).toBe(expectedNotice(CURRENT_VERSION, CANNED_LATEST));
+
+        // Exactly one request on the first and third runs, none on the fresh-cache second run.
+        expect(await readRequests(first)).toEqual([NPM_DIST_TAGS_ENDPOINT]);
+        expect(await readRequests(second)).toEqual([]);
+        expect(await readRequests(third)).toEqual([NPM_DIST_TAGS_ENDPOINT]);
+
+        // The third run refreshed the cache with a recent timestamp, so the next run is fresh again.
+        const refreshed = JSON.parse(await readFile(cacheFile, 'utf8')) as { checkedAt: number };
+
+        expect(Date.now() - refreshed.checkedAt).toBeLessThan(HOUR_MS);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 
   itBuilt(
     'degrades silently when the registry transport fails, keeping report and status',
