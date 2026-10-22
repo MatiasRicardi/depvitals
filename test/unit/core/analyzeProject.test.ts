@@ -137,6 +137,69 @@ describe('analyzeProject', () => {
     });
   });
 
+  describe('comments in source files (Step 68.1)', () => {
+    // A `#` comment at a word boundary swallows the rest of the line, so a package named only inside
+    // it is not credited. These use a throwaway project so the complete pipeline runs on real files.
+
+    it('does not credit a package used only inside a comment', async () => {
+      const sandbox = mkdtempSync(join(tmpdir(), 'depvitals-source-comment-'));
+
+      try {
+        writeFileSync(
+          join(sandbox, 'package.json'),
+          JSON.stringify({
+            name: 'source-comment',
+            version: '0.0.0',
+            devDependencies: { typescript: '5.0.0' },
+          }),
+        );
+        writeFileSync(
+          join(sandbox, 'index.ts'),
+          ['// import typescript from "typescript";', 'export const x = 1;'].join('\n'),
+        );
+
+        const result = await analyzeProject(sandbox);
+
+        // The import lives only in a comment, so `typescript` stays unused.
+        expect(result.unusedDevDependencies).toEqual(['typescript']);
+        expect(result.missingDependencies).toEqual([]);
+      } finally {
+        rmSync(sandbox, { recursive: true, force: true });
+      }
+    });
+
+    it('credits a package used after a newline that ends a comment', async () => {
+      const sandbox = mkdtempSync(join(tmpdir(), 'depvitals-source-comment-'));
+
+      try {
+        writeFileSync(
+          join(sandbox, 'package.json'),
+          JSON.stringify({
+            name: 'source-comment',
+            version: '0.0.0',
+            devDependencies: { typescript: '5.0.0' },
+          }),
+        );
+        writeFileSync(
+          join(sandbox, 'index.ts'),
+          [
+            '// import typescript from "typescript";',
+            'import typescript from "typescript";',
+            'export const x = typescript;',
+          ].join('\n'),
+        );
+
+        const result = await analyzeProject(sandbox);
+
+        // The real import on the next line is outside the comment, so `typescript` is used.
+        expect(result.unusedDevDependencies).toEqual([]);
+        expect(result.missingDependencies).toEqual([]);
+      } finally {
+        rmSync(sandbox, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe('duplicate declaration handling', () => {
     it('reports a package declared in both sections as unused in each independently', async () => {
       const result = await analyzeProject(fixture('duplicate-declaration/unused'));

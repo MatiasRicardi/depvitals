@@ -123,12 +123,12 @@ async function runScan(projectPath: string): Promise<CliResult> {
 /**
  * Collect the configuration-only package names of one project.
  *
- * Both legacy ESLint sources are consulted in a fixed order: the in-manifest block first, then the
- * external `.eslintrc.json`. Their own precedence rules make them mutually exclusive - the external
- * reader returns nothing once `package.json#eslintConfig` or a root flat config is present - so the
- * union never combines contradictory configuration. The `package.json#jest` reader is independent of
- * the ESLint rules but obeys the same style of guard, producing nothing once a root `jest.config.*`
- * file exists. The analyzer re-validates and sorts the merged hints, so no ordering is imposed here.
+ * Both legacy ESLint sources share one precedence computation: a hard barrier disables both, and
+ * otherwise `.eslintrc.json` wins over the `package.json#eslintConfig` block, so the two readers are
+ * mutually exclusive and the union never combines contradictory configuration. The `package.json#jest`
+ * reader is independent of the ESLint rules but obeys the same style of guard, producing nothing once
+ * a root `jest.config.*` file exists. The analyzer re-validates and sorts the merged hints, so no
+ * ordering is imposed here.
  */
 async function collectConfigUsedNames(projectPath: string): Promise<ReadonlySet<string>> {
   const manifestNames = await findEslintManifestUsage(projectPath);

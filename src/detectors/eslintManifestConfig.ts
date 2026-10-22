@@ -24,10 +24,12 @@
  * diagnosed: manifest validity stays with the manifest loader and the analyzer, which report a
  * genuinely invalid `package.json` as they always have.
  *
- * A conservative precedence guard applies before anything is read: when a modern flat-config
- * entrypoint exists at the project root, the legacy block is not provably the active configuration,
- * so no legacy hints are produced. Presence is checked by directory entry name only; the flat config
- * itself is never read, interpreted or executed.
+ * A conservative precedence guard applies before anything is read: when a hard barrier (a modern
+ * flat-config entrypoint, or a legacy `.eslintrc.js`/`.cjs`/`.yaml`/`.yml`) exists at the project
+ * root, the legacy block is not provably the active configuration, so no legacy hints are produced
+ * from either source. Presence is checked by directory entry name only; no entry is read,
+ * interpreted or executed. The precedence is computed once by {@link readLegacyEslintPrecedence},
+ * shared by both legacy readers, so the two sources obey exactly one set of rules.
  */
 
 import { readFile, readdir } from 'node:fs/promises';
@@ -79,25 +81,94 @@ const PLUGIN_PACKAGE_NAMES: ReadonlyMap<string, string> = new Map([
 ]);
 
 /**
- * Modern flat-config entrypoint names that disable legacy `eslintConfig` hints.
+ * Modern flat-config entrypoint names that form a hard barrier: their presence disables every legacy
+ * ESLint hint, from both `package.json#eslintConfig` and `.eslintrc.json`.
  *
- * The list is fixed: `eslint.config.mts` / `eslint.config.cts` are not part of it, which only makes
- * the guard narrower (it can drop hints, never add them). Presence of any of these names at the
- * project root is enough; the entry itself is never read or executed.
- *
- * Compared case-insensitively (see {@link hasFlatConfigEntry}) because case-insensitive filesystems
- * treat `ESLint.Config.js` as the same file, and DepVitals must not disagree with itself about one
- * project depending on the platform it runs on.
- *
- * The same guard is shared with the external `.eslintrc.json` reader, so both legacy sources are
- * disabled by exactly the same set of root entrypoint names.
+ * Compared case-insensitively (see {@link readLegacyEslintPrecedence}) because case-insensitive
+ * filesystems treat `ESLint.Config.js` as the same file, so DepVitals must not disagree with itself
+ * about one project on different platforms. Added in Step 68.1: `mts`/`cts` join the original four.
  */
 const FLAT_CONFIG_ENTRY_NAMES: ReadonlySet<string> = new Set([
   'eslint.config.js',
   'eslint.config.mjs',
   'eslint.config.cjs',
   'eslint.config.ts',
+  'eslint.config.mts',
+  'eslint.config.cts',
 ]);
+
+/**
+ * Legacy `.eslintrc.*` names that form a hard barrier for every legacy hint, same rule as the flat
+ * configs: `.eslintrc.js`, `.eslintrc.cjs`, `.eslintrc.yaml` and `.eslintrc.yml`.
+ *
+ * Legacy ESLint ignores `package.json#eslintConfig` once any `.eslintrc.*` file exists by name, so
+ * these names disable the manifest block too. Compared case-insensitively, like the flat configs.
+ */
+const LEGACY_BARRIER_ENTRY_NAMES: ReadonlySet<string> = new Set([
+  '.eslintrc.js',
+  '.eslintrc.cjs',
+  '.eslintrc.yaml',
+  '.eslintrc.yml',
+]);
+
+/**
+ * Legacy `.eslintrc` names whose presence displaces the manifest block but does not by itself disable
+ * the `.eslintrc.json` reader: the extensionless `.eslintrc` and `.eslintrc.json` itself.
+ *
+ * Legacy ESLint ignores the manifest block once any `.eslintrc.*` file exists by name, so the
+ * extensionless `.eslintrc` displaces only the manifest block. `.eslintrc.json` is the file the JSON
+ * reader actually reads, so it is listed here as a pure name check for the manifest block. Compared
+ * case-insensitively, like the other legacy tables.
+ */
+const LEGACY_RC_BY_NAME_ENTRY_NAMES: ReadonlySet<string> = new Set(['.eslintrc.json', '.eslintrc']);
+
+/**
+ * The legacy ESLint precedence state for one project root, computed once by both readers so the two
+ * legacy sources obey exactly one set of rules.
+ *
+ * - `hardBarrier`: a flat config or `.eslintrc.js`/`.cjs`/`.yaml`/`.yml` exists, which disables every
+ *   legacy hint from both sources;
+ * - `legacyRcByName`: a legacy `.eslintrc.json` or extensionless `.eslintrc` exists by name, which
+ *   displaces the manifest block but does not by itself stop the `.eslintrc.json` reader.
+ *
+ * Presence is checked by directory entry name only; no entry is opened, stat-followed, read or
+ * executed, and an unreadable root simply means no barrier is known to exist.
+ */
+export type LegacyEslintPrecedence = {
+  readonly hardBarrier: boolean;
+  readonly legacyRcByName: boolean;
+};
+
+/**
+ * Compute the legacy ESLint precedence state for the project rooted at `projectRoot`.
+ *
+ * The two legacy readers ({@link findEslintManifestUsage} and {@link findEslintRcJsonUsage}) share
+ * this so a hard barrier disables both, `.eslintrc.json` wins over the manifest block, and an
+ * extensionless `.eslintrc` displaces only the manifest block. Neither reader unions the displaced
+ * source, so two contradictory legacy configurations are never combined.
+ *
+ * @param projectRoot - Project directory to inspect; resolved to an absolute path.
+ */
+export async function readLegacyEslintPrecedence(
+  projectRoot: string,
+): Promise<LegacyEslintPrecedence> {
+  const root = resolve(projectRoot);
+
+  let entries: string[];
+  try {
+    entries = await readdir(root);
+  } catch {
+    return { hardBarrier: false, legacyRcByName: false };
+  }
+
+  const has = (names: ReadonlySet<string>): boolean =>
+    entries.some((entry) => names.has(entry.toLowerCase()));
+
+  return {
+    hardBarrier: has(FLAT_CONFIG_ENTRY_NAMES) || has(LEGACY_BARRIER_ENTRY_NAMES),
+    legacyRcByName: has(LEGACY_RC_BY_NAME_ENTRY_NAMES),
+  };
+}
 
 /**
  * Match the allowlisted subset of one legacy `eslintConfig` value against the declared packages.
@@ -148,12 +219,18 @@ export function findEslintConfigUsage(
  * the analyzer loads the manifest itself and remains the component that reports manifest failures,
  * so this detector never replaces or duplicates that diagnosis.
  *
+ * Legacy precedence (Step 68.1) is delegated to {@link readLegacyEslintPrecedence}, which both
+ * legacy readers share: a hard barrier disables this block outright, and any legacy `.eslintrc.*`
+ * by name displaces it in favour of the lower-priority `.eslintrc.json` reader. This reader never
+ * unions the displaced source, so the two legacy configurations are never combined.
+ *
  * @param projectRoot - Project directory to inspect; resolved to an absolute path.
  */
 export async function findEslintManifestUsage(projectRoot: string): Promise<ReadonlySet<string>> {
   const root = resolve(projectRoot);
 
-  if (await hasFlatConfigEntry(root)) {
+  const precedence = await readLegacyEslintPrecedence(root);
+  if (precedence.hardBarrier || precedence.legacyRcByName) {
     return new Set<string>();
   }
 
@@ -176,26 +253,18 @@ export async function findEslintManifestUsage(projectRoot: string): Promise<Read
 }
 
 /**
- * Whether a modern flat-config entrypoint name exists in the project root.
+ * Whether the project rooted at `projectRoot` contains a modern flat-config entrypoint (see
+ * {@link FLAT_CONFIG_ENTRY_NAMES}).
  *
- * The root directory is listed by name only (`readdir`), so no entry is opened, stat-followed, read
- * or executed. An unreadable or missing root simply means no flat config is known to be present.
- * Names are compared case-insensitively so a case-insensitive filesystem (typical on Windows and
- * macOS) cannot hide a flat config from this guard.
+ * A flat config is a hard barrier: its presence disables every legacy hint, including the
+ * `package.json#eslintConfig` block, so it is checked before any legacy reader contributes a hint.
+ * This is a thin convenience over {@link readLegacyEslintPrecedence} for callers that only need the
+ * flat-config question.
  *
- * Shared with the external `.eslintrc.json` reader: legacy configuration hints from either source
- * are uncertain once a modern entrypoint exists, and one guard keeps the two readers consistent.
+ * @param projectRoot - Project directory to inspect; resolved to an absolute path.
  */
-export async function hasFlatConfigEntry(root: string): Promise<boolean> {
-  let entries: string[];
-
-  try {
-    entries = await readdir(root);
-  } catch {
-    return false;
-  }
-
-  return entries.some((entry) => FLAT_CONFIG_ENTRY_NAMES.has(entry.toLowerCase()));
+export async function hasFlatConfigEntry(projectRoot: string): Promise<boolean> {
+  return (await readLegacyEslintPrecedence(projectRoot)).hardBarrier;
 }
 
 /**

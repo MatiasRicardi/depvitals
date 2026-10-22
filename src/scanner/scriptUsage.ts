@@ -512,9 +512,12 @@ function matchRunnerPackage(significant: readonly Token[]): string | undefined {
  * text inside quotes from being misread, and to detect the syntax it refuses to interpret. It never
  * executes, expands or substitutes anything.
  *
- * Unsupported constructs (single `&`, redirection, `$(...)`, `${...}`, quotes left open at the end of
- * the script) mark the current segment as unsupported instead of guessing tokens from inside it. The
- * marker is reset by the next real separator, so invalidation stays local to the affected segment.
+ * A `#` at a word boundary starts a POSIX comment that runs to the next line terminator; its body is
+ * skipped before any separator inside it can be interpreted, so a commented command is never credited
+ * (Step 68.1). Unsupported constructs (single `&`, redirection, `$(...)`, `${...}`, quotes left open
+ * at the end of the script) mark the current segment as unsupported instead of guessing tokens from
+ * inside it. The marker is reset by the next real separator, so invalidation stays local to the
+ * affected segment.
  */
 function splitSegments(script: string): readonly Segment[] {
   const segments: Segment[] = [];
@@ -539,6 +542,19 @@ function splitSegments(script: string): readonly Segment[] {
     // Whitespace separates tokens within a segment.
     if (isWhitespace(ch)) {
       i += 1;
+      continue;
+    }
+
+    // A `#` at a word boundary (start of script, after a separator, or after whitespace) starts a
+    // POSIX comment. Everything up to the next LF is inert: separators inside it (`;`, `&&`, ...) are
+    // skipped with the comment, so they never reach the segment logic and cannot split a segment or be
+    // misread as commands. The line terminator that ends the comment then flushes the segment that
+    // preceded it, so commands before the comment keep their evidence and commands on later lines are
+    // still analyzed. This is detected here, before any separator inside the comment could run, and
+    // never inside a token: `abc#def` and quoted `"#"` stay ordinary words, and `${#foo}` is consumed
+    // as an unsupported expansion by `scanToken` before the `#` could be seen at the loop boundary.
+    if (ch === '#') {
+      i = skipCommentToEndOfLine(script, i);
       continue;
     }
 
@@ -583,6 +599,24 @@ function splitSegments(script: string): readonly Segment[] {
 
   segments.push({ tokens, unsupported });
   return segments;
+}
+
+/**
+ * Skip a POSIX comment that starts at `start`, which must point at a `#`, and return the index just
+ * at the next LF, or the end of the script when none follows.
+ *
+ * Only the terminator that ends the comment is left for the loop: it is then treated as a separator
+ * that flushes the preceding segment. A lone CR (no LF) is left for the loop to skip as whitespace,
+ * so both LF and CRLF line endings end the comment and let the next line be analyzed. The comment
+ * body is never tokenized, so no separator or command inside it is ever interpreted.
+ */
+function skipCommentToEndOfLine(script: string, start: number): number {
+  let i = start + 1;
+  const length = script.length;
+  while (i < length && script[i] !== '\n') {
+    i += 1;
+  }
+  return i;
 }
 
 /**
