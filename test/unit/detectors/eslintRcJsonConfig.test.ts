@@ -18,7 +18,7 @@
  * outside the DepVitals repository, and the tests are offline.
  */
 
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
@@ -65,6 +65,31 @@ async function withScratchProject(
   }
 }
 
+/**
+ * Whether the local filesystem distinguishes filenames by case.
+ *
+ * The "both spellings exist" regression only makes sense on a case-sensitive root: on macOS and
+ * Windows `.eslintrc.json` and `.ESLINTRC.JSON` resolve to the same file, so the test would read
+ * whichever entry was written last instead of both. Detect the filesystem with two dedicated probe
+ * files that differ only in case and skip there. The probes use a unique prefix so they never
+ * collide with a target file and are removed before the code under test runs.
+ */
+async function isCaseSensitiveDirectory(root: string): Promise<boolean> {
+  const probeLower = '.depvitals-case-probe-lower';
+  const probeUpper = '.DEPVITALS-CASE-PROBE-UPPER';
+
+  await writeFile(join(root, probeLower), '', 'utf8');
+  await writeFile(join(root, probeUpper), '', 'utf8');
+
+  try {
+    const entries = await readdir(root);
+    return entries.includes(probeLower) && entries.includes(probeUpper);
+  } finally {
+    await rm(join(root, probeLower), { force: true });
+    await rm(join(root, probeUpper), { force: true });
+  }
+}
+
 const MANIFEST_DECLARING_REACT = JSON.stringify({
   name: 'scratch-eslintrc',
   version: '0.0.0',
@@ -99,7 +124,8 @@ describe('findEslintRcJsonUsage (external .eslintrc.json reader)', () => {
 
   it('reads the canonical lowercase .eslintrc.json when an uppercase copy also exists', async () => {
     // A case-sensitive root can list both spellings. The canonical lowercase file wins so the
-    // reader never opens the uppercase copy by directory order.
+    // reader never opens the uppercase copy by directory order. On a case-insensitive filesystem
+    // the two names are the same file, so this scenario cannot occur and the test skips.
     await withScratchProject(
       {
         'package.json': MANIFEST_DECLARING_REACT,
@@ -107,6 +133,10 @@ describe('findEslintRcJsonUsage (external .eslintrc.json reader)', () => {
         '.ESLINTRC.JSON': '{ "plugins": ["not-declared-plugin"] }\n',
       },
       async (root) => {
+        if (!(await isCaseSensitiveDirectory(root))) {
+          return;
+        }
+
         expect(await findEslintRcJsonUsage(root)).toEqual(new Set(['eslint-plugin-react']));
       },
     );
