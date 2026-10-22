@@ -338,15 +338,16 @@ describe('findEslintManifestUsage (package.json#eslintConfig reader)', () => {
     });
   });
 
-  it('documented limitation: eslint.config.mts is not part of the fixed precedence list', async () => {
+  it('treats eslint.config.mts as a hard barrier in the fixed precedence list', async () => {
     await withScratchProject(
       {
         'package.json': MANIFEST_WITH_PRETTIER_ALIAS,
         'eslint.config.mts': 'export default [];\n',
       },
       async (root) => {
-        // The guard list is fixed to `js`/`mjs`/`cjs`/`ts`, so this name does not suppress hints.
-        expect(await findEslintManifestUsage(root)).toEqual(new Set(['eslint-config-prettier']));
+        // Step 68.1 added `eslint.config.mts` / `eslint.config.cts` to the fixed list, so this name
+        // now suppresses legacy hints like the original four extensions.
+        expect(await findEslintManifestUsage(root)).toEqual(new Set<string>());
       },
     );
   });

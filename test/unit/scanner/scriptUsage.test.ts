@@ -2156,4 +2156,112 @@ describe('findPackageScriptUsage', () => {
       );
     });
   });
+
+  describe('POSIX comments in scripts (Step 68.1)', () => {
+    // A `#` at a word boundary (start of script, after a separator, or after whitespace) starts a
+    // POSIX comment: everything up to the next LF is inert. The defect fixed here was that the
+    // lexer treated `#` as an ordinary character, so the command after a comment (or a shebang line)
+    // was wrongly credited as usage evidence.
+
+    it('does not credit a package that appears only inside a comment', () => {
+      // `tsc` lives after `#`, so it must never be seen as the build command.
+      expect(
+        findPackageScriptUsage({ build: 'echo ok # not executed; tsc' }, new Set(['typescript'])),
+      ).toEqual(new Set());
+    });
+
+    it('credits only the command before a comment, ignoring separators inside it', () => {
+      // The `;` and `&&` inside the comment must not split segments, so `eslint` is inert and only
+      // `tsc` (before the comment) is credited.
+      expect(
+        findPackageScriptUsage(
+          { build: 'tsc # ignored; eslint .' },
+          new Set(['typescript', 'eslint']),
+        ),
+      ).toEqual(new Set(['typescript']));
+    });
+
+    it('does not credit a package named after a shebang `#`', () => {
+      // The whole first line is a shebang comment; the command it names is not executed here.
+      expect(
+        findPackageScriptUsage({ start: '#!/usr/bin/env eslint' }, new Set(['eslint'])),
+      ).toEqual(new Set());
+    });
+
+    it('treats a `#` immediately after a separator as a comment start', () => {
+      expect(
+        findPackageScriptUsage(
+          { run: 'tsc;# ignored && eslint' },
+          new Set(['typescript', 'eslint']),
+        ),
+      ).toEqual(new Set(['typescript']));
+    });
+
+    it('keeps analyzing commands on lines after a comment that ends with LF', () => {
+      // `tsc` runs on its own line, the middle line is a comment, and `echo ok` follows; only
+      // `tsc` is real usage evidence.
+      expect(
+        findPackageScriptUsage({ build: 'tsc\n# ignored\necho ok' }, new Set(['typescript'])),
+      ).toEqual(new Set(['typescript']));
+    });
+
+    it('treats CRLF as a line terminator that ends a comment', () => {
+      expect(
+        findPackageScriptUsage({ build: 'tsc\r\n# ignored\r\necho ok' }, new Set(['typescript'])),
+      ).toEqual(new Set(['typescript']));
+    });
+
+    it('does not start a comment inside a word or a quote', () => {
+      // `abc#def` stays a single word; the quoted `#` is ordinary text and must not start a comment
+      // that swallows the `&& eslint` after it; `${#foo}` is an unsupported expansion, not a comment.
+      expect(findPackageScriptUsage({ run: 'abc#def' }, new Set(['abc#def']))).toEqual(new Set());
+      expect(
+        findPackageScriptUsage({ run: 'tsc "#" && eslint' }, new Set(['typescript', 'eslint'])),
+      ).toEqual(new Set(['eslint', 'typescript']));
+      expect(findPackageScriptUsage({ run: 'echo ${#foo}' }, new Set(['echo']))).toEqual(new Set());
+    });
+
+    // Row 2: a trailing comment swallows the `&& tsc` that follows it on the same line.
+    it('does not credit a package after `# ... && tsc` on one line', () => {
+      expect(
+        findPackageScriptUsage({ build: 'echo ok # ignored && tsc' }, new Set(['typescript'])),
+      ).toEqual(new Set());
+    });
+
+    // Row 4: a leading comment line ends at LF, so the command on the next line is still analyzed.
+    it('credits the command on the line after a leading comment line', () => {
+      expect(
+        findPackageScriptUsage(
+          { run: '# ignored; tsc\neslint .' },
+          new Set(['typescript', 'eslint']),
+        ),
+      ).toEqual(new Set(['eslint']));
+    });
+
+    // Rows 7 and 8: a `#` inside single or double quotes is ordinary text, so the real command
+    // after the quote still runs and is credited.
+    it('does not treat a quoted # as a comment start', () => {
+      expect(findPackageScriptUsage({ build: "echo '#'; tsc" }, new Set(['typescript']))).toEqual(
+        new Set(['typescript']),
+      );
+      expect(findPackageScriptUsage({ build: 'echo "#"; tsc' }, new Set(['typescript']))).toEqual(
+        new Set(['typescript']),
+      );
+    });
+
+    // Row 9: `#` in the middle of a word does not start a comment, so `tsc` after the separator is
+    // still credited.
+    it('keeps the command after `abc#def; tsc`', () => {
+      expect(findPackageScriptUsage({ run: 'echo abc#def; tsc' }, new Set(['typescript']))).toEqual(
+        new Set(['typescript']),
+      );
+    });
+
+    // Row 12: a comment at end-of-file ends the line, and the command before it is still credited.
+    it('credits a command with only a trailing comment after it', () => {
+      expect(
+        findPackageScriptUsage({ build: 'tsc # trailing comment at EOF' }, new Set(['typescript'])),
+      ).toEqual(new Set(['typescript']));
+    });
+  });
 });

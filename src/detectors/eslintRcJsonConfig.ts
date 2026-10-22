@@ -40,17 +40,18 @@
  *   (array, string, number, `null`) is different: it is not an ESLint configuration at all, so it
  *   contributes no evidence and is never an error, exactly like the unknown-field case.
  *
- * Precedence follows the legacy ESLint rule that one active configuration wins: a root modern flat
- * config disables every legacy hint, and otherwise `package.json#eslintConfig` shadows the external
- * file. Both guards are presence-based and never read the shadowed file for evidence, so two
- * contradictory legacy sources are never unioned.
+ * Precedence follows the legacy ESLint rule that one active configuration wins: a hard barrier (a
+ * modern flat config or `.eslintrc.js`/`.cjs`/`.yaml`/`.yml`) disables every legacy hint, and
+ * otherwise this file wins over `package.json#eslintConfig`. The precedence is computed once by a
+ * helper both legacy readers share; the barrier is presence-based and never reads the displaced
+ * source for evidence, so two contradictory legacy sources are never unioned.
  */
 
 import { lstat, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import { loadProjectManifest, ProjectManifestError } from '../scanner/projectManifest.js';
-import { findEslintConfigUsage, hasFlatConfigEntry } from './eslintManifestConfig.js';
+import { findEslintConfigUsage, readLegacyEslintPrecedence } from './eslintManifestConfig.js';
 
 /**
  * The one file name this reader looks for, relative to the resolved project root.
@@ -105,19 +106,20 @@ export class EslintRcJsonError extends Error {
 export async function findEslintRcJsonUsage(projectRoot: string): Promise<ReadonlySet<string>> {
   const root = resolve(projectRoot);
 
-  // A modern entrypoint makes every legacy ESLint source uncertain, external file included.
-  if (await hasFlatConfigEntry(root)) {
+  // A hard barrier disables every legacy hint, external file included. Precedence is computed once
+  // by a helper both legacy readers share, so this file always wins over `package.json#eslintConfig`
+  // and the two legacy sources are never combined into one hint set.
+  const precedence = await readLegacyEslintPrecedence(root);
+  if (precedence.hardBarrier) {
     return new Set<string>();
   }
 
   let declaredPackageNames: ReadonlySet<string>;
-  let packageJsonPath: string;
 
   try {
     const manifest = await loadProjectManifest(root);
 
     declaredPackageNames = manifest.declaredDependencyNames;
-    packageJsonPath = manifest.packageJsonPath;
   } catch (error) {
     if (error instanceof ProjectManifestError) {
       // Manifest failures stay with the manifest loader and the analyzer, which report them as they
@@ -126,12 +128,6 @@ export async function findEslintRcJsonUsage(projectRoot: string): Promise<Readon
     }
 
     throw error;
-  }
-
-  // `package.json#eslintConfig` wins outright, so the external file is not consulted and the two
-  // legacy sources are never combined into one hint set.
-  if (await hasManifestEslintConfig(packageJsonPath)) {
-    return new Set<string>();
   }
 
   const eslintRcPath = join(root, ESLINTRC_FILENAME);
@@ -200,34 +196,6 @@ async function readEslintRcText(eslintRcPath: string): Promise<string | undefine
 }
 
 /**
- * Whether `package.json` declares an `eslintConfig` key, which shadows the external file.
- *
- * Key presence is the test, whatever the value: even `"eslintConfig": null` means the manifest
- * mentions the legacy block, and treating it as absent would let the external file contribute hints
- * that the manifest may override. An unreadable or unparsable manifest is reported by
- * {@link loadProjectManifest}; this guard only answers the precedence question and says "no".
- */
-async function hasManifestEslintConfig(packageJsonPath: string): Promise<boolean> {
-  let text: string;
-
-  try {
-    text = await readFile(packageJsonPath, 'utf8');
-  } catch {
-    return false;
-  }
-
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return false;
-  }
-
-  return isPlainRecord(parsed) && Object.hasOwn(parsed, 'eslintConfig');
-}
-
-/**
  * Remove a leading UTF-8 BOM, which `readFile(..., 'utf8')` keeps verbatim.
  *
  * A BOM is an encoding artifact of the same JSON document rather than a different configuration
@@ -253,11 +221,4 @@ function toUnreadableError(eslintRcPath: string, error: unknown): EslintRcJsonEr
  */
 function isNotFoundError(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT';
-}
-
-/**
- * A JSON object (not an array, not `null`) whose keys are strings.
- */
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

@@ -203,16 +203,17 @@ describe('findEslintRcJsonUsage (external .eslintrc.json reader)', () => {
     expect((error as Error).message).toContain('JavaScript-style comments');
   });
 
-  it('defers to package.json#eslintConfig instead of unioning the two legacy sources', async () => {
+  it('lets .eslintrc.json win over package.json#eslintConfig without unioning the two sources', async () => {
     const root = fixturePath('manifest-precedence');
     const configUsedNames = await findEslintRcJsonUsage(root);
 
     const hinted = await analyzeProject(root, { configUsedNames });
 
-    // The external `plugins: ["react"]` entry is shadowed by the manifest block, so the external
-    // reader contributes nothing at all - not even a hint for the package the manifest credits.
-    expect(configUsedNames).toEqual(new Set<string>());
-    expect(hinted.unusedDevDependencies).toEqual(['eslint-config-airbnb', 'eslint-plugin-react']);
+    // `.eslintrc.json` is lower in the precedence table than the manifest block, so it is the only
+    // active legacy source: it credits `eslint-plugin-react`, leaves `eslint-config-airbnb` unused,
+    // and the merged hint set the CLI hands to the analyzer never combines both configurations.
+    expect(configUsedNames).toEqual(new Set(['eslint-plugin-react']));
+    expect(hinted.unusedDevDependencies).toEqual(['eslint-config-airbnb']);
     expect(hinted.missingDependencies).toEqual([]);
 
     // Across both legacy readers exactly one source is active, so the merged hint set the CLI hands
@@ -222,15 +223,15 @@ describe('findEslintRcJsonUsage (external .eslintrc.json reader)', () => {
         ...(await findEslintManifestUsage(root)),
         ...(await findEslintRcJsonUsage(root)),
       ]),
-    ).toEqual(new Set(['eslint-config-airbnb']));
+    ).toEqual(new Set(['eslint-plugin-react']));
   });
 
-  it('lets any eslintConfig key shadow the external file, including an explicit null', async () => {
+  it('does not let an eslintConfig: null block the lower-priority .eslintrc.json', async () => {
     const root = fixturePath('eslintconfig-null-negative');
 
-    // A manifest that mentions `eslintConfig` owns the legacy configuration, whatever its value.
-    // Treating `null` as absent would credit `eslint-plugin-react` from a file ESLint may ignore.
-    expect(await findEslintRcJsonUsage(root)).toEqual(new Set<string>());
+    // A present-but-null manifest block no longer shadows the file; `.eslintrc.json` is the active
+    // legacy config and credits `eslint-plugin-react`.
+    expect(await findEslintRcJsonUsage(root)).toEqual(new Set(['eslint-plugin-react']));
   });
 
   it('skips the external file when a modern root flat config exists', async () => {
@@ -385,13 +386,13 @@ describe('CLI scan wiring for external .eslintrc.json hints', () => {
     });
   });
 
-  it('keeps reporting the package that only the shadowed external file names', async () => {
+  it('reports the package only .eslintrc.json names, not the manifest block', async () => {
     const result = await runCli([fixturePath('manifest-precedence')], OPTIONS);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toContain('Unused devDependencies (1)');
-    expect(result.stdout).toContain('eslint-plugin-react');
-    expect(result.stdout).not.toContain('eslint-config-airbnb');
+    expect(result.stdout).toContain('eslint-config-airbnb');
+    expect(result.stdout).not.toContain('eslint-plugin-react');
     expect(result.stderr).toBe('');
   });
 
@@ -429,5 +430,147 @@ describe('CLI scan wiring for external .eslintrc.json hints', () => {
     expect(result.stdout).toContain('Unused devDependencies (1)');
     expect(result.stdout).toContain('eslint-plugin-react');
     expect(result.stderr).toBe('');
+  });
+
+  describe('legacy precedence across sources (Step 68.1)', () => {
+    // The rule removed in this step was "any package.json#eslintConfig shadows .eslintrc.json". The
+    // corrected precedence gives .eslintrc.json (a lower table number) over the manifest block, and a
+    // hard barrier (flat config or .eslintrc.js/.cjs/.yaml/.yml) over both. Each case is paired with
+    // the same project scanned without hints, which must report the displaced package as unused.
+
+    it('lets .eslintrc.json displace the package.json#eslintConfig block', async () => {
+      // The manifest credits `eslint-config-airbnb` (extends: airbnb); the file credits
+      // `eslint-plugin-react` (plugins: [react]). JSON wins, so airbnb stays unused and react does not.
+      await withScratchProject(
+        {
+          'package.json': JSON.stringify({
+            name: 'scratch-precedence',
+            version: '0.0.0',
+            devDependencies: {
+              'eslint-config-airbnb': '19.2.0',
+              'eslint-plugin-react': '7.37.0',
+            },
+            eslintConfig: { extends: 'airbnb' },
+          }),
+          '.eslintrc.json': ESLINTRC_DECLARING_REACT,
+        },
+        async (root) => {
+          expect(await findEslintManifestUsage(root)).toEqual(new Set<string>());
+          expect(await findEslintRcJsonUsage(root)).toEqual(new Set(['eslint-plugin-react']));
+          expect(
+            (await analyzeProject(root, { configUsedNames: await findEslintRcJsonUsage(root) }))
+              .unusedDevDependencies,
+          ).toEqual(['eslint-config-airbnb']);
+        },
+      );
+    });
+
+    it('lets a higher-priority barrier displace both the manifest block and .eslintrc.json', async () => {
+      // `.eslintrc.js` is a hard barrier: no legacy hint survives, so both declared packages stay
+      // unused. Its presence is enough; the barrier file itself is never read or executed.
+      await withScratchProject(
+        {
+          'package.json': JSON.stringify({
+            name: 'scratch-barrier',
+            version: '0.0.0',
+            devDependencies: {
+              'eslint-config-airbnb': '19.2.0',
+              'eslint-plugin-react': '7.37.0',
+            },
+            eslintConfig: { extends: 'airbnb' },
+          }),
+          '.eslintrc.json': ESLINTRC_DECLARING_REACT,
+          '.eslintrc.js': 'module.exports = { extends: "airbnb" };',
+        },
+        async (root) => {
+          expect(await findEslintManifestUsage(root)).toEqual(new Set<string>());
+          expect(await findEslintRcJsonUsage(root)).toEqual(new Set<string>());
+          expect(
+            (await analyzeProject(root, { configUsedNames: await findEslintRcJsonUsage(root) }))
+              .unusedDevDependencies,
+          ).toEqual(['eslint-config-airbnb', 'eslint-plugin-react']);
+        },
+      );
+    });
+
+    it('does not let an eslintConfig: null block .eslintrc.json', async () => {
+      // A present-but-null manifest block must not shadow the file; JSON still credits react.
+      await withScratchProject(
+        {
+          'package.json': JSON.stringify({
+            name: 'scratch-null',
+            version: '0.0.0',
+            devDependencies: { 'eslint-plugin-react': '7.37.0' },
+            eslintConfig: null,
+          }),
+          '.eslintrc.json': ESLINTRC_DECLARING_REACT,
+        },
+        async (root) => {
+          expect(await findEslintManifestUsage(root)).toEqual(new Set<string>());
+          expect(await findEslintRcJsonUsage(root)).toEqual(new Set(['eslint-plugin-react']));
+        },
+      );
+    });
+
+    // Row 5: a `.eslintrc.cjs` file is a hard barrier, so it disables the JSON reader too.
+    it('lets a `.eslintrc.cjs` barrier silence the lower-priority .eslintrc.json', async () => {
+      await withScratchProject(
+        {
+          'package.json': JSON.stringify({
+            name: 'scratch-cjs-barrier',
+            version: '0.0.0',
+            devDependencies: { 'eslint-plugin-react': '7.37.0' },
+          }),
+          '.eslintrc.json': ESLINTRC_DECLARING_REACT,
+          '.eslintrc.cjs': 'module.exports = { plugins: ["react"] };',
+        },
+        async (root) => {
+          expect(await findEslintManifestUsage(root)).toEqual(new Set<string>());
+          expect(await findEslintRcJsonUsage(root)).toEqual(new Set<string>());
+        },
+      );
+    });
+
+    // Row 9: the extensionless `.eslintrc` displaces only the manifest block, not the JSON reader,
+    // so `.eslintrc.json` (higher in the precedence table) still credits react.
+    it('keeps .eslintrc.json active alongside an extensionless .eslintrc', async () => {
+      await withScratchProject(
+        {
+          'package.json': JSON.stringify({
+            name: 'scratch-extless',
+            version: '0.0.0',
+            devDependencies: { 'eslint-plugin-react': '7.37.0' },
+            eslintConfig: { extends: 'airbnb' },
+          }),
+          '.eslintrc.json': ESLINTRC_DECLARING_REACT,
+          '.eslintrc': '{ "plugins": ["react"] }\n',
+        },
+        async (root) => {
+          // The extensionless file displaces the manifest block, but the JSON reader still wins.
+          expect(await findEslintManifestUsage(root)).toEqual(new Set<string>());
+          expect(await findEslintRcJsonUsage(root)).toEqual(new Set(['eslint-plugin-react']));
+        },
+      );
+    });
+
+    // Row 12: when a higher-priority barrier selects the source, the invalid JSON is never opened,
+    // so no JSON error is reported and the analyzer stays quiet.
+    it('does not report an invalid .eslintrc.json displaced by a `.eslintrc.cjs` barrier', async () => {
+      await withScratchProject(
+        {
+          'package.json': JSON.stringify({
+            name: 'scratch-invalid-displaced',
+            version: '0.0.0',
+            devDependencies: { 'eslint-plugin-react': '7.37.0' },
+          }),
+          '.eslintrc.json': '{ this is not valid json',
+          '.eslintrc.cjs': 'module.exports = { plugins: ["react"] };',
+        },
+        async (root) => {
+          // The barrier selects the source, so the unreadable JSON is never opened: no error.
+          expect(await findEslintRcJsonUsage(root)).toEqual(new Set<string>());
+        },
+      );
+    });
   });
 });
