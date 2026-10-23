@@ -157,7 +157,7 @@ export async function analyzeProject(
   const sourceUsedNames = new Set<string>();
 
   for (const file of sourceFiles) {
-    const specifiers = await readAndExtract(file);
+    const specifiers = await readAndExtract(file, manifest.packageType);
 
     for (const specifier of specifiers) {
       const classified = classifyPackageSpecifier(specifier);
@@ -207,7 +207,10 @@ export async function analyzeProject(
  * preserve the original error as `cause` and include the affected path, so a broken file never
  * yields a partial result or a misleading "clean" analysis.
  */
-async function readAndExtract(file: string): Promise<readonly string[]> {
+async function readAndExtract(
+  file: string,
+  packageType: string | undefined,
+): Promise<readonly string[]> {
   let source: string;
 
   try {
@@ -220,8 +223,31 @@ async function readAndExtract(file: string): Promise<readonly string[]> {
     );
   }
 
+  /**
+   * Determine the narrow Node source mode needed for top-level `await`.
+   *
+   * Explicit module extensions win over the package type. CommonJS extensions remain scripts even
+   * under a module package, while `.js` follows `type: "module"` only for the root manifest.
+   */
+  function isModuleSource(file: string, packageType: string | undefined): boolean {
+    const lower = file.toLowerCase();
+
+    if (lower.endsWith('.mjs') || lower.endsWith('.mts')) {
+      return true;
+    }
+
+    if (lower.endsWith('.cjs') || lower.endsWith('.cts')) {
+      return false;
+    }
+
+    return lower.endsWith('.js') && packageType === 'module';
+  }
+
   try {
-    const occurrences = extractModuleSpecifiers(source, { jsx: usesJsxSyntax(file, source) });
+    const occurrences = extractModuleSpecifiers(source, {
+      jsx: usesJsxSyntax(file, source),
+      module: isModuleSource(file, packageType),
+    });
     return occurrences.map((occurrence) => occurrence.specifier);
   } catch (error) {
     if (error instanceof Error && error.name === 'ModuleSpecifierError') {

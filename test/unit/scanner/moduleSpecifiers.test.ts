@@ -845,11 +845,30 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(`while (c) { require('real'); }`)).toEqual(['real']);
     });
 
-    it('keeps the enclosing async context inside an ordinary nested arrow', () => {
-      // An arrow has no `await` binding of its own, so the enclosing async function still decides.
+    it('suspends the enclosing async context inside an ordinary nested arrow', () => {
+      // An ordinary arrow is its own function boundary, so await is an identifier and the slashes
+      // are division in its body.
       const source = `async function f(){ const g = () => { await /require('fake')/; }; }`;
 
-      expect(specifiers(source)).toEqual([]);
+      expect(specifiers(source)).toEqual(['fake']);
+    });
+
+    it('finds a require divided by await in an ordinary function nested in async code', () => {
+      const source = `async function outer(){ function inner(await){ return await / require('real') / 2; } }`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('finds a require divided by yield in an ordinary function nested in generator code', () => {
+      const source = `function* outer(){ function inner(yield){ return yield / require('real') / 2; } }`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('treats await as an identifier in an ordinary method nested in async code', () => {
+      const source = `async function outer(){ const object = { inner() { return await /require('fake')/; } }; }`;
+
+      expect(specifiers(source)).toEqual(['fake']);
     });
 
     it('does not leak an inner async arrow context to the enclosing ordinary function', () => {
@@ -864,6 +883,38 @@ describe('extractModuleSpecifiers', () => {
       const source = `async\nfunction f() {\n  return await / require('real') / 2;\n}`;
 
       expect(specifiers(source)).toEqual(['real']);
+    });
+  });
+
+  describe('async arrow expression bodies and module await', () => {
+    it('does not scan a regex decoy in an async arrow expression body', () => {
+      const source = `
+        const first = async () => await /require('fake')/;
+        const second = async (value) => await /require('fake')/;
+        const third = async () => await /require('fake')/;
+        require('after');
+      `;
+
+      expect(specifiers(source)).toEqual(['after']);
+    });
+
+    it('ends an async arrow expression at a call argument boundary', () => {
+      const source = `call(async () => await /require('fake')/, () => require('real'));`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('treats top-level await as a keyword only in module mode', () => {
+      const source = `await /require('fake')/; require('after');`;
+
+      expect(specifiers(source)).toEqual(['fake', 'after']);
+      expect(
+        extractModuleSpecifiers(source, { module: true }).map(({ specifier }) => specifier),
+      ).toEqual(['after']);
+    });
+
+    it('keeps CommonJS script behavior as the default', () => {
+      expect(specifiers(`await / require('real') / 2;`)).toEqual(['real']);
     });
   });
 

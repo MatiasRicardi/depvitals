@@ -46,6 +46,8 @@ export type ProjectManifest = {
   declaredDependencyNames: ReadonlySet<string>;
   /** `scripts` entries as static strings, never executed. */
   scripts: Readonly<Record<string, string>>;
+  /** Root package type, used only to classify `.js` top-level await without executing config. */
+  packageType: string | undefined;
 };
 
 /**
@@ -148,6 +150,7 @@ function parseManifest(root: string, packageJsonPath: string, text: string): Pro
   const peerDependencies = readStringRecord(parsed, 'peerDependencies', packageJsonPath);
   const scripts = readStringRecord(parsed, 'scripts', packageJsonPath);
   const name = readName(parsed, packageJsonPath);
+  const packageType = readOptionalString(parsed, 'type');
 
   const manifest: ProjectManifest = {
     root,
@@ -161,9 +164,20 @@ function parseManifest(root: string, packageJsonPath: string, text: string): Pro
       peerDependencies,
     ]),
     scripts,
+    packageType,
   };
 
   return name === undefined ? manifest : { ...manifest, name };
+}
+
+function readOptionalString(manifest: Record<string, unknown>, key: string): string | undefined {
+  const value = manifest[key];
+
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return typeof value === 'string' ? value : undefined;
 }
 
 /**
