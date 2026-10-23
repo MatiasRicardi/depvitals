@@ -60,6 +60,7 @@ const CHILD_WATCHDOG_MS = 5000;
 /** Variables that would decide eligibility before this test does. */
 const INELIGIBLE_VARIABLES = new Set([
   'DEPVITALS_NO_UPDATE_CHECK',
+  'DEPVITALS_TEST_FORCE_TTY',
   'CI',
   'GITHUB_ACTIONS',
   'GITLAB_CI',
@@ -340,14 +341,25 @@ describe('Step 68.3: a notifier that never answers cannot change the exit status
     });
 
     it('makes no request at all when the streams are not interactive', async () => {
-      const baseline = await baselineStdout(scenario);
-      const result = await run(scenario, { stall: 'fetch', tty: false });
+      const ambientForceTty = process.env['DEPVITALS_TEST_FORCE_TTY'];
+      process.env['DEPVITALS_TEST_FORCE_TTY'] = '1';
 
-      expect(result.timedOut).toBe(false);
-      expect(result.stdout).toBe(baseline);
-      expect(result.stderr).toBe('');
-      expect(result.exitCode).toBe(expectedExit[scenario]);
-      expect(result.requests).toEqual([]);
+      try {
+        const baseline = await baselineStdout(scenario);
+        const result = await run(scenario, { stall: 'fetch', tty: false });
+
+        expect(result.timedOut).toBe(false);
+        expect(result.stdout).toBe(baseline);
+        expect(result.stderr).toBe('');
+        expect(result.exitCode).toBe(expectedExit[scenario]);
+        expect(result.requests).toEqual([]);
+      } finally {
+        if (ambientForceTty === undefined) {
+          delete process.env['DEPVITALS_TEST_FORCE_TTY'];
+        } else {
+          process.env['DEPVITALS_TEST_FORCE_TTY'] = ambientForceTty;
+        }
+      }
     });
   });
 });

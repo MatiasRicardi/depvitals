@@ -3,8 +3,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
-    // Builds dist/ once, before any worker collects a file, so the process-level CLI gates always
-    // run against a current artifact instead of skipping or racing a build of their own.
+    // Builds dist/ before workers collect files and before every watch-mode rerun.
     globalSetup: ['test/globalSetup.ts'],
     coverage: {
       provider: 'v8',
