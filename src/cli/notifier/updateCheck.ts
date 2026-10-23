@@ -24,7 +24,8 @@
  * - **Silent by construction.** Every failure path - cache error, transport error, malformed
  *   response, timeout, unusable clock, non-stable version - resolves to `undefined`, and the whole
  *   pipeline additionally runs inside a `try`/`catch` and inside an explicit wall-clock budget, so a
- *   misbehaving cache or registry can never change an exit code and can never keep the process alive.
+ *   misbehaving cache or registry can never change an exit code and can never delay the process
+ *   beyond that budget.
  * - **Fully injected.** Clock, cache directory and transport are injectable, which is what lets the
  *   CLI tests stay deterministic and offline. With no seams injected the production defaults are the
  *   user cache directory and the built-in `fetch`; no test ever reaches the public registry.
@@ -47,8 +48,8 @@ import { isNewerStableVersion } from './versionCompare.js';
  * The wall-clock budget for the whole optional check (cache read, at most one lookup, cache write).
  *
  * The lookup already carries its own hard bound, so this outer budget only exists to make "the
- * process never waits on an unbounded promise" explicit and verifiable: the timer is unref'd, so it
- * can neither hold the event loop open nor delay exit.
+ * process never waits on an unbounded promise" explicit and verifiable: when it elapses the check
+ * resolves to "no notice", whatever the transport is still doing.
  */
 export const UPDATE_CHECK_BUDGET_MS = 1000;
 
@@ -151,9 +152,22 @@ async function resolveLatestVersion(
 /**
  * Run the whole optional check inside a fixed wall-clock budget.
  *
- * The deadline resolves with the "no notice" value instead of throwing, and the timer is unref'd so
- * an idle process is never kept alive by the check. A rejection of the work (which the notifier
- * helpers themselves never produce) propagates to the caller's `catch`, which is also silent.
+ * The deadline resolves with the "no notice" value instead of throwing, and it stays **referenced**
+ * for exactly as long as the `await` below is pending. That ownership is the point of this helper:
+ * the CLI entry point derives its exit status from an awaited call, so if nothing held the event
+ * loop open while the notifier was in flight, Node could reach an idle loop with that await still
+ * pending and terminate on the unsettled top-level await path - replacing the scan's own `0`/`1`
+ * status with exit `13` and a warning. Neither the transport (which may never answer) nor the
+ * lookup's `AbortSignal.timeout` (whose timer does not hold the loop open) can make that guarantee,
+ * so this timer does.
+ *
+ * It is bounded and short-lived, never a keepalive: the `finally` clears it on every path, so a
+ * cache hit or a fast lookup leaves nothing pending and the process exits immediately. A stalled
+ * transport costs at most this budget, and in practice only the lookup's own shorter timeout,
+ * because a live event loop is what lets that timeout fire at all.
+ *
+ * A rejection of the work (which the notifier helpers themselves never produce) propagates to the
+ * caller's `catch`, which is also silent.
  */
 async function withinBudget(
   work: () => Promise<string | undefined>,
@@ -165,7 +179,6 @@ async function withinBudget(
     timer = setTimeout(() => {
       resolve(undefined);
     }, budgetMs);
-    timer.unref();
   });
 
   const task = work();

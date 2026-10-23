@@ -56,12 +56,11 @@ const PWD = process.cwd();
 /**
  * The packaged CLI entry point (`package.json#bin`).
  *
- * CI runs the test job before the build job, so these few process-level assertions only apply once
- * `pnpm run build` has produced `dist/`; the packed tarball is validated separately by
+ * The shared Vitest `globalSetup` builds `dist/` before any worker collects a file, so these
+ * process-level assertions always run; the packed tarball is validated separately by
  * `pnpm run verify:package`.
  */
 const BUILT_ENTRY = join(REPO_ROOT, 'dist', 'cli', 'index.js');
-const itBuilt = existsSync(BUILT_ENTRY) ? it : it.skip;
 
 /** The Step 19 help text, reproduced verbatim from `src/cli/runCli.ts`. */
 const HELP =
@@ -470,25 +469,22 @@ describe('Step 62: every unimplemented option is still rejected explicitly', () 
     }
   });
 
-  itBuilt(
-    'runs the built entry point with a rejected option and gets the same explicit failure',
-    () => {
-      const result = spawnSync(process.execPath, [BUILT_ENTRY, '--fix'], {
-        cwd: tmpdir(),
-        encoding: 'utf8',
-      });
+  it('runs the built entry point with a rejected option and gets the same explicit failure', () => {
+    const result = spawnSync(process.execPath, [BUILT_ENTRY, '--fix'], {
+      cwd: tmpdir(),
+      encoding: 'utf8',
+    });
 
-      expect({
-        status: result.status,
-        stdout: result.stdout,
-        stderr: result.stderr,
-      }).toEqual({
-        status: 1,
-        stdout: '',
-        stderr: "Unknown option: --fix\nRun 'depvitals --help' for available commands.\n",
-      });
-    },
-  );
+    expect({
+      status: result.status,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    }).toEqual({
+      status: 1,
+      stdout: '',
+      stderr: "Unknown option: --fix\nRun 'depvitals --help' for available commands.\n",
+    });
+  });
 });
 
 describe('Step 62: a scan outside the working repository behaves like any other scan', () => {
@@ -537,7 +533,7 @@ describe('Step 62: a scan outside the working repository behaves like any other 
     );
   });
 
-  itBuilt('installs nothing and touches no lockfile when run as the built entry point', () => {
+  it('installs nothing and touches no lockfile when run as the built entry point', () => {
     const result = spawnSync(process.execPath, [BUILT_ENTRY, OUTSIDE_PROJECT], {
       cwd: OUTSIDE_CWD,
       encoding: 'utf8',
@@ -572,7 +568,7 @@ describe('Step 62: no analyzed script, configuration module or lifecycle hook is
     },
   ];
 
-  itBuilt.each(lifecycleSets)('$name never runs during a scan', ({ scripts }) => {
+  it.each(lifecycleSets)('$name never runs during a scan', ({ scripts }) => {
     const root = makeMarkerProject('lifecycle', scripts);
     const result = spawnSync(process.execPath, [BUILT_ENTRY, root], {
       cwd: tmpdir(),

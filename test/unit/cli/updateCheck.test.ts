@@ -101,6 +101,22 @@ function hangingFetch(): Stub {
   return makeFetch(() => new Promise<RegistryResponse>(() => undefined));
 }
 
+/** A 200 whose body reader never settles, i.e. a registry that answers and then goes silent. */
+function hangingBodyFetch(): Stub {
+  return makeFetch(() =>
+    Promise.resolve({
+      status: 200,
+      body: {
+        getReader: () => ({
+          read: () =>
+            new Promise<{ done: boolean; value: Uint8Array | undefined }>(() => undefined),
+          cancel: () => Promise.resolve(undefined),
+        }),
+      },
+    } as RegistryResponse),
+  );
+}
+
 /** Seed a cache record directly through the cache module's own file layout. */
 async function seedCache(
   cacheDir: string,
@@ -362,6 +378,81 @@ describe('collectUpdateNotice: every unusable outcome is silent', () => {
       expect(stub.calls).toHaveLength(1);
       expect(performance.now() - started).toBeLessThan(1000);
     });
+  });
+
+  it('abandons a body that ignores its deadline, without waiting for it', async () => {
+    await withScratchCache(async (cacheDir) => {
+      const stub = hangingBodyFetch();
+      const started = performance.now();
+
+      expect(
+        await collectUpdateNotice(REQUEST, {
+          cacheDir,
+          fetchImpl: stub.fetchImpl,
+          now: () => NOW,
+        }),
+      ).toBeUndefined();
+      expect(stub.calls).toHaveLength(1);
+      // The lookup's own hard bound ends this, well inside the outer budget.
+      expect(performance.now() - started).toBeLessThan(UPDATE_CHECK_BUDGET_MS);
+      expect(existsSync(cacheFile(cacheDir))).toBe(false);
+    });
+  });
+
+  it('settles a fast success immediately instead of waiting out the budget', async () => {
+    // The deadline timer is cleared when the work wins, so a quick answer costs nothing extra.
+    await withScratchCache(async (cacheDir) => {
+      const stub = makeFetch(jsonAnswer({ latest: NEWER }));
+      const started = performance.now();
+
+      expect(
+        await collectUpdateNotice(REQUEST, {
+          cacheDir,
+          fetchImpl: stub.fetchImpl,
+          now: () => NOW,
+          budgetMs: 1000,
+        }),
+      ).toBe(NOTICE);
+      expect(performance.now() - started).toBeLessThan(500);
+    });
+  });
+
+  it('does not raise an unhandled rejection when the work fails after the budget elapsed', async () => {
+    const rejections: unknown[] = [];
+    const record = (reason: unknown): void => {
+      rejections.push(reason);
+    };
+
+    process.on('unhandledRejection', record);
+
+    try {
+      await withScratchCache(async (cacheDir) => {
+        const stub = makeFetch(
+          () =>
+            new Promise<RegistryResponse>((_resolve, reject) => {
+              setTimeout(() => {
+                reject(new Error('late transport failure'));
+              }, 30);
+            }),
+        );
+
+        expect(
+          await collectUpdateNotice(REQUEST, {
+            cacheDir,
+            fetchImpl: stub.fetchImpl,
+            now: () => NOW,
+            budgetMs: 1,
+          }),
+        ).toBeUndefined();
+      });
+
+      // Give the late rejection time to surface before the listener is removed.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(rejections).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', record);
+    }
   });
 
   it('caches nothing when the injected clock is unusable, because no age could be invented', async () => {
