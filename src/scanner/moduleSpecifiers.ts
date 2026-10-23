@@ -129,7 +129,12 @@ type ExpressionFuncContext = FuncContext & {
 type Frame =
   | { readonly kind: 'template-expr'; depth: number; readonly offset: number }
   | { readonly kind: 'jsx-expr'; depth: number; readonly offset: number }
-  | { readonly kind: 'jsx-tag'; readonly name: string; readonly offset: number }
+  | {
+      readonly kind: 'jsx-tag';
+      readonly name: string;
+      readonly offset: number;
+      readonly nameEnd: number;
+    }
   | { readonly kind: 'jsx-text'; readonly name: string | null; readonly offset: number };
 
 /**
@@ -358,7 +363,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         // Nested element `<name ...`.
         if (after !== undefined && isIdentifierStart(after)) {
           const tag = readJsxTagName(source, i + 1, n);
-          frames.push({ kind: 'jsx-tag', name: tag.name, offset: i });
+          frames.push({ kind: 'jsx-tag', name: tag.name, offset: i, nameEnd: tag.end });
           i = tag.end;
           continue;
         }
@@ -375,6 +380,13 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     // JSX open tag: attribute names, `=` and namespaces are inert; quoted values are inert text and
     // `{...}` returns to real JavaScript.
     if (frame?.kind === 'jsx-tag') {
+      if (ch === '<' && skipTrivia(source, frame.nameEnd, n) === i) {
+        pushBoundary(i);
+        i = readJsxTypeArguments(source, i, n, tokens);
+        pushBoundary(i);
+        continue;
+      }
+
       if (ch === '{') {
         frames.push({ kind: 'jsx-expr', depth: 0, offset: i });
         pushBoundary(i);
@@ -497,7 +509,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
 
       if (after !== undefined && isIdentifierStart(after) && !jsxTagIsGeneric(source, i + 1, n)) {
         const tag = readJsxTagName(source, i + 1, n);
-        frames.push({ kind: 'jsx-tag', name: tag.name, offset: i });
+        frames.push({ kind: 'jsx-tag', name: tag.name, offset: i, nameEnd: tag.end });
         pushBoundary(i);
         i = tag.end;
         continue;
@@ -815,78 +827,272 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
 // `<T extends U>`, `<const T,>`) or a generic function signature (`<T>(x: T) => T`) is not a JSX
 // element. `<T>` alone in expression position remains ambiguous and is treated as JSX.
 function jsxTagIsGeneric(source: string, i: number, n: number): boolean {
-  if (!isIdentifierStart(source[i])) {
-    return false;
-  }
-
-  let k = i;
-
-  while (k < n && isIdentifierPart(source[k])) {
-    k++;
-  }
-
-  const next = source[k];
-
-  if (next === ',' || next === '=') {
-    return true;
-  }
-
-  if (next === '>') {
-    let j = k + 1;
-
-    while (j < n && isWhitespace(source[j])) {
-      j++;
+  try {
+    if (!isIdentifierStart(source[i])) {
+      return false;
     }
 
-    if (source[j] === '(') {
-      return arrowFollowsParameters(source, j, n);
-    }
-  }
+    let k = i;
 
-  if (isWhitespace(next)) {
-    const name = source.slice(i, k);
-
-    while (k < n && isWhitespace(source[k])) {
+    while (k < n && isIdentifierPart(source[k])) {
       k++;
     }
 
-    if (source.slice(k, k + 7) === 'extends' || source.slice(k, k + 10) === 'implements') {
+    const name = source.slice(i, k);
+    k = skipTrivia(source, k, n);
+    const next = source[k];
+
+    if (next === ',' || next === '=') {
       return true;
+    }
+
+    if (next === '>') {
+      const j = skipTrivia(source, k + 1, n);
+
+      if (source[j] === '(') {
+        return arrowFollowsParameters(source, j, n);
+      }
+    }
+
+    let end = k;
+    while (end < n && isIdentifierPart(source[end])) {
+      end++;
+    }
+
+    if (source.slice(k, end) === 'extends' || source.slice(k, end) === 'implements') {
+      // `extends`/`implements` is a generic constraint only when it introduces a constraint type that
+      // closes the type-parameter list (for example `<T extends object>`). As a JSX attribute it is
+      // followed by `=`, a quote, the tag close `>` or a self-close `/`, so it must stay JSX markup
+      // instead of being read as a generic signature.
+      const j = skipTrivia(source, end, n);
+      const after = source[j];
+
+      if (
+        after !== '=' &&
+        after !== '"' &&
+        after !== "'" &&
+        after !== '`' &&
+        after !== '>' &&
+        after !== '/'
+      ) {
+        return true;
+      }
     }
 
     // `const T, ...`: a TypeScript const type parameter, whose real name follows the modifier.
     if (name === 'const' && k < n && isIdentifierStart(source[k])) {
       return jsxTagIsGeneric(source, k, n);
     }
+
+    return false;
+  } catch (error) {
+    if (error instanceof ModuleSpecifierError) {
+      // This is speculative: an apostrophe or `/*` may be inert JSX children, not broken JS.
+      // Let the normal JSX path scan it; genuinely incomplete markup will still fail there.
+      return false;
+    }
+    throw error;
+  }
+}
+
+// Scan a generic function signature's parameter list starting at its opening `(` (offset `open`).
+// Returns true only when the list is closed and `=>` follows, so callers can treat `<T>(...) =>` as
+// a generic signature rather than a JSX element.
+//
+// Brackets inside strings, template literals and regex literals are inert: a `)` inside any of them
+// must not be counted as the parameter-list close. Template interpolations are skipped opaquely
+// because a template literal is a single argument value, so its internal parentheses never shape
+// the parameter list. Regex-vs-division tracking mirrors the main tokenizer so a regex default
+// (for example `= /a/)`) is skipped instead of read as division.
+function arrowFollowsParameters(source: string, open: number, n: number): boolean {
+  let depth = 0;
+  let prevKind: PrevKind = 'start';
+  let prevPunct: string | undefined;
+
+  let k = open;
+
+  while (k < n) {
+    k = skipTrivia(source, k, n);
+    const ch = source[k];
+
+    if (ch === undefined) {
+      break;
+    }
+
+    // String literals: their brackets and slashes are inert text, so skip the whole value.
+    if (ch === "'" || ch === '"') {
+      k = readString(source, k).next;
+      prevKind = 'string';
+      continue;
+    }
+
+    // Template literals: skip their text and interpolation so a `)` inside a template is not
+    // counted as the parameter-list close.
+    if (ch === '`') {
+      k = skipTemplateLiteral(source, k);
+      prevKind = 'template';
+      continue;
+    }
+
+    // Regex literals: a `/` that begins a regex must be skipped so its `)` stays inside the pattern
+    // rather than closing the parameter list.
+    if (ch === '/' && isRegexStart(prevKind, prevPunct, false, false, false)) {
+      k = skipRegex(source, k);
+      prevKind = 'regex';
+      continue;
+    }
+
+    if (ch === '(') {
+      depth++;
+      prevKind = 'punct';
+      prevPunct = '(';
+    } else if (ch === ')') {
+      depth--;
+      prevKind = 'punct';
+      prevPunct = ')';
+
+      if (depth === 0) {
+        const j = skipTrivia(source, k + 1, n);
+
+        return source[j] === '=' && source[j + 1] === '>';
+      }
+    } else if (isIdentifierStart(ch)) {
+      let end = k + 1;
+
+      while (end < n && isIdentifierPart(source[end])) {
+        end++;
+      }
+
+      k = end - 1;
+      prevKind = 'identifier';
+      prevPunct = undefined;
+    } else {
+      prevKind = 'punct';
+      prevPunct = ch;
+    }
+
+    k++;
   }
 
   return false;
 }
 
-function arrowFollowsParameters(source: string, open: number, n: number): boolean {
-  let depth = 0;
+// Skip a template literal starting at its opening backtick (offset `start`). Returns the index just
+// past the closing backtick.
+//
+// `${...}` interpolations are skipped opaquely by brace depth: the caller only needs this region to
+// be invisible so its brackets never reach the parameter-list accounting, which is why the body is
+// not re-lexed here.
+//
+// @throws {ModuleSpecifierError} on an unterminated template literal.
+function skipTemplateLiteral(source: string, start: number): number {
+  const n = source.length;
+  let i = start + 1; // past the opening backtick
 
-  for (let k = open; k < n; k++) {
-    const ch = source[k];
+  while (i < n) {
+    const ch = source[i];
 
-    if (ch === '(') {
-      depth++;
-    } else if (ch === ')') {
-      depth--;
+    // A backslash escapes the next character (including a nested backtick or `${`).
+    if (ch === '\\') {
+      i += 2;
+      continue;
+    }
 
-      if (depth === 0) {
-        let j = k + 1;
+    if (ch === '`') {
+      return i + 1;
+    }
 
-        while (j < n && isWhitespace(source[j])) {
-          j++;
+    if (ch === '$' && source[i + 1] === '{') {
+      // Skip the interpolation until its braces balance. Nested templates/braces are handled by the
+      // depth counter; a raw line terminator is invalid inside a template and stops the scan.
+      let depth = 1;
+
+      i += 2;
+
+      while (i < n && depth > 0) {
+        const inner = source[i];
+
+        if (inner === '\n' || inner === '\r') {
+          throw new ModuleSpecifierError('Unterminated template literal', 'invalid-source', start);
         }
 
-        return source[j] === '=' && source[j + 1] === '>';
+        if (inner === '\\') {
+          i += 2;
+          continue;
+        }
+
+        if (inner === '{') {
+          depth++;
+        } else if (inner === '}') {
+          depth--;
+        }
+
+        i++;
       }
+
+      continue;
     }
+
+    i++;
   }
 
-  return false;
+  throw new ModuleSpecifierError('Unterminated template literal', 'invalid-source', start);
+}
+
+/**
+ * Lex only the boundaries of a component's type arguments. These tokens preserve literal imports
+ * without changing the surrounding JavaScript function/brace state or treating type braces as JSX.
+ */
+function readJsxTypeArguments(source: string, open: number, n: number, tokens: Token[]): number {
+  const closers = ['>'];
+  let i = open + 1;
+
+  while (i < n) {
+    i = skipTrivia(source, i, n);
+    const ch = source[i];
+
+    if (ch === undefined) {
+      break;
+    }
+
+    if (ch === "'" || ch === '"') {
+      const { value, next } = readString(source, i);
+      tokens.push({ kind: 'string', value, offset: i });
+      i = next;
+      continue;
+    }
+
+    if (ch === '`') {
+      throw new ModuleSpecifierError(
+        'Template literal types in JSX type arguments are not supported',
+        'invalid-source',
+        i,
+      );
+    }
+
+    if (isIdentifierStart(ch)) {
+      const start = i++;
+      while (i < n && isIdentifierPart(source[i])) {
+        i++;
+      }
+      tokens.push({ kind: 'identifier', value: source.slice(start, i), offset: start });
+      continue;
+    }
+
+    if (ch === '<' || ch === '(' || ch === '{' || ch === '[') {
+      closers.push(ch === '<' ? '>' : ch === '(' ? ')' : ch === '{' ? '}' : ']');
+    } else if (ch === closers[closers.length - 1] && !(ch === '>' && source[i - 1] === '=')) {
+      closers.pop();
+      if (closers.length === 0) {
+        return i + 1;
+      }
+    }
+
+    tokens.push({ kind: 'punct', value: ch, offset: i });
+    i++;
+  }
+
+  throw new ModuleSpecifierError('Unterminated JSX type arguments', 'invalid-source', open);
 }
 
 /**

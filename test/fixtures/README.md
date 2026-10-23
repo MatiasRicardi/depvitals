@@ -203,3 +203,23 @@ regex/division boundary through the real CLI pipeline. No fixture is executed or
 - `regex-await-yield-declared/` - the same source with `fake` declared, which must stay unused;
 - `division-require/` - `{} / require('real') / 2`, where both slashes divide and the call stays
   visible as a missing dependency.
+
+### TSX generics and typed JSX components (Step 68.5)
+
+Eight projects used by `test/tsxGenericsRegression.test.ts`. Valid sources are checked for TSX
+syntactic diagnostics using the existing development-only TypeScript dependency; no component,
+import, or generated code is executed or resolved:
+
+- `tsx-generic-default/` - a generic arrow with a default type parameter, with a clean result;
+- `tsx-generic-comment/` - whitespace/comments before a generic separator, followed by a real
+  undeclared require that must remain missing;
+- `tsx-component-clean/` - a self-closing component with type arguments and no dependencies;
+- `tsx-component-missing/` - nested type arguments followed by a real attribute expression;
+- `tsx-component-declared/` - an object type argument and a declared dependency used in an attribute;
+- `tsx-type-string/` - a require-looking string literal type that must leave `fake` unused;
+- `tsx-type-import/` - a literal type import that must retain the missing `types-pkg` reference;
+- `tsx-types-incomplete/` - an unfinished type argument list that must abort without a partial report.
+
+The tests assert exact CLI output, repeat scans, snapshot fixture contents, and run the compiled CLI
+with update checks disabled. Unit matrices additionally cover function types, comments/strings with
+delimiters, nested fragments, JSX-like keyword prefixes, token boundaries and incomplete expressions.

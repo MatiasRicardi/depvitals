@@ -200,6 +200,16 @@ describe('formatTerminalReport', () => {
     );
   });
 
+  it('escapes control characters so a hostile name cannot clear the terminal', () => {
+    // An ESC decoded from a source string such as `import("\x1b[2J")` must never reach the
+    // terminal unchanged; it is rendered as the literal, inert `\u001b` sequence instead.
+    const hostile = `lodash${String.fromCharCode(27)}[2J`;
+    const output = formatTerminalReport(analysis({ unusedDependencies: [hostile] }));
+
+    expect(output).not.toContain(String.fromCharCode(27));
+    expect(output).toContain('  lodash\\u001b[2J');
+  });
+
   it('does not deduplicate names, which stays an analyzer concern', () => {
     const output = formatTerminalReport(analysis({ unusedDependencies: ['lodash', 'lodash'] }));
 
