@@ -752,7 +752,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     // An arrow's expression body has no brace where its function context can be consumed. Record
     // its bounded context after `=>`; a following delimiter removes it again.
     if (ch === '>' && prevPunct === '=') {
-      const context = inferArrowContext(tokens);
+      const context = inferArrowContext(source, tokens);
       const next = skipTrivia(source, i + 1, n);
 
       if (context !== undefined && source[next] !== '{') {
@@ -1029,7 +1029,7 @@ function inferFunctionBodyContext(
  * Infer the async marker immediately before an arrow's `=>`, using the same parameter shapes as
  * {@link inferFunctionBodyContext}. The caller has not emitted the `>` token yet.
  */
-function inferArrowContext(tokens: readonly Token[]): FuncContext | undefined {
+function inferArrowContext(source: string, tokens: readonly Token[]): FuncContext | undefined {
   const arrow = tokens[tokens.length - 1];
 
   if (arrow?.kind !== 'punct' || arrow.value !== '=') {
@@ -1048,11 +1048,31 @@ function inferArrowContext(tokens: readonly Token[]): FuncContext | undefined {
     return undefined;
   }
 
+  // A line terminator between `async` and the parameters means the arrow is not async: `async`
+  // ends the previous expression and the arrow body starts on the next line. Treating it as async
+  // would make `await` a keyword and read division as a regex, hiding a real dependency.
+  const markerToken = tokens[marker];
+  const async =
+    markerToken?.kind === 'identifier' &&
+    markerToken.value === 'async' &&
+    !hasLineTerminatorBetween(source, markerToken.offset, parameters.offset);
+
   return {
-    async: isIdentifier(tokens[marker], 'async'),
+    async,
     generator: false,
     isExpression: false,
   };
+}
+
+/** Whether any line terminator appears strictly between two source offsets. */
+function hasLineTerminatorBetween(source: string, start: number, end: number): boolean {
+  for (let i = start; i < end; i++) {
+    if (isLineTerminator(source[i])) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function expressionFunctionBodyEnded(

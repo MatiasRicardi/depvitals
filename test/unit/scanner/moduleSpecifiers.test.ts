@@ -884,6 +884,14 @@ describe('extractModuleSpecifiers', () => {
 
       expect(specifiers(source)).toEqual(['real']);
     });
+
+    it('treats an arrow after a line-terminated `async` as an ordinary arrow', () => {
+      // A line terminator between `async` and the arrow parameters means the arrow is not async,
+      // so `await` is an ordinary identifier and the slashes are divisions, not a regex decoy.
+      const source = `async\n(x) => await / require('real') / 2;`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
   });
 
   describe('async arrow expression bodies and module await', () => {
