@@ -199,6 +199,35 @@ describe('Steps 68.6 and 68.7 function contexts through analyzer and compiled CL
     });
   }
 
+  it('does not treat a template ? as a ternary that turns a labeled block into a division', async () => {
+    const project = mkdtempSync(join(tmpdir(), 'depvitals-step68-7-template-'));
+    const manifest = JSON.stringify({ name: 'template-punct', version: '0.0.0' });
+    try {
+      writeFileSync(join(project, 'package.json'), manifest);
+      // A `?` inside template text is inert: the trailing `label: {}` stays a block, so the `/`
+      // starts a regex and 'fake-template' must NOT be reported as a dependency. This pins the
+      // reviewer's "template punctuation creates false dependencies" scenario end to end.
+      writeFileSync(
+        join(project, 'index.cjs'),
+        `let note = \`value ? more\`\nlabel: {} /require('fake-template') / 2;`,
+      );
+
+      expect(await analyzeProject(project)).toEqual({
+        projectRoot: project,
+        unusedDependencies: [],
+        unusedDevDependencies: [],
+        missingDependencies: [],
+      });
+      expect(runBuilt(project)).toEqual({
+        status: 0,
+        stdout: 'DepVitals\n\nNo dependency issues found.\n',
+        stderr: '',
+      });
+    } finally {
+      rmSync(project, { recursive: true, force: true });
+    }
+  });
+
   it('keeps incomplete source as an operational error without partial output', async () => {
     const project = join(REPO_ROOT, 'test', 'fixtures', 'analysis', 'tsx-types-incomplete');
     const before = readdirSync(project).map((name) => [

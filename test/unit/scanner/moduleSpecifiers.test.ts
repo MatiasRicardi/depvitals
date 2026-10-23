@@ -483,6 +483,33 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(`label: {}\n/require\\('fake-label'\\)/.test(value);`)).toEqual([]);
     });
 
+    it('ignores a template literal ? before a labeled block and regex', () => {
+      // A `?` inside template text is inert: it must never enter conditionalContexts, so the
+      // trailing `label: {}` stays a block and the following `/` starts a regex, not a division.
+      // `label: {}` is always a block, so this form always reports no dependency. A leaked template
+      // `?` would instead classify `{}` as an object, turn the `/` into a division and report a
+      // false dependency; the line break (no `;`) is exactly the case that would expose such a leak.
+      const withTemplate = `let note = \`value ? more\`\nlabel: {} /require('fake-template') / 2;`;
+      const withoutTemplate = `label: {} /require('fake-template') / 2;`;
+
+      expect(specifiers(withTemplate)).toEqual([]);
+      // The template must not change behavior: the no-template form is equally empty.
+      expect(specifiers(withoutTemplate)).toEqual([]);
+      // Positive control: an object literal followed by a real division is detected, so the empty
+      // results above are meaningful and are not just the scanner refusing to report anything.
+      expect(specifiers(`const o = {} / require('real-division') / 2;`)).toEqual(['real-division']);
+    });
+
+    it('still reports a real division after a labeled block even with a template ? present', () => {
+      // Positive control: an object literal followed by a real division is detected, and a
+      // preceding template `?` does not suppress it.
+      const withTemplate = `let note = \`a ? b\`; const o = {} / require('real-template-division') / 2;`;
+      const withoutTemplate = `const o = {} / require('real-template-division') / 2;`;
+
+      expect(specifiers(withTemplate)).toEqual(['real-template-division']);
+      expect(specifiers(withoutTemplate)).toEqual(['real-template-division']);
+    });
+
     it('treats a regex after a switch block as a regex', () => {
       const clauses = `
         switch (kind) {

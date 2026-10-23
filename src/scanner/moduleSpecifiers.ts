@@ -752,7 +752,11 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       continue;
     }
 
-    // Any other single character is punctuation.
+    // Any other single character is punctuation. This (and the `:`/`;`/`}` handlers below) is the
+    // only place that pushes a conditionalContext, and it is reached solely while scanning real
+    // JavaScript: template text, JSX markup and `${...}`/`{...}` expression bodies are consumed by
+    // the text-mode gates above, so inert punctuation inside them never contributes a conditional.
+    // A `?` in template text is a plain character, not a ternary, so it must not leak here.
     if (ch === '?' && source[i + 1] !== '?' && source[i - 1] !== '?' && source[i + 1] !== '.') {
       conditionalContexts.push({
         parenDepth,
