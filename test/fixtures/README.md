@@ -182,3 +182,22 @@ combine without changing any contract. Each subdirectory is one project:
 The unreadable-source case is exercised at runtime with a narrowly targeted mock of
 `node:fs/promises.readFile` (an `EACCES` failure for a single selected file) rather than a fixture,
 so the behavior is deterministic across platforms.
+
+### JSX and regex/division lexer fixtures (Step 68.2)
+
+Seven projects used by `test/jsxAndRegexRegression.test.ts` to prove the bounded JSX mode and the
+regex/division boundary through the real CLI pipeline. No fixture is executed or transpiled:
+
+- `jsx-react-component/` - a declared `react` dependency used from a `.tsx` component (import before
+  the markup) and a `.jsx` component (import after the markup); the scan must be clean;
+- `jsx-inert-text/` - JSX text with an apostrophe, a `require(...)`-looking attribute, a
+  `require(...)`-looking text node and an import-looking JSX comment; none of them is evidence;
+- `jsx-expression-require/` - `require('real')` inside a `{...}` expression container next to
+  require-looking text, so only `real` is missing;
+- `jsx-incomplete/` - an element that reaches the end of the file, which must fail the scan instead
+  of producing a partial clean report;
+- `regex-await-yield-clean/` - `await /require('fake')/` and `yield /require('fake')/`, where `fake`
+  is undeclared and must not be reported as missing;
+- `regex-await-yield-declared/` - the same source with `fake` declared, which must stay unused;
+- `division-require/` - `{} / require('real') / 2`, where both slashes divide and the call stays
+  visible as a missing dependency.

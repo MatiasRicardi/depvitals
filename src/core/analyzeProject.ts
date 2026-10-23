@@ -221,7 +221,7 @@ async function readAndExtract(file: string): Promise<readonly string[]> {
   }
 
   try {
-    const occurrences = extractModuleSpecifiers(source);
+    const occurrences = extractModuleSpecifiers(source, { jsx: usesJsxSyntax(file) });
     return occurrences.map((occurrence) => occurrence.specifier);
   } catch (error) {
     if (error instanceof Error && error.name === 'ModuleSpecifierError') {
@@ -234,6 +234,19 @@ async function readAndExtract(file: string): Promise<readonly string[]> {
 
     throw error;
   }
+}
+
+/**
+ * Whether a discovered source file may contain JSX syntax.
+ *
+ * Only `.jsx` and `.tsx` enable the extractor's bounded JSX mode. Every other supported extension
+ * keeps the plain JavaScript/TypeScript reading, so a `.ts` type assertion (`<Foo>value`) is never
+ * mistaken for markup. The comparison is case-insensitive because file systems are.
+ */
+function usesJsxSyntax(file: string): boolean {
+  const lower = file.toLowerCase();
+
+  return lower.endsWith('.jsx') || lower.endsWith('.tsx');
 }
 
 /**

@@ -60,6 +60,16 @@ export class ModuleSpecifierError extends Error {
 }
 
 /**
+ * Options for {@link extractModuleSpecifiers}.
+ */
+export type ExtractModuleSpecifiersOptions = {
+  // Enable a bounded JSX lexical overlay. JSX text, tags and attributes are skipped, while the JS
+  // inside `{...}` expression containers is still lexed, so real specifiers are found and JSX can
+  // not be mistaken for regex/division. Only meaningful for `.jsx`/`.tsx` source.
+  jsx?: boolean;
+};
+
+/**
  * Extract the statically knowable module specifiers from `source`.
  *
  * The returned occurrences preserve source order and are not deduplicated.
@@ -67,8 +77,11 @@ export class ModuleSpecifierError extends Error {
  * @throws {ModuleSpecifierError} when the source reaches an unterminated or malformed lexical state
  *   from which the scanner cannot safely continue.
  */
-export function extractModuleSpecifiers(source: string): readonly ModuleSpecifierOccurrence[] {
-  return interpret(tokenize(source));
+export function extractModuleSpecifiers(
+  source: string,
+  options: ExtractModuleSpecifiersOptions = {},
+): readonly ModuleSpecifierOccurrence[] {
+  return interpret(tokenize(source, options.jsx ?? false));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -85,11 +98,36 @@ type Token =
 
 type PrevKind = 'start' | 'identifier' | 'number' | 'string' | 'punct' | 'regex' | 'template';
 
+// Async/generator context of a function body. `await`/`yield` are treated as keywords only while
+// an enclosing body carries the matching flag. `isExpression` marks a function expression used as a
+// value (its closing `}` ends an expression, so a following `/` is division) versus a declaration
+// in statement position (its closing `}` starts a block, so a following `/` may be a regex).
+type FuncContext = {
+  readonly async: boolean;
+  readonly generator: boolean;
+  readonly isExpression: boolean;
+};
+
+// Lexical frames opened by a template interpolation or by the JSX overlay. The tokenizer keeps them
+// on a single stack, so the innermost frame always decides how the next character is read:
+//
+// - `template-expr`: JavaScript inside `${...}`; `depth` counts the braces opened within it.
+// - `jsx-expr`: JavaScript inside a JSX `{...}` container; `depth` counts the braces within it.
+// - `jsx-tag`: inside `<name ...` up to the `>` or `/>` that ends the open tag.
+// - `jsx-text`: inert JSX children up to the matching close tag (`name` is `null` for a fragment).
+//
+// `offset` is where the frame was opened, so an unterminated frame can report a useful position.
+type Frame =
+  | { readonly kind: 'template-expr'; depth: number; readonly offset: number }
+  | { readonly kind: 'jsx-expr'; depth: number; readonly offset: number }
+  | { readonly kind: 'jsx-tag'; readonly name: string; readonly offset: number }
+  | { readonly kind: 'jsx-text'; readonly name: string | null; readonly offset: number };
+
 /**
  * Turn source into a stream of significant tokens, skipping whitespace, line/block comments, regex
  * literals and template literals.
  */
-function tokenize(source: string): readonly Token[] {
+function tokenize(source: string, jsx = false): readonly Token[] {
   const tokens: Token[] = [];
   const n = source.length;
   let i = 0;
@@ -112,13 +150,20 @@ function tokenize(source: string): readonly Token[] {
   // The value of the previous identifier token, when the previous token was an identifier. Which
   // identifier it was matters for one decision: `return {` opens an object literal, `else {` not.
   let prevIdentifier: string | undefined;
+  // Where the previous identifier token ended, so `async function` can be rejected when a line
+  // terminator separates the two words (automatic semicolon insertion ends the `async` statement).
+  let prevIdentifierEnd = 0;
 
   // Template literal state. `inText` is true while scanning template text that must not be lexed as
   // JavaScript; a backtick toggles it, so nested templates are handled by the toggle. Every open
-  // `${...}` expression pushes its own brace depth onto `braceDepths`, which is what distinguishes
-  // the `}` that closes the interpolation from a `}` belonging to an object literal, a block or a
-  // function body inside it. JavaScript inside `${...}` is lexed like ordinary source.
-  const braceDepths: number[] = [];
+  // `${...}` expression pushes a `template-expr` frame carrying its own brace depth, which is what
+  // distinguishes the `}` that closes the interpolation from a `}` belonging to an object literal, a
+  // block or a function body inside it. JavaScript inside `${...}` is lexed like ordinary source.
+  //
+  // The same stack carries the JSX overlay frames (`jsx-tag`, `jsx-text` and the `jsx-expr` of a
+  // `{...}` container), so markup, expression containers, templates and nested elements interleave
+  // in a single pass without any state leaking between them.
+  const frames: Frame[] = [];
   let inText = false;
   // Offset of the opening backtick of the current template, for unterminated-template errors.
   let templateStart = 0;
@@ -130,6 +175,19 @@ function tokenize(source: string): readonly Token[] {
   // `if (ok) { ... }`, after which a `/` may legitimately start a regex. Anything unrecognized is
   // treated as a block.
   const braceContexts: boolean[] = [];
+  // Parallel to `braceContexts`: whether each open brace belongs to a function body. Pushed in
+  // lockstep with `braceContexts` so the matching `}` can restore the async/generator context.
+  const functionBodyBraces: boolean[] = [];
+  // Async/generator context of every open function body, tracked independently of the expression
+  // frame reset so that `await`/`yield` stay keywords across `${}` boundaries.
+  const functionContextStack: FuncContext[] = [];
+  // Number of enclosing async / generator function bodies. `await` is a keyword only while
+  // `asyncDepth > 0`; `yield` is a keyword only while `generatorDepth > 0`. These counters are
+  // deliberately not reset by `resetExpressionState` because the context is function-scoped.
+  let asyncDepth = 0;
+  let generatorDepth = 0;
+  // A pending function signature (`function`/`async`/`*`) that has not yet reached its body `{`.
+  let pendingFunctionContext: FuncContext | undefined;
   // Whether the most recent `}` closed an object literal. It is only consulted while that `}` is
   // the previous token, exactly like `prevPunct`.
   let closedObjectBrace = false;
@@ -154,6 +212,28 @@ function tokenize(source: string): readonly Token[] {
     afterControlHead = false;
     pendingControlKeyword = undefined;
     closedObjectBrace = false;
+    // A function signature is not part of a `${...}` expression; drop a half-written one so it can
+    // not leak across the boundary. The async/generator counters are function-scoped and persist.
+    pendingFunctionContext = undefined;
+  };
+
+  // A finished JSX element leaves an expression value behind: a following `/` divides, and the
+  // markup itself never opens a statement context.
+  const endJsxElement = (): void => {
+    prevKind = 'template';
+    prevPunct = undefined;
+    prevIdentifier = undefined;
+    prevIsExpressionKeyword = false;
+    afterControlHead = false;
+    pendingControlKeyword = undefined;
+    closedObjectBrace = false;
+  };
+
+  // JSX markup and sibling expression containers are separate expressions. Emitting an explicit
+  // boundary keeps the token stream from gluing two of them into an import/require sequence that
+  // does not exist in source (for example `<p>{import}{('pkg')}</p>`).
+  const pushBoundary = (offset: number): void => {
+    tokens.push({ kind: 'punct', value: ';', offset });
   };
 
   while (i < n) {
@@ -183,10 +263,111 @@ function tokenize(source: string): readonly Token[] {
       if (ch === '$' && source[i + 1] === '{') {
         // Start of a `${...}` expression: lex the JavaScript inside like ordinary source. The frame
         // starts at brace depth 0, so the next unmatched `}` closes the interpolation.
-        braceDepths.push(0);
+        frames.push({ kind: 'template-expr', depth: 0, offset: i });
         inText = false;
         resetExpressionState();
         i += 2;
+        continue;
+      }
+
+      i++;
+      continue;
+    }
+
+    // The innermost frame decides how the next character is read.
+    const frame = frames[frames.length - 1];
+
+    // JSX children: inert text up to the matching close tag. Quotes, backticks and comment-looking
+    // sequences are text here, so only `<` (markup) and `{` (an expression container) leave it.
+    if (frame?.kind === 'jsx-text') {
+      if (ch === '{') {
+        frames.push({ kind: 'jsx-expr', depth: 0, offset: i });
+        pushBoundary(i);
+        resetExpressionState();
+        i++;
+        continue;
+      }
+
+      if (ch === '<') {
+        const after = source[i + 1];
+
+        // Close tag `</name>` or fragment close `</>`: this element ends here.
+        if (after === '/') {
+          let k = i + 2;
+
+          while (k < n && source[k] !== '>') {
+            k++;
+          }
+
+          if (k >= n) {
+            throw new ModuleSpecifierError(
+              'Unterminated JSX element',
+              'invalid-source',
+              frame.offset,
+            );
+          }
+
+          frames.pop();
+          pushBoundary(i);
+          endJsxElement();
+          i = k + 1;
+          continue;
+        }
+
+        // Nested fragment `<>`.
+        if (after === '>') {
+          frames.push({ kind: 'jsx-text', name: null, offset: i });
+          i += 2;
+          continue;
+        }
+
+        // Nested element `<name ...`.
+        if (after !== undefined && isIdentifierStart(after)) {
+          const tag = readJsxTagName(source, i + 1, n);
+          frames.push({ kind: 'jsx-tag', name: tag.name, offset: i });
+          i = tag.end;
+          continue;
+        }
+
+        // A `<` that is not markup (`a < b` written inside JSX text) is ordinary text.
+        i++;
+        continue;
+      }
+
+      i++;
+      continue;
+    }
+
+    // JSX open tag: attribute names, `=` and namespaces are inert; quoted values are inert text and
+    // `{...}` returns to real JavaScript.
+    if (frame?.kind === 'jsx-tag') {
+      if (ch === '{') {
+        frames.push({ kind: 'jsx-expr', depth: 0, offset: i });
+        pushBoundary(i);
+        resetExpressionState();
+        i++;
+        continue;
+      }
+
+      if (ch === '"' || ch === "'") {
+        i = skipJsxAttributeValue(source, i, n);
+        continue;
+      }
+
+      // Self-closing tag `<name ... />`: the element ends without children.
+      if (ch === '/' && source[i + 1] === '>') {
+        frames.pop();
+        pushBoundary(i);
+        endJsxElement();
+        i += 2;
+        continue;
+      }
+
+      // End of the open tag: its children follow until the matching close tag.
+      if (ch === '>') {
+        frames.pop();
+        frames.push({ kind: 'jsx-text', name: frame.name, offset: frame.offset });
+        i++;
         continue;
       }
 
@@ -225,26 +406,77 @@ function tokenize(source: string): readonly Token[] {
       continue;
     }
 
-    // A `}` in code mode closes the innermost open `${...}` expression only when that expression has
-    // no open braces of its own; otherwise it is an ordinary brace inside the expression.
-    if (ch === '}') {
-      const depth = braceDepths[braceDepths.length - 1];
+    // JSX overlay (opt-in via the `jsx` option). A `<` in expression position that is followed by a
+    // tag name (or `>` for a fragment) opens JSX markup: its text, tags and attributes are inert,
+    // while the JavaScript inside `{...}` containers is lexed normally. Expression position is the
+    // same test that decides a regex literal, so a comparison (`a < b`, `f() < x`) is never JSX, and
+    // a TypeScript type-argument list (`<T,>`, `<T extends U>`) is excluded explicitly.
+    if (
+      jsx &&
+      ch === '<' &&
+      i + 1 < n &&
+      isRegexStart(
+        prevKind,
+        prevPunct,
+        prevIsExpressionKeyword,
+        afterControlHead,
+        closedObjectBrace,
+      )
+    ) {
+      const after = source[i + 1];
 
-      if (depth !== undefined) {
-        if (depth === 0) {
-          braceDepths.pop();
+      if (after === '>') {
+        frames.push({ kind: 'jsx-text', name: null, offset: i });
+        pushBoundary(i);
+        i += 2;
+        continue;
+      }
+
+      if (after !== undefined && isIdentifierStart(after) && !jsxTagIsGeneric(source, i + 1, n)) {
+        const tag = readJsxTagName(source, i + 1, n);
+        frames.push({ kind: 'jsx-tag', name: tag.name, offset: i });
+        pushBoundary(i);
+        i = tag.end;
+        continue;
+      }
+    }
+
+    // A `}` in code mode closes the innermost open `${...}` or JSX `{...}` expression only when that
+    // expression has no open braces of its own; otherwise it is an ordinary brace inside it.
+    if (ch === '}') {
+      if (frame?.kind === 'template-expr' || frame?.kind === 'jsx-expr') {
+        if (frame.depth === 0) {
+          frames.pop();
+          pushBoundary(i);
           i++;
-          inText = true;
-          resetExpressionState();
+
+          if (frame.kind === 'template-expr') {
+            inText = true;
+            resetExpressionState();
+          } else {
+            // Back to the enclosing JSX tag or text frame, which reads the next character itself.
+            endJsxElement();
+          }
+
           continue;
         }
 
-        braceDepths[braceDepths.length - 1] = depth - 1;
+        frame.depth -= 1;
       }
 
       // Otherwise `}` is an ordinary brace: it ends an expression only when it closed an object
       // literal. An unmatched `}` (an empty context) keeps the statement-block behaviour.
+      const wasFunctionBody = functionBodyBraces.pop() ?? false;
       closedObjectBrace = braceContexts.pop() === true;
+      // Restore the async/generator context of a function body whose `{` was tracked alongside
+      // `braceContexts`. The matching `}` is always the current one because braces nest properly.
+      if (wasFunctionBody) {
+        const context = functionContextStack.pop();
+        if (context) {
+          asyncDepth -= context.async ? 1 : 0;
+          generatorDepth -= context.generator ? 1 : 0;
+        }
+      }
     }
 
     // `/` is a regex when it can start an expression, otherwise it is division.
@@ -300,20 +532,49 @@ function tokenize(source: string): readonly Token[] {
       }
 
       const value = source.slice(start, i);
+      const previousIdentifier = prevIdentifier;
       prevIdentifier = value;
+      const isMemberName = prevKind === 'punct' && prevPunct === '.';
       // A keyword after `.` is a property name (e.g. `x.return`), not an expression start.
-      prevIsExpressionKeyword =
-        REGEX_PRECEDING_KEYWORDS.has(value) && !(prevKind === 'punct' && prevPunct === '.');
+      let isExpressionKeyword = REGEX_PRECEDING_KEYWORDS.has(value) && !isMemberName;
+      // `await`/`yield` are keywords only inside an async / generator function body. A member name
+      // (`obj.await`) is always a property access, never a keyword, so a following `/` divides.
+      if (!isMemberName) {
+        if (value === 'await' && asyncDepth > 0) {
+          isExpressionKeyword = true;
+        } else if (value === 'yield' && generatorDepth > 0) {
+          isExpressionKeyword = true;
+        }
+      }
+      prevIsExpressionKeyword = isExpressionKeyword;
       // Remember a control-statement keyword until its `(` is seen so only that head's `)` may be
       // followed by a regex literal.
       pendingControlKeyword = pendingControlKeywordAfter(
         value,
-        // After `.` the identifier is a property name (e.g. `obj.if(...)`), never a control head.
-        prevKind === 'punct' && prevPunct === '.',
+        isMemberName,
         pendingControlKeyword,
       );
+      // A `function` keyword (not a property name) starts a function signature. Track whether it is
+      // an expression (`const f = function(){}`) or a declaration (`function f(){}`), and whether it
+      // is async (`async function`, i.e. preceded by `async`) or a generator (`function*`, resolved
+      // when a following `*` is seen). The context is consumed at the body `{`.
+      if (value === 'function' && !isMemberName) {
+        // `async function` is only async without a line terminator between the two words: a line
+        // break ends the `async` statement, so the declaration that follows is an ordinary one.
+        const isAsync =
+          previousIdentifier === 'async' &&
+          prevKind === 'identifier' &&
+          !hasLineTerminator(source, prevIdentifierEnd, start);
+
+        pendingFunctionContext = {
+          async: isAsync,
+          generator: false,
+          isExpression: functionIsExpressionPosition(prevKind, prevPunct, previousIdentifier),
+        };
+      }
       tokens.push({ kind: 'identifier', value, offset: start });
       prevKind = 'identifier';
+      prevIdentifierEnd = i;
       afterControlHead = false;
       continue;
     }
@@ -343,22 +604,44 @@ function tokenize(source: string): readonly Token[] {
     if (ch === '{') {
       // Record what this brace opens, so its `}` knows whether an expression or a statement ended.
       // The enclosing entry is inspected before pushing, so a `:` knows if it separates a property.
-      braceContexts.push(
-        opensObjectLiteral(
-          prevKind,
-          prevPunct,
-          prevIdentifier,
-          prevIsExpressionKeyword,
-          braceDepths.length > 0,
-          braceContexts[braceContexts.length - 1] === true,
-        ),
+      let isObject = opensObjectLiteral(
+        prevKind,
+        prevPunct,
+        prevIdentifier,
+        prevIsExpressionKeyword,
+        frame?.kind === 'template-expr' || frame?.kind === 'jsx-expr',
+        braceContexts[braceContexts.length - 1] === true,
       );
 
-      // Count the brace inside the innermost open `${...}` expression so its closing `}` is found.
-      const depth = braceDepths[braceDepths.length - 1];
+      // A statement-block brace that consumes a pending function signature is a function body. A
+      // function expression used as a value ends an expression (so a following `/` divides), while a
+      // declaration in statement position starts a block (so a following `/` may be a regex).
+      //
+      // An async arrow body (`async () => {`) and an async / generator method body (`async run() {`,
+      // `*run() {`) carry no `function` keyword, so their context is inferred from the tokens just
+      // before the brace. Only those two shapes are recognised: a plain `name() {` is left alone,
+      // because `if (cond) {` has exactly the same token shape.
+      if (pendingFunctionContext === undefined && !isObject) {
+        pendingFunctionContext = inferFunctionBodyContext(tokens);
+      }
 
-      if (depth !== undefined) {
-        braceDepths[braceDepths.length - 1] = depth + 1;
+      let wasFunctionBody = false;
+      if (!isObject && pendingFunctionContext !== undefined) {
+        wasFunctionBody = true;
+        const context = pendingFunctionContext;
+        pendingFunctionContext = undefined;
+        isObject = context.isExpression;
+        functionContextStack.push(context);
+        asyncDepth += context.async ? 1 : 0;
+        generatorDepth += context.generator ? 1 : 0;
+      }
+      functionBodyBraces.push(wasFunctionBody);
+      braceContexts.push(isObject);
+
+      // Count the brace inside the innermost open `${...}` or JSX `{...}` expression so its closing
+      // `}` is found.
+      if (frame?.kind === 'template-expr' || frame?.kind === 'jsx-expr') {
+        frame.depth += 1;
       }
     } else if (ch === '(') {
       // A `(` after a control keyword opens a control head; only its matching `)` may then be
@@ -383,23 +666,244 @@ function tokenize(source: string): readonly Token[] {
       }
     }
 
+    // A `*` right after `function` (whitespace/comments aside) marks a generator: `function*` and
+    // `function *`. It is recorded on the pending signature, consumed at the body `{`.
+    if (ch === '*' && prevIdentifier === 'function' && pendingFunctionContext !== undefined) {
+      pendingFunctionContext = { ...pendingFunctionContext, generator: true };
+    }
+
+    // A `;` ends a statement, so any half-written function signature cannot continue.
+    if (ch === ';') {
+      pendingFunctionContext = undefined;
+    }
+
     tokens.push({ kind: 'punct', value: ch, offset: i });
     prevKind = 'punct';
     prevPunct = ch;
     i++;
   }
 
-  // Reaching the end of the source while inside a template text or an open `${...}` expression means
-  // the template literal was never closed.
-  if (inText || braceDepths.length > 0) {
+  // Reaching the end of the source with an open frame means the template literal, the JSX element or
+  // the JSX expression container was never closed. The innermost open frame is the one that failed.
+  const openFrame = frames[frames.length - 1];
+
+  if (inText || openFrame?.kind === 'template-expr') {
     throw new ModuleSpecifierError(
       'Unterminated template literal',
       'invalid-source',
-      templateStart,
+      inText ? templateStart : (openFrame?.offset ?? templateStart),
     );
   }
 
+  if (openFrame?.kind === 'jsx-expr') {
+    throw new ModuleSpecifierError(
+      'Unterminated JSX expression',
+      'invalid-source',
+      openFrame.offset,
+    );
+  }
+
+  if (openFrame !== undefined) {
+    throw new ModuleSpecifierError('Unterminated JSX element', 'invalid-source', openFrame.offset);
+  }
+
   return tokens;
+}
+
+// A `<` followed by an identifier that begins a generic type-argument list (e.g. `<T,>`, `<T = X>`,
+// `<T extends U>`, `<const T,>`) is not a JSX element. `<T>` alone is ambiguous and is treated as
+// JSX, exactly as TSX itself resolves that ambiguity.
+function jsxTagIsGeneric(source: string, i: number, n: number): boolean {
+  if (!isIdentifierStart(source[i])) {
+    return false;
+  }
+
+  let k = i;
+
+  while (k < n && isIdentifierPart(source[k])) {
+    k++;
+  }
+
+  const next = source[k];
+
+  if (next === ',' || next === '=') {
+    return true;
+  }
+
+  if (isWhitespace(next)) {
+    const name = source.slice(i, k);
+
+    while (k < n && isWhitespace(source[k])) {
+      k++;
+    }
+
+    if (source.slice(k, k + 7) === 'extends' || source.slice(k, k + 10) === 'implements') {
+      return true;
+    }
+
+    // `const T, ...`: a TypeScript const type parameter, whose real name follows the modifier.
+    if (name === 'const' && k < n && isIdentifierStart(source[k])) {
+      return jsxTagIsGeneric(source, k, n);
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Whether the source between two offsets contains a line terminator.
+ */
+function hasLineTerminator(source: string, from: number, to: number): boolean {
+  for (let k = from; k < to; k++) {
+    if (isLineTerminator(source[k])) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * The async/generator context of a function body whose signature carries no `function` keyword,
+ * inferred from the tokens emitted just before its `{`.
+ *
+ * Two shapes are recognised, both of which bind their own `await`/`yield`:
+ *
+ * - an async arrow: `async () => {`, `async x => {`;
+ * - an async or generator method: `async run() {`, `*run() {`, `async *run() {`.
+ *
+ * Everything else returns `undefined`. In particular a plain `name() {` is never a function body
+ * here, because `if (cond) {` and `while (cond) {` have the very same token shape, and an arrow or
+ * method that is neither async nor a generator needs no context of its own: an ordinary arrow
+ * inherits `await` from its enclosing function, which is exactly what leaving it alone preserves.
+ */
+function inferFunctionBodyContext(tokens: readonly Token[]): FuncContext | undefined {
+  const last = tokens[tokens.length - 1];
+
+  if (last?.kind !== 'punct') {
+    return undefined;
+  }
+
+  // `... => {`: the token before the parameter list decides whether the arrow is async.
+  if (last.value === '>') {
+    const arrow = tokens[tokens.length - 2];
+
+    if (arrow?.kind !== 'punct' || arrow.value !== '=') {
+      return undefined;
+    }
+
+    const beforeArrow = tokens.length - 3;
+    const parameters = tokens[beforeArrow];
+    let marker: number;
+
+    if (parameters?.kind === 'punct' && parameters.value === ')') {
+      marker = matchingOpenParen(tokens, beforeArrow) - 1;
+    } else if (parameters?.kind === 'identifier') {
+      marker = beforeArrow - 1;
+    } else {
+      return undefined;
+    }
+
+    return isIdentifier(tokens[marker], 'async')
+      ? { async: true, generator: false, isExpression: false }
+      : undefined;
+  }
+
+  // `... ) {`: an async or generator method, recognised only through its `async` / `*` marker.
+  if (last.value === ')') {
+    const open = matchingOpenParen(tokens, tokens.length - 1);
+
+    if (open < 0 || tokens[open - 1]?.kind !== 'identifier') {
+      return undefined;
+    }
+
+    const marker = tokens[open - 2];
+
+    if (isIdentifier(marker, 'async')) {
+      return { async: true, generator: false, isExpression: false };
+    }
+
+    if (marker?.kind === 'punct' && marker.value === '*') {
+      return {
+        async: isIdentifier(tokens[open - 3], 'async'),
+        generator: true,
+        isExpression: false,
+      };
+    }
+  }
+
+  return undefined;
+}
+
+/** Whether a token is the given identifier. */
+function isIdentifier(token: Token | undefined, value: string): boolean {
+  return token?.kind === 'identifier' && token.value === value;
+}
+
+/**
+ * The index of the `(` matching the `)` at `closeIndex`, or `-1` when the source has no match.
+ */
+function matchingOpenParen(tokens: readonly Token[], closeIndex: number): number {
+  let depth = 0;
+
+  for (let k = closeIndex; k >= 0; k--) {
+    const token = tokens[k];
+
+    if (token?.kind !== 'punct') {
+      continue;
+    }
+
+    if (token.value === ')') {
+      depth++;
+    } else if (token.value === '(') {
+      depth--;
+
+      if (depth === 0) {
+        return k;
+      }
+    }
+  }
+
+  return -1;
+}
+
+/**
+ * Read a JSX tag name starting at `i` (the first character after `<`). Member expressions
+ * (`<UI.Panel>`), namespaced names (`<svg:rect>`) and dashed names (`<my-tag>`) are part of the name.
+ */
+function readJsxTagName(source: string, i: number, n: number): { name: string; end: number } {
+  const start = i;
+
+  while (i < n) {
+    const ch = source[i];
+
+    if (ch === undefined || !(isIdentifierPart(ch) || ch === '.' || ch === '-' || ch === ':')) {
+      break;
+    }
+
+    i++;
+  }
+
+  return { name: source.slice(start, i), end: i };
+}
+
+/**
+ * Skip a quoted JSX attribute value starting at its opening quote. The value is inert text: it ends
+ * at the matching quote and backslashes are not escapes, so it can never contribute a specifier.
+ */
+function skipJsxAttributeValue(source: string, i: number, n: number): number {
+  const quote = source[i];
+  let k = i + 1;
+
+  while (k < n && source[k] !== quote) {
+    k++;
+  }
+
+  if (k >= n) {
+    throw new ModuleSpecifierError('Unterminated JSX attribute value', 'invalid-source', i);
+  }
+
+  return k + 1;
 }
 
 /**
@@ -493,6 +997,24 @@ const EXPRESSION_BEFORE_BRACE: ReadonlySet<string> = new Set([
 
 // Keywords that start an expression but are still followed by a statement block.
 const BLOCK_AFTER_KEYWORD: ReadonlySet<string> = new Set(['else', 'do']);
+
+// Whether a `function` keyword sits in expression position (a function expression used as a value,
+// so a slash after its body `{}` divides) rather than statement position (a declaration, so a slash
+// after its body may start a regex). The previous significant token must expect an expression on
+// its right: an expression-starting punctuation, an expression keyword, or a regex.
+function functionIsExpressionPosition(
+  prevKind: PrevKind,
+  prevPunct: string | undefined,
+  previousIdentifier: string | undefined,
+): boolean {
+  if (prevKind === 'punct') {
+    return EXPRESSION_BEFORE_BRACE.has(prevPunct ?? '');
+  }
+  if (prevKind === 'identifier') {
+    return REGEX_PRECEDING_KEYWORDS.has(previousIdentifier ?? '');
+  }
+  return prevKind === 'regex';
+}
 
 /**
  * Whether a `{` opens an expression (an object literal or a destructuring pattern) instead of a
@@ -616,16 +1138,37 @@ function interpret(tokens: readonly Token[]): ModuleSpecifierOccurrence[] {
  * - `import 'pkg'` and `import ... from 'pkg'` are `import`.
  * - `import('pkg')` is `dynamic-import` only when the sole argument is a static string.
  */
+/**
+ * Whether the identifier at `i` is a property name (`obj.require`), which is never the global
+ * `require`/`import`. A `.` that belongs to a spread (`...require('pkg')`) is not member access.
+ */
+function isMemberName(tokens: readonly Token[], i: number): boolean {
+  const prev = tokens[i - 1];
+
+  if (prev?.kind !== 'punct' || prev.value !== '.') {
+    return false;
+  }
+
+  const second = tokens[i - 2];
+  const third = tokens[i - 3];
+  const isSpread =
+    second?.kind === 'punct' &&
+    second.value === '.' &&
+    third?.kind === 'punct' &&
+    third.value === '.';
+
+  return !isSpread;
+}
+
 function handleImport(
   tokens: readonly Token[],
   i: number,
   occurrences: ModuleSpecifierOccurrence[],
 ): number {
-  const prev = tokens[i - 1];
   const next = tokens[i + 1];
 
   // `obj.import(...)`: a member call, not the import keyword.
-  if (prev?.kind === 'punct' && prev.value === '.') {
+  if (isMemberName(tokens, i)) {
     return i + 1;
   }
 
@@ -734,10 +1277,8 @@ function handleRequire(
   i: number,
   occurrences: ModuleSpecifierOccurrence[],
 ): number {
-  const prev = tokens[i - 1];
-
   // `obj.require(...)`: not the global CommonJS require.
-  if (prev?.kind === 'punct' && prev.value === '.') {
+  if (isMemberName(tokens, i)) {
     return i + 1;
   }
 
@@ -1051,14 +1592,14 @@ const SPACE_SEPARATOR = /\p{Zs}/u;
  * tokens; string contents are handled by `readString`, so a raw U+2028/U+2029 inside a quoted string
  * stays valid source while a raw LF/CR there stays an error.
  */
-function isWhitespace(ch: string): boolean {
+function isWhitespace(ch: string | undefined): boolean {
   return (
     ch === '\t' ||
     ch === '\v' ||
     ch === '\f' ||
     ch === '\uFEFF' ||
     isLineTerminator(ch) ||
-    SPACE_SEPARATOR.test(ch)
+    (ch !== undefined && SPACE_SEPARATOR.test(ch))
   );
 }
 
@@ -1070,12 +1611,12 @@ function isLineTerminator(ch: string | undefined): boolean {
   return ch === '\n' || ch === '\r' || ch === '\u2028' || ch === '\u2029';
 }
 
-function isIdentifierStart(ch: string): boolean {
-  return /[A-Za-z_$]/.test(ch);
+function isIdentifierStart(ch: string | undefined): boolean {
+  return ch !== undefined && /[A-Za-z_$]/.test(ch);
 }
 
-function isIdentifierPart(ch: string): boolean {
-  return /[A-Za-z0-9_$]/.test(ch);
+function isIdentifierPart(ch: string | undefined): boolean {
+  return ch !== undefined && /[A-Za-z0-9_$]/.test(ch);
 }
 
 function isNumberStart(ch: string): boolean {
