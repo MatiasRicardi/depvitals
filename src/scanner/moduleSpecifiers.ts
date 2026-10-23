@@ -67,6 +67,8 @@ export type ExtractModuleSpecifiersOptions = {
   // inside `{...}` expression containers is still lexed, so real specifiers are found and JSX can
   // not be mistaken for regex/division. Only meaningful for `.jsx`/`.tsx` source.
   jsx?: boolean;
+  /** Treat top-level `await` as a keyword. Omitted and false retain script/CommonJS behavior. */
+  module?: boolean;
 };
 
 /**
@@ -81,7 +83,7 @@ export function extractModuleSpecifiers(
   source: string,
   options: ExtractModuleSpecifiersOptions = {},
 ): readonly ModuleSpecifierOccurrence[] {
-  return interpret(tokenize(source, options.jsx ?? false));
+  return interpret(tokenize(source, options.jsx ?? false, options.module ?? false));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -98,14 +100,21 @@ type Token =
 
 type PrevKind = 'start' | 'identifier' | 'number' | 'string' | 'punct' | 'regex' | 'template';
 
-// Async/generator context of a function body. `await`/`yield` are treated as keywords only while
-// an enclosing body carries the matching flag. `isExpression` marks a function expression used as a
+// Async/generator context of a function. `await`/`yield` follow the nearest context, whether its body
+// is a brace block or an arrow expression. `isExpression` marks a function expression used as a
 // value (its closing `}` ends an expression, so a following `/` is division) versus a declaration
 // in statement position (its closing `}` starts a block, so a following `/` may be a regex).
 type FuncContext = {
   readonly async: boolean;
   readonly generator: boolean;
   readonly isExpression: boolean;
+};
+
+type ExpressionFuncContext = FuncContext & {
+  readonly parenDepth: number;
+  readonly bracketDepth: number;
+  readonly braceDepth: number;
+  readonly functionDepth: number;
 };
 
 // Lexical frames opened by a template interpolation or by the JSX overlay. The tokenizer keeps them
@@ -127,7 +136,7 @@ type Frame =
  * Turn source into a stream of significant tokens, skipping whitespace, line/block comments, regex
  * literals and template literals.
  */
-function tokenize(source: string, jsx = false): readonly Token[] {
+function tokenize(source: string, jsx = false, module = false): readonly Token[] {
   const tokens: Token[] = [];
   const n = source.length;
   let i = 0;
@@ -153,6 +162,9 @@ function tokenize(source: string, jsx = false): readonly Token[] {
   // Where the previous identifier token ended, so `async function` can be rejected when a line
   // terminator separates the two words (automatic semicolon insertion ends the `async` statement).
   let prevIdentifierEnd = 0;
+  // A line terminator in trivia may end an expression-bodied arrow through ASI. It is consumed
+  // only when the next significant token cannot continue the preceding expression.
+  let lineTerminatorSinceLastToken = false;
 
   // Template literal state. `inText` is true while scanning template text that must not be lexed as
   // JavaScript; a backtick toggles it, so nested templates are handled by the toggle. Every open
@@ -176,18 +188,20 @@ function tokenize(source: string, jsx = false): readonly Token[] {
   // treated as a block.
   const braceContexts: boolean[] = [];
   // Parallel to `braceContexts`: whether each open brace belongs to a function body. Pushed in
-  // lockstep with `braceContexts` so the matching `}` can restore the async/generator context.
+  // lockstep with `braceContexts` so the matching `}` can restore the nearest function context.
   const functionBodyBraces: boolean[] = [];
-  // Async/generator context of every open function body, tracked independently of the expression
-  // frame reset so that `await`/`yield` stay keywords across `${}` boundaries.
+  // Parallel to `braceContexts`: whether each brace opened a class body. Object and class bodies
+  // are the two containers in which keyword-named ordinary methods are unambiguous.
+  const classBodyBraces: boolean[] = [];
+  // Function context of every open function body, tracked independently of expression frame resets
+  // so `${}` boundaries cannot change the nearest await/yield grammar.
   const functionContextStack: FuncContext[] = [];
-  // Number of enclosing async / generator function bodies. `await` is a keyword only while
-  // `asyncDepth > 0`; `yield` is a keyword only while `generatorDepth > 0`. These counters are
-  // deliberately not reset by `resetExpressionState` because the context is function-scoped.
-  let asyncDepth = 0;
-  let generatorDepth = 0;
+  // The nearest function body owns the await/yield grammar. An ordinary nested function therefore
+  // suspends an async/generator context from an outer function instead of inheriting it.
   // A pending function signature (`function`/`async`/`*`) that has not yet reached its body `{`.
   let pendingFunctionContext: FuncContext | undefined;
+  const expressionFunctionContexts: ExpressionFuncContext[] = [];
+  let bracketDepth = 0;
   // Whether the most recent `}` closed an object literal. It is only consulted while that `}` is
   // the previous token, exactly like `prevPunct`.
   let closedObjectBrace = false;
@@ -212,8 +226,9 @@ function tokenize(source: string, jsx = false): readonly Token[] {
     afterControlHead = false;
     pendingControlKeyword = undefined;
     closedObjectBrace = false;
+    lineTerminatorSinceLastToken = false;
     // A function signature is not part of a `${...}` expression; drop a half-written one so it can
-    // not leak across the boundary. The async/generator counters are function-scoped and persist.
+    // not leak across the boundary.
     pendingFunctionContext = undefined;
   };
 
@@ -242,6 +257,25 @@ function tokenize(source: string, jsx = false): readonly Token[] {
     if (ch === undefined) {
       i++;
       continue;
+    }
+
+    let expressionFunctionContext =
+      expressionFunctionContexts[expressionFunctionContexts.length - 1];
+
+    while (
+      expressionFunctionContext !== undefined &&
+      !closingParenBelongsToArrowParameters(source, i, n) &&
+      expressionFunctionBodyEnded(
+        ch,
+        parenDepth,
+        bracketDepth,
+        braceContexts.length,
+        functionContextStack.length,
+        expressionFunctionContext,
+      )
+    ) {
+      expressionFunctionContexts.pop();
+      expressionFunctionContext = expressionFunctionContexts[expressionFunctionContexts.length - 1];
     }
 
     // Template literal text: skip everything until `${`, a nested `` ` ``, or the closing `` ` ``.
@@ -376,6 +410,10 @@ function tokenize(source: string, jsx = false): readonly Token[] {
     }
 
     if (isWhitespace(ch)) {
+      if (isLineTerminator(ch)) {
+        lineTerminatorSinceLastToken = true;
+      }
+
       i++;
       continue;
     }
@@ -393,8 +431,33 @@ function tokenize(source: string, jsx = false): readonly Token[] {
     // Block comment. Comments are transparent to the regex/division heuristic, so a comment between
     // a control keyword and its `(` behaves exactly like whitespace.
     if (ch === '/' && source[i + 1] === '*') {
+      const commentStart = i;
       i = skipBlockComment(source, i);
+      lineTerminatorSinceLastToken ||= hasLineTerminator(source, commentStart, i);
       continue;
+    }
+
+    if (lineTerminatorSinceLastToken) {
+      let context = expressionFunctionContexts[expressionFunctionContexts.length - 1];
+
+      while (
+        context !== undefined &&
+        lineTerminatorEndsExpressionFunctionBody(
+          ch,
+          prevKind,
+          prevPunct,
+          parenDepth,
+          bracketDepth,
+          braceContexts.length,
+          functionContextStack.length,
+          context,
+        )
+      ) {
+        expressionFunctionContexts.pop();
+        context = expressionFunctionContexts[expressionFunctionContexts.length - 1];
+      }
+
+      lineTerminatorSinceLastToken = false;
     }
 
     // A backtick in code mode opens a (possibly nested) template literal.
@@ -471,12 +534,9 @@ function tokenize(source: string, jsx = false): readonly Token[] {
       // Restore the async/generator context of a function body whose `{` was tracked alongside
       // `braceContexts`. The matching `}` is always the current one because braces nest properly.
       if (wasFunctionBody) {
-        const context = functionContextStack.pop();
-        if (context) {
-          asyncDepth -= context.async ? 1 : 0;
-          generatorDepth -= context.generator ? 1 : 0;
-        }
+        functionContextStack.pop();
       }
+      classBodyBraces.pop();
     }
 
     // `/` is a regex when it can start an expression, otherwise it is division.
@@ -540,9 +600,20 @@ function tokenize(source: string, jsx = false): readonly Token[] {
       // `await`/`yield` are keywords only inside an async / generator function body. A member name
       // (`obj.await`) is always a property access, never a keyword, so a following `/` divides.
       if (!isMemberName) {
-        if (value === 'await' && asyncDepth > 0) {
+        const expressionContext = expressionFunctionContexts[expressionFunctionContexts.length - 1];
+        const bodyContext = functionContextStack[functionContextStack.length - 1];
+        const functionContext =
+          expressionContext !== undefined &&
+          functionContextStack.length <= expressionContext.functionDepth
+            ? expressionContext
+            : bodyContext;
+
+        if (
+          value === 'await' &&
+          (functionContext?.async === true || (functionContext === undefined && module))
+        ) {
           isExpressionKeyword = true;
-        } else if (value === 'yield' && generatorDepth > 0) {
+        } else if (value === 'yield' && functionContext?.generator === true) {
           isExpressionKeyword = true;
         }
       }
@@ -551,7 +622,9 @@ function tokenize(source: string, jsx = false): readonly Token[] {
       // followed by a regex literal.
       pendingControlKeyword = pendingControlKeywordAfter(
         value,
-        isMemberName,
+        isMemberName ||
+          braceContexts[braceContexts.length - 1] === true ||
+          classBodyBraces[classBodyBraces.length - 1] === true,
         pendingControlKeyword,
       );
       // A `function` keyword (not a property name) starts a function signature. Track whether it is
@@ -612,17 +685,22 @@ function tokenize(source: string, jsx = false): readonly Token[] {
         frame?.kind === 'template-expr' || frame?.kind === 'jsx-expr',
         braceContexts[braceContexts.length - 1] === true,
       );
+      const isClassBody =
+        !isObject && pendingFunctionContext === undefined && opensClassBody(tokens);
 
       // A statement-block brace that consumes a pending function signature is a function body. A
       // function expression used as a value ends an expression (so a following `/` divides), while a
       // declaration in statement position starts a block (so a following `/` may be a regex).
       //
-      // An async arrow body (`async () => {`) and an async / generator method body (`async run() {`,
-      // `*run() {`) carry no `function` keyword, so their context is inferred from the tokens just
-      // before the brace. Only those two shapes are recognised: a plain `name() {` is left alone,
-      // because `if (cond) {` has exactly the same token shape.
-      if (pendingFunctionContext === undefined && !isObject) {
-        pendingFunctionContext = inferFunctionBodyContext(tokens);
+      // Arrows and methods carry no `function` keyword, so their context is inferred from the tokens
+      // before the brace. Ordinary methods are accepted only inside a known object/class container;
+      // elsewhere the same `name() {` shape may be a control head such as `if (cond) {`.
+      if (pendingFunctionContext === undefined && !isObject && !isClassBody) {
+        pendingFunctionContext = inferFunctionBodyContext(
+          tokens,
+          braceContexts[braceContexts.length - 1] === true ||
+            classBodyBraces[classBodyBraces.length - 1] === true,
+        );
       }
 
       let wasFunctionBody = false;
@@ -632,11 +710,10 @@ function tokenize(source: string, jsx = false): readonly Token[] {
         pendingFunctionContext = undefined;
         isObject = context.isExpression;
         functionContextStack.push(context);
-        asyncDepth += context.async ? 1 : 0;
-        generatorDepth += context.generator ? 1 : 0;
       }
       functionBodyBraces.push(wasFunctionBody);
       braceContexts.push(isObject);
+      classBodyBraces.push(isClassBody);
 
       // Count the brace inside the innermost open `${...}` or JSX `{...}` expression so its closing
       // `}` is found.
@@ -654,6 +731,8 @@ function tokenize(source: string, jsx = false): readonly Token[] {
       }
 
       afterControlHead = false;
+    } else if (ch === '[') {
+      bracketDepth++;
     } else if (ch === ')') {
       afterControlHead = controlParenDepth !== undefined && parenDepth === controlParenDepth;
 
@@ -663,6 +742,28 @@ function tokenize(source: string, jsx = false): readonly Token[] {
 
       if (parenDepth > 0) {
         parenDepth--;
+      }
+    } else if (ch === ']') {
+      if (bracketDepth > 0) {
+        bracketDepth--;
+      }
+    }
+
+    // An arrow's expression body has no brace where its function context can be consumed. Record
+    // its bounded context after `=>`; a following delimiter removes it again.
+    if (ch === '>' && prevPunct === '=') {
+      const context = inferArrowContext(source, tokens);
+      const next = skipTrivia(source, i + 1, n);
+
+      if (context !== undefined && source[next] !== '{') {
+        expressionFunctionContexts.push({
+          ...context,
+          isExpression: true,
+          parenDepth,
+          bracketDepth,
+          braceDepth: braceContexts.length,
+          functionDepth: functionContextStack.length,
+        });
       }
     }
 
@@ -801,21 +902,52 @@ function hasLineTerminator(source: string, from: number, to: number): boolean {
   return false;
 }
 
+/** Skip whitespace and comments without interpreting any target-project code. */
+function skipTrivia(source: string, start: number, n: number): number {
+  let i = start;
+
+  while (i < n) {
+    if (isWhitespace(source[i])) {
+      i++;
+      continue;
+    }
+
+    if (source[i] === '/' && source[i + 1] === '/') {
+      i += 2;
+      while (i < n && !isLineTerminator(source[i])) {
+        i++;
+      }
+      continue;
+    }
+
+    if (source[i] === '/' && source[i + 1] === '*') {
+      i = skipBlockComment(source, i);
+      continue;
+    }
+
+    break;
+  }
+
+  return i;
+}
+
 /**
  * The async/generator context of a function body whose signature carries no `function` keyword,
  * inferred from the tokens emitted just before its `{`.
  *
- * Two shapes are recognised, both of which bind their own `await`/`yield`:
+ * The recognised shapes all bind their own `await`/`yield`:
  *
  * - an async arrow: `async () => {`, `async x => {`;
- * - an async or generator method: `async run() {`, `*run() {`, `async *run() {`.
+ * - an async or generator method: `async run() {`, `*run() {`, `async *run() {`;
+ * - an ordinary identifier, keyword-named or computed method inside a known object/class body.
  *
- * Everything else returns `undefined`. In particular a plain `name() {` is never a function body
- * here, because `if (cond) {` and `while (cond) {` have the very same token shape, and an arrow or
- * method that is neither async nor a generator needs no context of its own: an ordinary arrow
- * inherits `await` from its enclosing function, which is exactly what leaving it alone preserves.
+ * Everything else returns `undefined`; outside a method container, a plain `name() {` may instead
+ * be a control head and is never inferred as a function boundary.
  */
-function inferFunctionBodyContext(tokens: readonly Token[]): FuncContext | undefined {
+function inferFunctionBodyContext(
+  tokens: readonly Token[],
+  insideMethodContainer: boolean,
+): FuncContext | undefined {
   const last = tokens[tokens.length - 1];
 
   if (last?.kind !== 'punct') {
@@ -842,35 +974,173 @@ function inferFunctionBodyContext(tokens: readonly Token[]): FuncContext | undef
       return undefined;
     }
 
-    return isIdentifier(tokens[marker], 'async')
-      ? { async: true, generator: false, isExpression: false }
-      : undefined;
+    return {
+      async: isIdentifier(tokens[marker], 'async'),
+      generator: false,
+      isExpression: false,
+    };
   }
 
   // `... ) {`: an async or generator method, recognised only through its `async` / `*` marker.
   if (last.value === ')') {
     const open = matchingOpenParen(tokens, tokens.length - 1);
 
-    if (open < 0 || tokens[open - 1]?.kind !== 'identifier') {
+    if (open < 0) {
       return undefined;
     }
 
+    const methodName = tokens[open - 1];
     const marker = tokens[open - 2];
 
-    if (isIdentifier(marker, 'async')) {
+    if (methodName?.kind === 'identifier' && isIdentifier(marker, 'async')) {
       return { async: true, generator: false, isExpression: false };
     }
 
-    if (marker?.kind === 'punct' && marker.value === '*') {
+    if (methodName?.kind === 'identifier' && marker?.kind === 'punct' && marker.value === '*') {
       return {
         async: isIdentifier(tokens[open - 3], 'async'),
         generator: true,
         isExpression: false,
       };
     }
+
+    if (!insideMethodContainer) {
+      return undefined;
+    }
+
+    if (methodName?.kind === 'identifier') {
+      // `for await (...) {}` is a loop head, not a method named `await`.
+      if (methodName.value === 'await' && isIdentifier(marker, 'for')) {
+        return undefined;
+      }
+
+      return { async: false, generator: false, isExpression: false };
+    }
+
+    if (methodName?.kind === 'punct' && methodName.value === ']') {
+      return { async: false, generator: false, isExpression: false };
+    }
   }
 
   return undefined;
+}
+
+/**
+ * Infer the async marker immediately before an arrow's `=>`, using the same parameter shapes as
+ * {@link inferFunctionBodyContext}. The caller has not emitted the `>` token yet.
+ */
+function inferArrowContext(source: string, tokens: readonly Token[]): FuncContext | undefined {
+  const arrow = tokens[tokens.length - 1];
+
+  if (arrow?.kind !== 'punct' || arrow.value !== '=') {
+    return undefined;
+  }
+
+  const beforeArrow = tokens.length - 2;
+  const parameters = tokens[beforeArrow];
+  let marker: number;
+
+  if (parameters?.kind === 'punct' && parameters.value === ')') {
+    marker = matchingOpenParen(tokens, beforeArrow) - 1;
+  } else if (parameters?.kind === 'identifier') {
+    marker = beforeArrow - 1;
+  } else {
+    return undefined;
+  }
+
+  // A line terminator between `async` and the parameters means the arrow is not async: `async`
+  // ends the previous expression and the arrow body starts on the next line. Treating it as async
+  // would make `await` a keyword and read division as a regex, hiding a real dependency.
+  const markerToken = tokens[marker];
+  const async =
+    markerToken?.kind === 'identifier' &&
+    markerToken.value === 'async' &&
+    !hasLineTerminatorBetween(source, markerToken.offset, parameters.offset);
+
+  return {
+    async,
+    generator: false,
+    isExpression: false,
+  };
+}
+
+/** Whether any line terminator appears strictly between two source offsets. */
+function hasLineTerminatorBetween(source: string, start: number, end: number): boolean {
+  for (let i = start; i < end; i++) {
+    if (isLineTerminator(source[i])) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function expressionFunctionBodyEnded(
+  ch: string,
+  parenDepth: number,
+  bracketDepth: number,
+  braceDepth: number,
+  functionDepth: number,
+  context: ExpressionFuncContext,
+): boolean {
+  if (functionDepth > context.functionDepth || braceDepth > context.braceDepth) {
+    return false;
+  }
+
+  if (ch === ';' || ch === ',') {
+    return (
+      parenDepth === context.parenDepth &&
+      bracketDepth === context.bracketDepth &&
+      braceDepth === context.braceDepth
+    );
+  }
+
+  if (ch === ')' || ch === ']' || ch === '}') {
+    return (
+      parenDepth === context.parenDepth &&
+      bracketDepth === context.bracketDepth &&
+      braceDepth === context.braceDepth
+    );
+  }
+
+  return false;
+}
+
+/** A `)` followed by `=>` belongs to a nested arrow signature, not the outer arrow's boundary. */
+function closingParenBelongsToArrowParameters(source: string, close: number, n: number): boolean {
+  if (source[close] !== ')') {
+    return false;
+  }
+
+  const next = skipTrivia(source, close + 1, n);
+
+  return source[next] === '=' && source[next + 1] === '>';
+}
+
+function lineTerminatorEndsExpressionFunctionBody(
+  next: string,
+  prevKind: PrevKind,
+  prevPunct: string | undefined,
+  parenDepth: number,
+  bracketDepth: number,
+  braceDepth: number,
+  functionDepth: number,
+  context: ExpressionFuncContext,
+): boolean {
+  if (
+    functionDepth > context.functionDepth ||
+    parenDepth !== context.parenDepth ||
+    bracketDepth !== context.bracketDepth ||
+    braceDepth !== context.braceDepth
+  ) {
+    return false;
+  }
+
+  const previousEndsExpression =
+    EXPRESSION_ENDING.has(prevKind) ||
+    (prevKind === 'punct' && [')', ']', '}'].includes(prevPunct ?? ''));
+
+  return previousEndsExpression && !EXPRESSION_CONTINUATION_CHARACTERS.has(next);
 }
 
 /** Whether a token is the given identifier. */
@@ -903,6 +1173,28 @@ function matchingOpenParen(tokens: readonly Token[], closeIndex: number): number
   }
 
   return -1;
+}
+
+/** Whether the next `{` opens the class whose `class` keyword is in the current token segment. */
+function opensClassBody(tokens: readonly Token[]): boolean {
+  for (let index = tokens.length - 1; index >= 0; index--) {
+    const token = tokens[index];
+
+    if (isIdentifier(token, 'class')) {
+      const afterClass = tokens[index + 1];
+
+      return afterClass?.kind !== 'punct' || afterClass.value !== '(';
+    }
+
+    if (
+      token?.kind === 'punct' &&
+      (token.value === ';' || token.value === '{' || token.value === '}')
+    ) {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -954,6 +1246,30 @@ const EXPRESSION_ENDING: ReadonlySet<PrevKind> = new Set([
   'string',
   'template',
   'regex',
+]);
+
+// A token beginning with one of these characters may continue an expression across a line
+// terminator, so ASI must not retire an expression-bodied arrow before it.
+const EXPRESSION_CONTINUATION_CHARACTERS: ReadonlySet<string> = new Set([
+  '.',
+  '(',
+  '[',
+  '?',
+  ':',
+  ',',
+  '+',
+  '-',
+  '*',
+  '/',
+  '%',
+  '<',
+  '>',
+  '=',
+  '!',
+  '&',
+  '|',
+  '^',
+  '`',
 ]);
 
 /**
