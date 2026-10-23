@@ -3,7 +3,7 @@
  *
  * The unit matrices live in `test/unit/scanner/moduleSpecifiers.test.ts`; this file proves the same
  * rules through the real pipeline: committed fixture projects, the CLI orchestration (`runCli`) and
- * the packaged entry point, so the `.jsx`/`.tsx` wiring in `analyzeProject` is exercised too.
+ * the packaged entry point, so the JSX extension/content wiring in `analyzeProject` is exercised too.
  *
  * Every scenario is static and offline. No fixture is executed, transpiled or resolved, and the
  * update notifier is disabled deterministically for the process-level assertions, so the only text
@@ -60,6 +60,12 @@ describe('Step 68.2: JSX projects scan through the CLI', () => {
     const result = await runCli([fixture('jsx-react-component')], OPTIONS);
 
     // `</div>` used to be read as an unterminated regex literal, which aborted the whole scan.
+    expect(result).toEqual({ exitCode: 0, stdout: CLEAN_REPORT, stderr: '' });
+  });
+
+  it('reports no issue for JSX in .js, .mjs and .cjs files', async () => {
+    const result = await runCli([fixture('jsx-javascript-extensions')], OPTIONS);
+
     expect(result).toEqual({ exitCode: 0, stdout: CLEAN_REPORT, stderr: '' });
   });
 
@@ -126,6 +132,7 @@ describe('Step 68.2: regex and division projects scan through the CLI', () => {
 describe('Step 68.2: the scanner stays deterministic and non-mutating', () => {
   const projects = [
     'jsx-react-component',
+    'jsx-javascript-extensions',
     'jsx-inert-text',
     'jsx-expression-require',
     'jsx-incomplete',
@@ -146,7 +153,7 @@ describe('Step 68.2: the scanner stays deterministic and non-mutating', () => {
   });
 });
 
-describe('Step 68.2: the packaged entry point wires the JSX mode by extension', () => {
+describe('Step 68.2: the packaged entry point wires the JSX mode by extension and content', () => {
   /** Run the built CLI with the update notifier disabled, so only the report is compared. */
   function runBuilt(projectPath: string): {
     status: number | null;
@@ -164,6 +171,14 @@ describe('Step 68.2: the packaged entry point wires the JSX mode by extension', 
 
   itBuilt('scans a TSX/JSX component tree cleanly', () => {
     expect(runBuilt(fixture('jsx-react-component'))).toEqual({
+      status: 0,
+      stdout: CLEAN_REPORT,
+      stderr: '',
+    });
+  });
+
+  itBuilt('scans JSX in plain JavaScript extensions cleanly', () => {
+    expect(runBuilt(fixture('jsx-javascript-extensions'))).toEqual({
       status: 0,
       stdout: CLEAN_REPORT,
       stderr: '',

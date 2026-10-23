@@ -185,11 +185,13 @@ so the behavior is deterministic across platforms.
 
 ### JSX and regex/division lexer fixtures (Step 68.2)
 
-Seven projects used by `test/jsxAndRegexRegression.test.ts` to prove the bounded JSX mode and the
+Eight projects used by `test/jsxAndRegexRegression.test.ts` to prove the bounded JSX mode and the
 regex/division boundary through the real CLI pipeline. No fixture is executed or transpiled:
 
 - `jsx-react-component/` - a declared `react` dependency used from a `.tsx` component (import before
   the markup) and a `.jsx` component (import after the markup); the scan must be clean;
+- `jsx-javascript-extensions/` - JSX in `.js`, `.mjs` and `.cjs` files, including closing and
+  self-closing tags; source-aware JSX mode keeps the declared `react` dependency used;
 - `jsx-inert-text/` - JSX text with an apostrophe, a `require(...)`-looking attribute, a
   `require(...)`-looking text node and an import-looking JSX comment; none of them is evidence;
 - `jsx-expression-require/` - `require('real')` inside a `{...}` expression container next to

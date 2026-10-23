@@ -711,8 +711,8 @@ function tokenize(source: string, jsx = false): readonly Token[] {
 }
 
 // A `<` followed by an identifier that begins a generic type-argument list (e.g. `<T,>`, `<T = X>`,
-// `<T extends U>`, `<const T,>`) is not a JSX element. `<T>` alone is ambiguous and is treated as
-// JSX, exactly as TSX itself resolves that ambiguity.
+// `<T extends U>`, `<const T,>`) or a generic function signature (`<T>(x: T) => T`) is not a JSX
+// element. `<T>` alone in expression position remains ambiguous and is treated as JSX.
 function jsxTagIsGeneric(source: string, i: number, n: number): boolean {
   if (!isIdentifierStart(source[i])) {
     return false;
@@ -730,6 +730,18 @@ function jsxTagIsGeneric(source: string, i: number, n: number): boolean {
     return true;
   }
 
+  if (next === '>') {
+    let j = k + 1;
+
+    while (j < n && isWhitespace(source[j])) {
+      j++;
+    }
+
+    if (source[j] === '(') {
+      return arrowFollowsParameters(source, j, n);
+    }
+  }
+
   if (isWhitespace(next)) {
     const name = source.slice(i, k);
 
@@ -744,6 +756,32 @@ function jsxTagIsGeneric(source: string, i: number, n: number): boolean {
     // `const T, ...`: a TypeScript const type parameter, whose real name follows the modifier.
     if (name === 'const' && k < n && isIdentifierStart(source[k])) {
       return jsxTagIsGeneric(source, k, n);
+    }
+  }
+
+  return false;
+}
+
+function arrowFollowsParameters(source: string, open: number, n: number): boolean {
+  let depth = 0;
+
+  for (let k = open; k < n; k++) {
+    const ch = source[k];
+
+    if (ch === '(') {
+      depth++;
+    } else if (ch === ')') {
+      depth--;
+
+      if (depth === 0) {
+        let j = k + 1;
+
+        while (j < n && isWhitespace(source[j])) {
+          j++;
+        }
+
+        return source[j] === '=' && source[j + 1] === '>';
+      }
     }
   }
 

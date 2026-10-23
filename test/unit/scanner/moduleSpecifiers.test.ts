@@ -988,6 +988,12 @@ describe('extractModuleSpecifiers', () => {
         expect(jsxSpecifiers(source)).toEqual(['after']);
       });
 
+      it('keeps JSX text in parentheses as markup when no arrow follows', () => {
+        const source = `const a = <b>(note)</b>;\nrequire('after');`;
+
+        expect(jsxSpecifiers(source)).toEqual(['after']);
+      });
+
       it('does not glue two sibling containers into one import', () => {
         // `{import}{('fake')}` are two separate expressions; dropping the markup between them must
         // not fabricate a dynamic import that is not in the source.
@@ -1014,6 +1020,10 @@ describe('extractModuleSpecifiers', () => {
         expect(jsxSpecifiers(`const id = <const T,>(x: T) => x; require('real');`)).toEqual([
           'real',
         ]);
+      });
+
+      it('does not read a generic function type as a tag', () => {
+        expect(jsxSpecifiers(`type Fn = <T>(x: T) => T; require('real');`)).toEqual(['real']);
       });
 
       it('reads a type assertion as JavaScript when jsx mode is off', () => {
