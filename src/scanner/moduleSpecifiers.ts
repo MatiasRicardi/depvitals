@@ -169,6 +169,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
   let prevIdentifierEnd = 0;
   // Preserve the position before an `async` modifier for a following `function` keyword.
   let asyncFunctionIsExpression = false;
+  let identifierBeforePrevious: string | undefined;
   // A line terminator in trivia may end an expression-bodied arrow through ASI. It is consumed
   // only when the next significant token cannot continue the preceding expression.
   let lineTerminatorSinceLastToken = false;
@@ -607,12 +608,17 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
 
       const value = source.slice(start, i);
       const previousIdentifier = prevIdentifier;
+      const previousIdentifierBefore = identifierBeforePrevious;
+      identifierBeforePrevious = prevIdentifier;
       if (value === 'async') {
         asyncFunctionIsExpression = functionIsExpressionPosition(
           prevKind,
           prevPunct,
           previousIdentifier,
         );
+        if (previousIdentifier === 'default' && previousIdentifierBefore === 'export') {
+          asyncFunctionIsExpression = false;
+        }
       }
       prevIdentifier = value;
       const isMemberName = prevKind === 'punct' && prevPunct === '.';

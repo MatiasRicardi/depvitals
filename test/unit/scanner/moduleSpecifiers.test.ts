@@ -1094,6 +1094,7 @@ describe('extractModuleSpecifiers', () => {
       `async /* note */ function declared() {}\n/require('fake')/.test('');`,
       `async\nfunction declared() {}\n/require('fake')/.test('');`,
       `async /*\n*/ function declared() {}\n/require('fake')/.test('');`,
+      `export default async function declared() {}\n/require('fake')/.test('');`,
     ])('preserves regex after a function declaration in %s', (source) => {
       expect(specifiers(`${source} require('after');`)).toEqual(['after']);
     });
