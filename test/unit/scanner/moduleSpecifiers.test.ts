@@ -12,6 +12,13 @@ function specifiers(source: string): string[] {
   return [...extractModuleSpecifiers(source)].map((occ) => occ.specifier);
 }
 
+/**
+ * The same assertion with the bounded JSX mode enabled, as `.jsx`/`.tsx` files are analyzed.
+ */
+function jsxSpecifiers(source: string): string[] {
+  return [...extractModuleSpecifiers(source, { jsx: true })].map((occ) => occ.specifier);
+}
+
 describe('extractModuleSpecifiers', () => {
   describe('positive cases', () => {
     it('extracts default and named imports', () => {
@@ -612,6 +619,133 @@ describe('extractModuleSpecifiers', () => {
     });
   });
 
+  describe('async/generator keyword vs regex/division boundary', () => {
+    it('treats await as a keyword (regex) inside an async function declaration', () => {
+      const source = `async function f(){ await /require('fake')/; require('real'); }`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('treats yield as a keyword (regex) inside a generator function declaration', () => {
+      const source = `function* f(){ yield /require('fake')/; require('real'); }`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('treats yield* (regex) inside a generator function declaration', () => {
+      const source = `function* f(){ yield* /require('fake')/; require('real'); }`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('treats await as a keyword (regex) inside a nested async function', () => {
+      const source = `async function f(){ const r = await /require('fake')/; return r; }`;
+
+      expect(specifiers(source)).toEqual([]);
+    });
+
+    it('treats yield as a keyword (regex) inside a nested generator function', () => {
+      const source = `function* f(){ const r = yield /require('fake')/; return r; }`;
+
+      expect(specifiers(source)).toEqual([]);
+    });
+
+    it('treats a bare await as division (require visible) inside an ordinary function', () => {
+      const source = `function f(await){ return await / require('real') / 2; }`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('treats a bare yield as division (require visible) inside an ordinary function', () => {
+      const source = `function f(yield){ return yield / require('real') / 2; }`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('does not leak an inner async context to an enclosing ordinary function', () => {
+      // The inner `await` is a keyword (regex); the outer `await` is division.
+      const source = `
+        function outer(){
+          async function inner(){ await /require('fake')/; }
+          return await / require('real') / 2;
+        };
+      `;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('does not leak an inner generator context to an enclosing ordinary function', () => {
+      const source = `
+        function outer(){
+          function* inner(){ yield /require('fake')/; }
+          return yield / require('real') / 2;
+        };
+      `;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('keeps await as a keyword across a nested statement inside the async function', () => {
+      const source = `
+        async function f(){
+          const x = 1;
+          const r = await /require('fake')/;
+          return r;
+        }
+      `;
+
+      expect(specifiers(source)).toEqual([]);
+    });
+
+    it('treats await as a keyword after an else branch inside an async function', () => {
+      const source = `
+        async function f(cond){
+          if (cond) { const a = 1; }
+          else { const b = 2; }
+          return await /require('fake')/;
+        }
+      `;
+
+      expect(specifiers(source)).toEqual([]);
+    });
+  });
+
+  describe('function expression used as a value before a division', () => {
+    it('treats a slash after a function-expression body as division', () => {
+      const source = `const n = function() {} / require('real') / 2;`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('treats a slash after a named function-expression body as division', () => {
+      const source = `const n = function named() {} / require('real') / 2;`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('treats a slash after an arrow-expression body as division', () => {
+      const source = `const n = (() => {}) / require('real') / 2;`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('treats a slash after an object literal as division', () => {
+      const source = `const n = {} / require('real') / 2;`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('treats a slash after a function declaration body as a regex', () => {
+      // A declaration in statement position keeps the existing regex-after-`}` behaviour.
+      const source = `
+        function prepare() { load(); }
+        /require\\('fake-fn'\\)/.test(value);
+      `;
+
+      expect(specifiers(source)).toEqual([]);
+    });
+  });
+
   describe('error handling', () => {
     it('throws ModuleSpecifierError on an unterminated single-quoted string', () => {
       expect(() => extractModuleSpecifiers(`import 'unterminated;`)).toThrow(ModuleSpecifierError);
@@ -674,6 +808,262 @@ describe('extractModuleSpecifiers', () => {
     it('does not execute analyzed source', () => {
       // A side-effecting expression inside a string must never run.
       expect(specifiers(`const x = "require('not-run')";`)).toEqual([]);
+    });
+  });
+
+  describe('async arrows and async/generator methods', () => {
+    const keywordBodies: readonly (readonly [string, string])[] = [
+      [
+        'an async arrow with a parameter list',
+        `const f = async () => { await /require('fake')/; };`,
+      ],
+      [
+        'an async arrow with one bare parameter',
+        `const f = async x => { await /require('fake')/; };`,
+      ],
+      ['an async arrow passed as an argument', `foo(async () => { await /require('fake')/; });`],
+      ['an async method', `const o = { async run() { await /require('fake')/; } };`],
+      ['a generator method', `const o = { *run() { yield /require('fake')/; } };`],
+      ['an async generator method', `const o = { async *run() { await /require('fake')/; } };`],
+      ['an async class method', `class C { async run() { await /require('fake')/; } }`],
+    ];
+
+    for (const [label, source] of keywordBodies) {
+      it(`treats await/yield as a keyword in ${label}`, () => {
+        expect(specifiers(source)).toEqual([]);
+      });
+    }
+
+    it('keeps a real require inside an async arrow body', () => {
+      expect(specifiers(`const f = async () => { require('real'); };`)).toEqual(['real']);
+    });
+
+    it('does not read a control-statement head as a method signature', () => {
+      // `if (cond) {` has the same token shape as `name() {`, so only an `async`/`*` marker may
+      // open a function context; otherwise the enclosing async body would be lost here.
+      expect(specifiers(`async function f(){ if (c) { await /require('fake')/; } }`)).toEqual([]);
+      expect(specifiers(`while (c) { require('real'); }`)).toEqual(['real']);
+    });
+
+    it('keeps the enclosing async context inside an ordinary nested arrow', () => {
+      // An arrow has no `await` binding of its own, so the enclosing async function still decides.
+      const source = `async function f(){ const g = () => { await /require('fake')/; }; }`;
+
+      expect(specifiers(source)).toEqual([]);
+    });
+
+    it('does not leak an inner async arrow context to the enclosing ordinary function', () => {
+      const source = `function f(){ const g = async () => { await /require('fake')/; }; return await / require('real') / 2; }`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('treats a declaration after a line-terminated `async` as an ordinary function', () => {
+      // A line terminator ends the `async` statement, so the declaration below is not async and
+      // `await` is an ordinary identifier, which makes both slashes divisions.
+      const source = `async\nfunction f() {\n  return await / require('real') / 2;\n}`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+  });
+
+  describe('await/yield as identifiers and member names', () => {
+    it('treats a slash after an `await` member access as division', () => {
+      const source = `const o = {await: 12}; o.await / require('real') / 2;`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('treats a slash after a `yield` member access as division', () => {
+      const source = `const o = {yield: 12}; o.yield / require('real') / 2;`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('still reads a regex argument of an `await` member call', () => {
+      const source = `const o = {}; o.await(/require('fake')/);`;
+
+      expect(specifiers(source)).toEqual([]);
+    });
+
+    it('still reads a regex argument of a `yield` member call', () => {
+      const source = `const o = {}; o.yield(/require('fake')/);`;
+
+      expect(specifiers(source)).toEqual([]);
+    });
+  });
+
+  describe('spread of a call result', () => {
+    it('reads a required specifier spread into an object literal', () => {
+      expect(specifiers(`const o = {...require('real')};`)).toEqual(['real']);
+    });
+
+    it('still ignores a member call named require', () => {
+      expect(specifiers(`const o = {...obj.require('fake')};`)).toEqual([]);
+    });
+  });
+
+  describe('jsx mode', () => {
+    it('is off by default, so JSX is read as JavaScript', () => {
+      // `</div>` opens an unterminated regex literal when the source is read as plain JavaScript.
+      expect(() => extractModuleSpecifiers(`const a = <div>Hello</div>;`)).toThrow(
+        ModuleSpecifierError,
+      );
+    });
+
+    describe('inert markup', () => {
+      const inert: readonly (readonly [string, string])[] = [
+        ['an element with text', `const a = <div>Hello</div>;`],
+        ['text containing an apostrophe', `const a = <div>don't</div>;`],
+        ['a self-closing element', `const a = <div />;`],
+        ['a fragment with siblings', `const a = <><span>A</span><span>B</span></>;`],
+        ['a member-expression tag', `const a = <UI.Panel title="don't" />;`],
+        ['a namespaced tag', `const a = <svg:rect x='1' />;`],
+        ['a dashed tag and a boolean attribute', `const a = <my-tag data-x>text</my-tag>;`],
+        ['require-looking text', `const a = <div>require('fake')</div>;`],
+        ['a require-looking attribute', `const a = <div title="require('fake')" />;`],
+        ['an import-looking attribute', `const a = <div title="import 'fake'" />;`],
+        [
+          'text that looks like quotes, templates and comments',
+          "const a = <div>`tpl` // /* import 'fake' */ 'q'</div>;",
+        ],
+        ['a JSX comment container', `const a = <div>{/* import 'fake' */}</div>;`],
+        [
+          'a regex inside an expression container',
+          `const a = <div>{/require('fake')/.test(v)}</div>;`,
+        ],
+        ['a comparison inside an expression container', `const a = <div>{b < c}</div>;`],
+      ];
+
+      for (const [label, source] of inert) {
+        it(`reports nothing for ${label}`, () => {
+          expect(jsxSpecifiers(source)).toEqual([]);
+        });
+      }
+    });
+
+    describe('real expressions inside markup', () => {
+      const real: readonly (readonly [string, string, string[]])[] = [
+        ['a child expression container', `const a = <div>{require('real')}</div>;`, ['real']],
+        ['an attribute expression', `const a = <Comp value={require('real')} />;`, ['real']],
+        ['a spread attribute', `const a = <Comp {...require('real')} />;`, ['real']],
+        ['a dynamic import child', `const a = <div>{import('real')}</div>;`, ['real']],
+        [
+          'an object literal inside a container',
+          `const a = <div>{({a: require('real')}).a}</div>;`,
+          ['real'],
+        ],
+        [
+          'a nested element inside a container',
+          `const a = <div>{ok ? <span>{require('inner')}</span> : null}</div>;`,
+          ['inner'],
+        ],
+        [
+          'a template literal inside a container',
+          "const a = <div>{`text require('fake') ${require('real')}`}</div>;",
+          ['real'],
+        ],
+        [
+          'an awaited dynamic import inside a container',
+          `async function f(){ return <div>{await import('real')}</div>; }`,
+          ['real'],
+        ],
+      ];
+
+      for (const [label, source, expected] of real) {
+        it(`reads ${label}`, () => {
+          expect(jsxSpecifiers(source)).toEqual(expected);
+        });
+      }
+
+      it('keeps an import before a component', () => {
+        const source = `import React from 'react';\nexport const App = () => <div>Hello</div>;`;
+
+        expect(jsxSpecifiers(source)).toEqual(['react']);
+      });
+
+      it('keeps a require in a statement after a component', () => {
+        const source = `const a = <div>x</div>;\nrequire('after');`;
+
+        expect(jsxSpecifiers(source)).toEqual(['after']);
+      });
+
+      it('keeps JSX text in parentheses as markup when no arrow follows', () => {
+        const source = `const a = <b>(note)</b>;\nrequire('after');`;
+
+        expect(jsxSpecifiers(source)).toEqual(['after']);
+      });
+
+      it('does not glue two sibling containers into one import', () => {
+        // `{import}{('fake')}` are two separate expressions; dropping the markup between them must
+        // not fabricate a dynamic import that is not in the source.
+        expect(jsxSpecifiers(`const a = <div>{import}{('fake')}</div>;`)).toEqual([]);
+      });
+
+      it('does not glue markup text into an import statement', () => {
+        expect(jsxSpecifiers(`const a = <div>{import}x{'fake'}</div>;`)).toEqual([]);
+      });
+    });
+
+    describe('type syntax is not markup', () => {
+      it('does not read a generic arrow parameter list as a tag', () => {
+        expect(jsxSpecifiers(`const id = <T,>(x: T) => x; require('real');`)).toEqual(['real']);
+      });
+
+      it('does not read a constrained generic as a tag', () => {
+        expect(jsxSpecifiers(`const f = <T extends object>(x: T) => x; require('real');`)).toEqual([
+          'real',
+        ]);
+      });
+
+      it('does not read a const type parameter as a tag', () => {
+        expect(jsxSpecifiers(`const id = <const T,>(x: T) => x; require('real');`)).toEqual([
+          'real',
+        ]);
+      });
+
+      it('does not read a generic function type as a tag', () => {
+        expect(jsxSpecifiers(`type Fn = <T>(x: T) => T; require('real');`)).toEqual(['real']);
+      });
+
+      it('reads a type assertion as JavaScript when jsx mode is off', () => {
+        expect(specifiers(`const x = <Foo>value; require('real');`)).toEqual(['real']);
+      });
+
+      it('does not read a comparison as a tag', () => {
+        expect(jsxSpecifiers(`const ok = a < b && c > d; require('real');`)).toEqual(['real']);
+      });
+    });
+
+    describe('incomplete markup', () => {
+      const incomplete: readonly (readonly [string, string])[] = [
+        ['an unterminated attribute value', `const a = <div title='x />;`],
+        ['an unterminated expression container', `const a = <div>{require(</div>;`],
+        ['an element that reaches the end of the file', `const a = <div>text`],
+        ['an open tag that reaches the end of the file', `const a = <div title="x"`],
+        ['an unterminated template inside a container', 'const a = <div>{`unterminated}</div>;'],
+        ['an unterminated regex inside a container', `const a = <div>{/unterminated}</div>;`],
+        ['an unterminated block comment inside a container', `const a = <div>{/* x}</div>;`],
+      ];
+
+      for (const [label, source] of incomplete) {
+        it(`throws ModuleSpecifierError on ${label}`, () => {
+          expect(() => extractModuleSpecifiers(source, { jsx: true })).toThrow(
+            ModuleSpecifierError,
+          );
+        });
+      }
+
+      it('exposes an offset for an unterminated element', () => {
+        try {
+          extractModuleSpecifiers(`const a = <div>text`, { jsx: true });
+          throw new Error('expected throw');
+        } catch (error) {
+          expect(error).toBeInstanceOf(ModuleSpecifierError);
+          expect((error as ModuleSpecifierError).code).toBe('invalid-source');
+          expect((error as ModuleSpecifierError).offset).toBe(10);
+        }
+      });
     });
   });
 });

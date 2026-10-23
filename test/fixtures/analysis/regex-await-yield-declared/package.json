@@ -1,0 +1,7 @@
+{
+  "name": "regex-await-yield-declared",
+  "version": "0.0.0",
+  "dependencies": {
+    "fake": "1.0.0"
+  }
+}
