@@ -1,3 +1,5 @@
+import { spawnSync } from 'node:child_process';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -479,6 +481,33 @@ describe('extractModuleSpecifiers', () => {
     it('treats a regex after a labeled block as a regex', () => {
       // A `:` that labels a statement is not a property separator, so `{}` is a block.
       expect(specifiers(`label: {}\n/require\\('fake-label'\\)/.test(value);`)).toEqual([]);
+    });
+
+    it('ignores a template literal ? before a labeled block and regex', () => {
+      // A `?` inside template text is inert: it must never enter conditionalContexts, so the
+      // trailing `label: {}` stays a block and the following `/` starts a regex, not a division.
+      // `label: {}` is always a block, so this form always reports no dependency. A leaked template
+      // `?` would instead classify `{}` as an object, turn the `/` into a division and report a
+      // false dependency; the line break (no `;`) is exactly the case that would expose such a leak.
+      const withTemplate = `let note = \`value ? more\`\nlabel: {} /require('fake-template') / 2;`;
+      const withoutTemplate = `label: {} /require('fake-template') / 2;`;
+
+      expect(specifiers(withTemplate)).toEqual([]);
+      // The template must not change behavior: the no-template form is equally empty.
+      expect(specifiers(withoutTemplate)).toEqual([]);
+      // Positive control: an object literal followed by a real division is detected, so the empty
+      // results above are meaningful and are not just the scanner refusing to report anything.
+      expect(specifiers(`const o = {} / require('real-division') / 2;`)).toEqual(['real-division']);
+    });
+
+    it('still reports a real division after a labeled block even with a template ? present', () => {
+      // Positive control: an object literal followed by a real division is detected, and a
+      // preceding template `?` does not suppress it.
+      const withTemplate = `let note = \`a ? b\`; const o = {} / require('real-template-division') / 2;`;
+      const withoutTemplate = `const o = {} / require('real-template-division') / 2;`;
+
+      expect(specifiers(withTemplate)).toEqual(['real-template-division']);
+      expect(specifiers(withoutTemplate)).toEqual(['real-template-division']);
     });
 
     it('treats a regex after a switch block as a regex', () => {
@@ -1098,6 +1127,162 @@ describe('extractModuleSpecifiers', () => {
       `export default async function declared() {}\n/require('fake')/.test('');`,
     ])('preserves regex after a function declaration in %s', (source) => {
       expect(specifiers(`${source} require('after');`)).toEqual(['after']);
+    });
+  });
+
+  describe('Step 68.7 nested signatures', () => {
+    const cases = [
+      [
+        'default function callback',
+        `async function outer(cb = function () {}) { await /require('fake')/; }`,
+        [],
+      ],
+      [
+        'default block arrow callback',
+        `async function outer(cb = () => {}) { await /require('fake')/; }`,
+        [],
+      ],
+      [
+        'valid apostrophe regex and real require',
+        `async function outer(cb = function () {}) { await /don't/; require("real"); }`,
+        ['real'],
+      ],
+      [
+        'nested callback default',
+        `async function outer(cb = function inner(value = function () {}) {}) {
+          await /require('fake')/;
+        }`,
+        [],
+      ],
+      [
+        'callback and outer body evidence',
+        `async function outer(cb = function () { require("default-real"); }) {
+          await /require('fake')/;
+          require("body-real");
+        }`,
+        ['default-real', 'body-real'],
+      ],
+      [
+        'async callback does not inherit outer context',
+        `async function outer(cb = async function () { await /require('fake-inner')/; }) {
+          await /require('fake-outer')/;
+          require("real");
+        }`,
+        ['real'],
+      ],
+      [
+        'ordinary outer function with async callback',
+        `function outer(cb = async function () { await /require('fake-inner')/; }) {
+          return await / require("real") / 2;
+        }`,
+        ['real'],
+      ],
+      [
+        'async generator with callback defaults',
+        `async function* outer(cb = function () {}) {
+          await /require('fake-await')/;
+          yield /require('fake-yield')/;
+          require("real");
+        }`,
+        ['real'],
+      ],
+      [
+        'async function expression with callback default',
+        `const outer = async function (cb = function () {}) { await /require('fake')/; };`,
+        [],
+      ],
+      [
+        'object and destructuring defaults',
+        `async function outer(options = {}, { value } = {}) { await /require('fake')/; }`,
+        [],
+      ],
+      [
+        'expression arrow default',
+        `async function outer(cb = () => 0) { await /require('fake')/; }`,
+        [],
+      ],
+      [
+        'async arrow with callback default',
+        `const outer = async (cb = function () {}) => { await /require('fake')/; };`,
+        [],
+      ],
+    ] as const;
+
+    it.each(cases)('%s', (_name, source, expected) => {
+      const syntax = spawnSync(process.execPath, ['--check', '--input-type=commonjs'], {
+        input: source,
+        encoding: 'utf8',
+        timeout: 10_000,
+      });
+
+      expect(syntax.error).toBeUndefined();
+      expect(syntax.status, syntax.stderr).toBe(0);
+      expect(specifiers(source)).toEqual(expected);
+    });
+  });
+
+  describe('Step 68.7 function expressions after colons', () => {
+    const cases = [
+      ['ordinary property', `const obj = { f: function () {} / require("real") / 2 };`, ['real']],
+      [
+        'async property',
+        `const obj = { f: async function () {} / require("real") / 2 };`,
+        ['real'],
+      ],
+      [
+        'ordinary conditional alternative',
+        `const n = flag ? function () {} : function () {} / require("real") / 2;`,
+        ['real'],
+      ],
+      [
+        'async conditional alternative',
+        `const n = flag ? function () {} : async function () {} / require("real") / 2;`,
+        ['real'],
+      ],
+      [
+        'computed async property',
+        `const obj = { ['f']: async function () {} / require("real") / 2 };`,
+        ['real'],
+      ],
+      [
+        'nested conditional',
+        `const n = a ? (b ? 1 : function () {} / require('first') / 2)
+          : async function () {} / require('second') / 2;`,
+        ['first', 'second'],
+      ],
+      [
+        'labeled block remains a regex',
+        `label: {} /require('fake')/.test(text); require("real");`,
+        ['real'],
+      ],
+      [
+        'case and default blocks remain regexes',
+        `switch (kind) {
+          case 1: {} /require('fake-case')/.test(text); break;
+          default: {} /require('fake-default')/.test(text);
+        } require("real");`,
+        ['real'],
+      ],
+      [
+        'control statements inside an async property function',
+        `const obj = { f: async function () {
+          if (ok) /require('fake-head')/.test(text);
+          if (ok) { await /require('fake-block')/; }
+        } / require('real') / 2 };`,
+        ['real'],
+      ],
+    ] as const;
+
+    it.each(cases)('%s', (_name, source, expected) => {
+      const syntax = spawnSync(process.execPath, ['--check', '--input-type=commonjs'], {
+        input: source,
+        encoding: 'utf8',
+        timeout: 10_000,
+      });
+
+      expect(syntax.error).toBeUndefined();
+      expect(syntax.status, syntax.stderr).toBe(0);
+      expect(specifiers(source)).toEqual(expected);
     });
   });
 

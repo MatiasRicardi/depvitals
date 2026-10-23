@@ -73,6 +73,8 @@ Missing dependencies (1)
 
 Detection uses a lightweight static lexical scanner rather than a full JavaScript/TypeScript parser. Comments, ordinary strings, template text, and regular expressions that merely resemble imports are not counted as dependency usage.
 
+Function callbacks in default parameters preserve the enclosing function's async/generator context. Function expressions used as object property values or conditional alternatives also preserve real `require()` calls after division operators; regex text after declarations or statement blocks remains inert.
+
 ## Current limitations
 
 - **Single-project analysis:** only one `package.json` is analyzed. Workspaces, monorepos, and parent-manifest lookup are not supported.
