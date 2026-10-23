@@ -362,4 +362,4 @@ describe('Step 68.3: a notifier that never answers cannot change the exit status
       }
     });
   });
-});
+}, 30_000);

@@ -59,7 +59,12 @@ const CURRENT_VERSION = (
 const CANNED_LATEST = '999.999.999';
 
 /** Environment variables that would decide eligibility before this test does. */
-const INELIGIBLE_VARIABLES = new Set(['CI', 'GITHUB_ACTIONS', 'DEPVITALS_NO_UPDATE_CHECK']);
+const INELIGIBLE_VARIABLES = new Set([
+  'CI',
+  'GITHUB_ACTIONS',
+  'DEPVITALS_NO_UPDATE_CHECK',
+  'DEPVITALS_TEST_FORCE_TTY',
+]);
 
 /** Environment variables that could point the cache at a real user profile. */
 const CACHE_ROOT_VARIABLES = new Set(['XDG_CACHE_HOME', 'LOCALAPPDATA', 'HOME', 'USERPROFILE']);
@@ -102,6 +107,22 @@ function neutralEnvironment(overrides: RunOptions['env']): Record<string, string
   }
 
   return env;
+}
+
+/** Run work with the test-only TTY override set, then restore its previous value. */
+async function withAmbientForcedTty<T>(work: () => Promise<T>): Promise<T> {
+  const previous = process.env['DEPVITALS_TEST_FORCE_TTY'];
+  process.env['DEPVITALS_TEST_FORCE_TTY'] = '1';
+
+  try {
+    return await work();
+  } finally {
+    if (previous === undefined) {
+      delete process.env['DEPVITALS_TEST_FORCE_TTY'];
+    } else {
+      process.env['DEPVITALS_TEST_FORCE_TTY'] = previous;
+    }
+  }
 }
 
 /** The environment of an observed child: request log plus a redirected cache root. */
@@ -327,7 +348,9 @@ describe('Step 67 gate: eligibility and the request bound hold for the built CLI
       tty: true,
       env: { GITHUB_ACTIONS: 'true' },
     });
-    const piped = await runObserved([cleanProject], { latest: CANNED_LATEST });
+    const piped = await withAmbientForcedTty(() =>
+      runObserved([cleanProject], { latest: CANNED_LATEST }),
+    );
 
     for (const outcome of [opted, ci, actions, piped]) {
       expect(outcome.exitCode).toBe(0);
