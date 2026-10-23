@@ -888,7 +888,7 @@ describe('extractModuleSpecifiers', () => {
     it('treats an arrow after a line-terminated `async` as an ordinary arrow', () => {
       // A line terminator between `async` and the arrow parameters means the arrow is not async,
       // so `await` is an ordinary identifier and the slashes are divisions, not a regex decoy.
-      const source = `async\n(x) => await / require('real') / 2;`;
+      const source = `async\nx => await / require('real') / 2;`;
 
       expect(specifiers(source)).toEqual(['real']);
     });
@@ -1008,6 +1008,94 @@ describe('extractModuleSpecifiers', () => {
 
     it('keeps CommonJS script behavior as the default', () => {
       expect(specifiers(`await / require('real') / 2;`)).toEqual(['real']);
+    });
+  });
+
+  describe('async signature boundaries', () => {
+    const lineTerminators = [
+      ['LF', '\n'],
+      ['CR', '\r'],
+      ['CRLF', '\r\n'],
+      ['LS', '\u2028'],
+      ['PS', '\u2029'],
+    ] as const;
+    const bodies = [
+      ['expression', `await / require('real') / 2`],
+      ['block', `{ return await / require('real') / 2; }`],
+    ] as const;
+
+    for (const [bodyName, body] of bodies) {
+      for (const [name, newline] of lineTerminators) {
+        it.each([newline, ` /*${newline}*/ `])(
+          `keeps a ${bodyName} arrow ordinary after ${name} in %j`,
+          (separator) => {
+            expect(specifiers(`async${separator}x => ${body}; require('after');`)).toEqual([
+              'real',
+              'after',
+            ]);
+          },
+        );
+      }
+
+      it(`keeps a ${bodyName} arrow ordinary after a line comment`, () => {
+        expect(specifiers(`async // note\nx => ${body}; require('after');`)).toEqual([
+          'real',
+          'after',
+        ]);
+      });
+    }
+
+    for (const [bodyName, body] of [
+      ['expression', `await /require('fake')/`],
+      ['block', `{ return await /require('fake')/; }`],
+    ] as const) {
+      it.each([
+        'x',
+        '(x)',
+        '/* note */ x',
+        '/* note */ (x)',
+        '(\n x\n)',
+        '( /*\n*/ x)',
+        ...lineTerminators.map(([, newline]) => `(${newline}x${newline})`),
+      ])(`preserves async for a ${bodyName} arrow with parameters %j`, (parameters) => {
+        const source = `const f = async ${parameters} => ${body}; require('after');`;
+
+        expect(specifiers(source)).toEqual(['after']);
+      });
+
+      it(`restores ordinary await after an async ${bodyName} arrow`, () => {
+        expect(specifiers(`const f = async x => ${body}; await / require('after') / 2;`)).toEqual([
+          'after',
+        ]);
+      });
+    }
+
+    it('keeps a parenthesized block arrow ordinary after a separate async statement', () => {
+      expect(specifiers(`async;\n(x) => { return await / require('real') / 2; };`)).toEqual([
+        'real',
+      ]);
+    });
+
+    it.each([
+      `const n = async function () {} / require('real') / 2;`,
+      `const n = async function named() {} / require('real') / 2;`,
+      `const n = function () {} / require('real') / 2;`,
+      `const n = (async function () {}) / require('real') / 2;`,
+      `const n = async /* note */ function () {} / require('real') / 2;`,
+      `const n = async \t function named() {} / require('real') / 2;`,
+      `function outer() { return async function () {} / require('real') / 2; }`,
+    ])('preserves function expression division in %s', (source) => {
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it.each([
+      `async function declared() {}\n/require('fake')/.test('');`,
+      `function declared() {}\n/require('fake')/.test('');`,
+      `async /* note */ function declared() {}\n/require('fake')/.test('');`,
+      `async\nfunction declared() {}\n/require('fake')/.test('');`,
+      `async /*\n*/ function declared() {}\n/require('fake')/.test('');`,
+    ])('preserves regex after a function declaration in %s', (source) => {
+      expect(specifiers(`${source} require('after');`)).toEqual(['after']);
     });
   });
 

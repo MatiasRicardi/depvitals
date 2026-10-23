@@ -167,6 +167,8 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
   // Where the previous identifier token ended, so `async function` can be rejected when a line
   // terminator separates the two words (automatic semicolon insertion ends the `async` statement).
   let prevIdentifierEnd = 0;
+  // Preserve the position before an `async` modifier for a following `function` keyword.
+  let asyncFunctionIsExpression = false;
   // A line terminator in trivia may end an expression-bodied arrow through ASI. It is consumed
   // only when the next significant token cannot continue the preceding expression.
   let lineTerminatorSinceLastToken = false;
@@ -605,6 +607,13 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
 
       const value = source.slice(start, i);
       const previousIdentifier = prevIdentifier;
+      if (value === 'async') {
+        asyncFunctionIsExpression = functionIsExpressionPosition(
+          prevKind,
+          prevPunct,
+          previousIdentifier,
+        );
+      }
       prevIdentifier = value;
       const isMemberName = prevKind === 'punct' && prevPunct === '.';
       // A keyword after `.` is a property name (e.g. `x.return`), not an expression start.
@@ -654,7 +663,9 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         pendingFunctionContext = {
           async: isAsync,
           generator: false,
-          isExpression: functionIsExpressionPosition(prevKind, prevPunct, previousIdentifier),
+          isExpression: isAsync
+            ? asyncFunctionIsExpression
+            : functionIsExpressionPosition(prevKind, prevPunct, previousIdentifier),
         };
       }
       tokens.push({ kind: 'identifier', value, offset: start });
@@ -709,6 +720,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       // elsewhere the same `name() {` shape may be a control head such as `if (cond) {`.
       if (pendingFunctionContext === undefined && !isObject && !isClassBody) {
         pendingFunctionContext = inferFunctionBodyContext(
+          source,
           tokens,
           braceContexts[braceContexts.length - 1] === true ||
             classBodyBraces[classBodyBraces.length - 1] === true,
@@ -764,7 +776,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     // An arrow's expression body has no brace where its function context can be consumed. Record
     // its bounded context after `=>`; a following delimiter removes it again.
     if (ch === '>' && prevPunct === '=') {
-      const context = inferArrowContext(source, tokens);
+      const context = inferArrowContext(source, tokens, tokens.length - 1);
       const next = skipTrivia(source, i + 1, n);
 
       if (context !== undefined && source[next] !== '{') {
@@ -1151,6 +1163,7 @@ function skipTrivia(source: string, start: number, n: number): number {
  * be a control head and is never inferred as a function boundary.
  */
 function inferFunctionBodyContext(
+  source: string,
   tokens: readonly Token[],
   insideMethodContainer: boolean,
 ): FuncContext | undefined {
@@ -1160,31 +1173,9 @@ function inferFunctionBodyContext(
     return undefined;
   }
 
-  // `... => {`: the token before the parameter list decides whether the arrow is async.
+  // The `>` has already been emitted here, unlike the expression-body call site.
   if (last.value === '>') {
-    const arrow = tokens[tokens.length - 2];
-
-    if (arrow?.kind !== 'punct' || arrow.value !== '=') {
-      return undefined;
-    }
-
-    const beforeArrow = tokens.length - 3;
-    const parameters = tokens[beforeArrow];
-    let marker: number;
-
-    if (parameters?.kind === 'punct' && parameters.value === ')') {
-      marker = matchingOpenParen(tokens, beforeArrow) - 1;
-    } else if (parameters?.kind === 'identifier') {
-      marker = beforeArrow - 1;
-    } else {
-      return undefined;
-    }
-
-    return {
-      async: isIdentifier(tokens[marker], 'async'),
-      generator: false,
-      isExpression: false,
-    };
+    return inferArrowContext(source, tokens, tokens.length - 2);
   }
 
   // `... ) {`: an async or generator method, recognised only through its `async` / `*` marker.
@@ -1232,53 +1223,53 @@ function inferFunctionBodyContext(
 }
 
 /**
- * Infer the async marker immediately before an arrow's `=>`, using the same parameter shapes as
- * {@link inferFunctionBodyContext}. The caller has not emitted the `>` token yet.
+ * Infer an arrow signature using the index of `=` in `=>`, regardless of whether `>` is emitted.
  */
-function inferArrowContext(source: string, tokens: readonly Token[]): FuncContext | undefined {
-  const arrow = tokens[tokens.length - 1];
+function inferArrowContext(
+  source: string,
+  tokens: readonly Token[],
+  arrowIndex: number,
+): FuncContext | undefined {
+  const arrow = tokens[arrowIndex];
 
   if (arrow?.kind !== 'punct' || arrow.value !== '=') {
     return undefined;
   }
 
-  const beforeArrow = tokens.length - 2;
+  const beforeArrow = arrowIndex - 1;
   const parameters = tokens[beforeArrow];
-  let marker: number;
+  let parametersIndex: number;
 
   if (parameters?.kind === 'punct' && parameters.value === ')') {
-    marker = matchingOpenParen(tokens, beforeArrow) - 1;
+    parametersIndex = matchingOpenParen(tokens, beforeArrow);
   } else if (parameters?.kind === 'identifier') {
-    marker = beforeArrow - 1;
+    parametersIndex = beforeArrow;
   } else {
     return undefined;
   }
 
-  // A line terminator between `async` and the parameters means the arrow is not async: `async`
-  // ends the previous expression and the arrow body starts on the next line. Treating it as async
-  // would make `await` a keyword and read division as a regex, hiding a real dependency.
-  const markerToken = tokens[marker];
+  const parametersStart = parametersIndex >= 0 ? tokens[parametersIndex] : undefined;
+
+  if (parametersStart?.kind !== 'identifier' && parametersStart?.kind !== 'punct') {
+    return undefined;
+  }
+
+  // Only trivia before the parameters can break the async modifier; newlines inside `(...)` cannot.
+  const markerToken = tokens[parametersIndex - 1];
   const async =
     markerToken?.kind === 'identifier' &&
     markerToken.value === 'async' &&
-    !hasLineTerminatorBetween(source, markerToken.offset, parameters.offset);
+    !hasLineTerminator(
+      source,
+      markerToken.offset + markerToken.value.length,
+      parametersStart.offset,
+    );
 
   return {
     async,
     generator: false,
     isExpression: false,
   };
-}
-
-/** Whether any line terminator appears strictly between two source offsets. */
-function hasLineTerminatorBetween(source: string, start: number, end: number): boolean {
-  for (let i = start; i < end; i++) {
-    if (isLineTerminator(source[i])) {
-      return true;
-    }
-  }
-
-  return false;
 }
 
 function expressionFunctionBodyEnded(
