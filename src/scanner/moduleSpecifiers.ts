@@ -860,7 +860,23 @@ function jsxTagIsGeneric(source: string, i: number, n: number): boolean {
     }
 
     if (source.slice(k, end) === 'extends' || source.slice(k, end) === 'implements') {
-      return true;
+      // `extends`/`implements` is a generic constraint only when it introduces a constraint type that
+      // closes the type-parameter list (for example `<T extends object>`). As a JSX attribute it is
+      // followed by `=`, a quote, the tag close `>` or a self-close `/`, so it must stay JSX markup
+      // instead of being read as a generic signature.
+      const j = skipTrivia(source, end, n);
+      const after = source[j];
+
+      if (
+        after !== '=' &&
+        after !== '"' &&
+        after !== "'" &&
+        after !== '`' &&
+        after !== '>' &&
+        after !== '/'
+      ) {
+        return true;
+      }
     }
 
     // `const T, ...`: a TypeScript const type parameter, whose real name follows the modifier.
@@ -879,32 +895,148 @@ function jsxTagIsGeneric(source: string, i: number, n: number): boolean {
   }
 }
 
+// Scan a generic function signature's parameter list starting at its opening `(` (offset `open`).
+// Returns true only when the list is closed and `=>` follows, so callers can treat `<T>(...) =>` as
+// a generic signature rather than a JSX element.
+//
+// Brackets inside strings, template literals and regex literals are inert: a `)` inside any of them
+// must not be counted as the parameter-list close. Template interpolations are skipped opaquely
+// because a template literal is a single argument value, so its internal parentheses never shape
+// the parameter list. Regex-vs-division tracking mirrors the main tokenizer so a regex default
+// (for example `= /a/)`) is skipped instead of read as division.
 function arrowFollowsParameters(source: string, open: number, n: number): boolean {
   let depth = 0;
+  let prevKind: PrevKind = 'start';
+  let prevPunct: string | undefined;
 
-  for (let k = open; k < n; k++) {
+  let k = open;
+
+  while (k < n) {
     k = skipTrivia(source, k, n);
     const ch = source[k];
 
+    if (ch === undefined) {
+      break;
+    }
+
+    // String literals: their brackets and slashes are inert text, so skip the whole value.
     if (ch === "'" || ch === '"') {
-      k = readString(source, k).next - 1;
+      k = readString(source, k).next;
+      prevKind = 'string';
+      continue;
+    }
+
+    // Template literals: skip their text and interpolation so a `)` inside a template is not
+    // counted as the parameter-list close.
+    if (ch === '`') {
+      k = skipTemplateLiteral(source, k);
+      prevKind = 'template';
+      continue;
+    }
+
+    // Regex literals: a `/` that begins a regex must be skipped so its `)` stays inside the pattern
+    // rather than closing the parameter list.
+    if (ch === '/' && isRegexStart(prevKind, prevPunct, false, false, false)) {
+      k = skipRegex(source, k);
+      prevKind = 'regex';
       continue;
     }
 
     if (ch === '(') {
       depth++;
+      prevKind = 'punct';
+      prevPunct = '(';
     } else if (ch === ')') {
       depth--;
+      prevKind = 'punct';
+      prevPunct = ')';
 
       if (depth === 0) {
         const j = skipTrivia(source, k + 1, n);
 
         return source[j] === '=' && source[j + 1] === '>';
       }
+    } else if (isIdentifierStart(ch)) {
+      let end = k + 1;
+
+      while (end < n && isIdentifierPart(source[end])) {
+        end++;
+      }
+
+      k = end - 1;
+      prevKind = 'identifier';
+      prevPunct = undefined;
+    } else {
+      prevKind = 'punct';
+      prevPunct = ch;
     }
+
+    k++;
   }
 
   return false;
+}
+
+// Skip a template literal starting at its opening backtick (offset `start`). Returns the index just
+// past the closing backtick.
+//
+// `${...}` interpolations are skipped opaquely by brace depth: the caller only needs this region to
+// be invisible so its brackets never reach the parameter-list accounting, which is why the body is
+// not re-lexed here.
+//
+// @throws {ModuleSpecifierError} on an unterminated template literal.
+function skipTemplateLiteral(source: string, start: number): number {
+  const n = source.length;
+  let i = start + 1; // past the opening backtick
+
+  while (i < n) {
+    const ch = source[i];
+
+    // A backslash escapes the next character (including a nested backtick or `${`).
+    if (ch === '\\') {
+      i += 2;
+      continue;
+    }
+
+    if (ch === '`') {
+      return i + 1;
+    }
+
+    if (ch === '$' && source[i + 1] === '{') {
+      // Skip the interpolation until its braces balance. Nested templates/braces are handled by the
+      // depth counter; a raw line terminator is invalid inside a template and stops the scan.
+      let depth = 1;
+
+      i += 2;
+
+      while (i < n && depth > 0) {
+        const inner = source[i];
+
+        if (inner === '\n' || inner === '\r') {
+          throw new ModuleSpecifierError('Unterminated template literal', 'invalid-source', start);
+        }
+
+        if (inner === '\\') {
+          i += 2;
+          continue;
+        }
+
+        if (inner === '{') {
+          depth++;
+        } else if (inner === '}') {
+          depth--;
+        }
+
+        i++;
+      }
+
+      continue;
+    }
+
+    i++;
+  }
+
+  throw new ModuleSpecifierError('Unterminated template literal', 'invalid-source', start);
 }
 
 /**

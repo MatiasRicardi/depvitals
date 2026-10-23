@@ -99,7 +99,37 @@ function renderSection(section: Section): string {
 
   const count = String(names.length);
 
-  return [`${section.heading} (${count})`, ...names.map((name) => `  ${name}`)].join('\n');
+  // Package names come from target-project source, so a hostile name may carry a terminal control
+  // sequence (for example an ESC decoded from `"\x1b[2J"`). Escape C0/C1 control codes and DEL as
+  // `\uXXXX` before rendering, so the report can never alter the user's display.
+  return [
+    `${section.heading} (${count})`,
+    ...names.map((name) => `  ${escapeControlCharacters(name)}`),
+  ].join('\n');
+}
+/**
+ * Escape C0/C1 control characters and DEL as `\uXXXX` so a package name extracted from target
+ * source can never carry a terminal control sequence (such as an ESC from `"\x1b[2J"`) into the
+ * rendered report. Printable characters pass through unchanged.
+ *
+ * The scan is written as explicit code points instead of a control-character regex range so the
+ * ESLint `no-control-regex` rule stays meaningful.
+ */
+function escapeControlCharacters(value: string): string {
+  let out = '';
+
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) {
+      out += `\\u${code.toString(16).padStart(4, '0')}`;
+      continue;
+    }
+
+    out += value[index] ?? '';
+  }
+
+  return out;
 }
 
 /**

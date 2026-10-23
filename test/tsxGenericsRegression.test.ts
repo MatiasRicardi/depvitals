@@ -36,6 +36,16 @@ const GENERICS = [
   `const f = <T // note\n,>(x: T) => x;`,
 ];
 
+// Generic signatures whose parameter list contains a delimiter whose own text holds `)`. The
+// TypeScript parser rejects these as TSX (a `<T>(...)` arrow at statement position is ambiguous
+// with JSX), so they are not asserted for TSX validity. The lightweight scanner, however, must not
+// miscount the delimiter contents and must still extract the trailing require.
+const GENERIC_SIGNATURE_WITH_INERT_PARENS = [
+  'const f = <T>(x = `a)b`) => T;',
+  'const f = <T>(x: `a)b`) => T;',
+  `const f = <T>(x = /a/) => T;`,
+];
+
 const COMPONENTS: readonly (readonly [string, readonly string[]])[] = [
   [`<Comp<string> value="a" />`, []],
   [`<Comp<string> value={require('real')} />`, ['real']],
@@ -101,6 +111,12 @@ describe('Step 68.5 bounded TSX extraction', () => {
     expect(specifiers(`${declaration} require('real');`)).toEqual(['real']);
   });
 
+  // Generic signatures whose delimiter text contains `)` are not valid TSX, but the scanner must
+  // still skip the delimiter contents and extract the trailing require rather than miscounting.
+  it.each(GENERIC_SIGNATURE_WITH_INERT_PARENS)('skips delimiter text in %s', (declaration) => {
+    expect(specifiers(`${declaration} require('real');`)).toEqual(['real']);
+  });
+
   it.each(COMPONENTS)('preserves exact evidence in %s', (component, expected) => {
     expect(specifiers(`const view = ${component}; require('after');`)).toEqual([
       ...expected,
@@ -111,6 +127,12 @@ describe('Step 68.5 bounded TSX extraction', () => {
   it.each([
     `<div extendsFoo="a">don't</div>`,
     `<div implementsFoo="b" />`,
+    // `extends`/`implements` as a real JSX attribute (not a generic constraint) must stay JSX, so
+    // call-looking child text is never scanned as JavaScript and reported as a dependency.
+    `<Comp extends={x}>call()</Comp>`,
+    `<Comp implements={x}>call()</Comp>`,
+    `<Comp extends="a">call()</Comp>`,
+    `<Comp implements="a">call()</Comp>`,
     `<Comp title="require('fake')" />`,
     `<Comp title="import('fake')" />`,
     `<div>(don't)</div>`,
