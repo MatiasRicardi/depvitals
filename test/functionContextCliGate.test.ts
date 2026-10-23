@@ -73,11 +73,11 @@ describe('Step 68.4 compiled CLI gate', () => {
   it('does not report regex text from top-level await in an mjs module', () => {
     const result = runProject(
       { name: 'top-level-module', version: '0.0.0' },
-      { 'index.mjs': `await /require('fake')/;` },
+      { 'index.mjs': `await /require('fake')/; require('real');` },
     );
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).toBe('DepVitals\n\nNo dependency issues found.\n');
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('DepVitals\n\nMissing dependencies (1)\n  real\n');
     expect(result.stderr).toBe('');
   });
 });

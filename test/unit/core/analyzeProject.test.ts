@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import type * as nodeFsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it, vi } from 'vitest';
@@ -49,7 +49,9 @@ async function analyzeTemporaryProject(
     writeFileSync(join(sandbox, 'package.json'), JSON.stringify(manifest));
 
     for (const [name, source] of Object.entries(files)) {
-      writeFileSync(join(sandbox, name), source);
+      const path = join(sandbox, name);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, source);
     }
 
     return await analyzeProject(sandbox);
@@ -106,7 +108,7 @@ describe('analyzeProject', () => {
     });
 
     it('treats top-level await as a module keyword for mjs and module-type js', async () => {
-      const moduleSource = `await /require('fake')/;`;
+      const moduleSource = `await /require('fake')/; require('real');`;
       const mjs = await analyzeTemporaryProject(
         { name: 'module-mjs', version: '0.0.0' },
         { 'index.mjs': moduleSource },
@@ -116,8 +118,42 @@ describe('analyzeProject', () => {
         { 'index.js': moduleSource },
       );
 
-      expect(mjs.missingDependencies).toEqual([]);
-      expect(typedJs.missingDependencies).toEqual([]);
+      expect(mjs.missingDependencies).toEqual(['real']);
+      expect(typedJs.missingDependencies).toEqual(['real']);
+    });
+
+    it('applies module package type to ts while preserving mts and cts overrides', async () => {
+      const result = await analyzeTemporaryProject(
+        { name: 'typescript-modes', version: '0.0.0', type: 'module' },
+        {
+          'module.ts': `await /require('fake-ts')/; require('real-ts');`,
+          'explicit.mts': `await /require('fake-mts')/; require('real-mts');`,
+          'commonjs.cts': `await / require('real-cts') / 2;`,
+        },
+      );
+
+      expect(result.missingDependencies).toEqual(['real-cts', 'real-mts', 'real-ts']);
+    });
+
+    it('uses the nearest nested package scope for js source mode', async () => {
+      const result = await analyzeTemporaryProject(
+        { name: 'root-module', version: '0.0.0', type: 'module' },
+        {
+          'root.js': `await /require('fake-root')/; require('real-root');`,
+          'nested-commonjs/package.json': JSON.stringify({
+            name: 'nested-commonjs',
+            type: 'commonjs',
+          }),
+          'nested-commonjs/index.js': `await / require('real-commonjs') / 2;`,
+          'nested-module/package.json': JSON.stringify({
+            name: 'nested-module',
+            type: 'module',
+          }),
+          'nested-module/index.js': `await /require('fake-nested')/; require('real-nested');`,
+        },
+      );
+
+      expect(result.missingDependencies).toEqual(['real-commonjs', 'real-nested', 'real-root']);
     });
 
     it('keeps cjs as script when the package type is module', async () => {

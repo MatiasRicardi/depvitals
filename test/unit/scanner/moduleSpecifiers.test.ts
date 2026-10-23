@@ -943,6 +943,52 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(source)).toEqual(['real']);
     });
 
+    it('ends expression arrows at enclosing call, array and object boundaries', () => {
+      const call = `foo(async () => 1); async function f(){ await /require('fake')/; }`;
+      const array = `[value => value]; await /require('fake')/;`;
+      const object = `({ f: value => value }); await /require('fake')/;`;
+
+      expect(specifiers(call)).toEqual([]);
+      expect(
+        extractModuleSpecifiers(array, { module: true }).map(({ specifier }) => specifier),
+      ).toEqual([]);
+      expect(
+        extractModuleSpecifiers(object, { module: true }).map(({ specifier }) => specifier),
+      ).toEqual([]);
+    });
+
+    it('keeps an async expression arrow active across nested calls and indexes', () => {
+      const source = `
+        const first = async () => foo(value) + await /require('fake-call')/;
+        const second = async () => values[index] && await /require('fake-index')/;
+      `;
+
+      expect(specifiers(source)).toEqual([]);
+    });
+
+    it('ends an expression arrow at ASI and enclosing-brace boundaries', () => {
+      const asi = `
+        const f = async () => 1
+        await / require('after-asi') / 2;
+      `;
+      const brace = `
+        if (condition) { const f = async () => 1 }
+        await / require('after-brace') / 2;
+      `;
+
+      expect(specifiers(asi)).toEqual(['after-asi']);
+      expect(specifiers(brace)).toEqual(['after-brace']);
+    });
+
+    it('recognizes a commented block arrow without leaking an expression context', () => {
+      const source = `
+        const f = async () => /* block body follows */ {}
+        await / require('real') / 2;
+      `;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
     it('treats top-level await as a keyword only in module mode', () => {
       const source = `await /require('fake')/; require('after');`;
 
@@ -954,6 +1000,43 @@ describe('extractModuleSpecifiers', () => {
 
     it('keeps CommonJS script behavior as the default', () => {
       expect(specifiers(`await / require('real') / 2;`)).toEqual(['real']);
+    });
+  });
+
+  describe('ordinary method function boundaries', () => {
+    it('suspends outer async grammar in computed-name and keyword-named methods', () => {
+      const source = `
+        async function outer() {
+          const object = {
+            [name](await) { return await / require('computed') / 2; },
+            if(await) { return await / require('keyword') / 2; }
+          };
+
+          class Example {
+            [name](await) { return await / require('computed-class') / 2; }
+            if(await) { return await / require('keyword-class') / 2; }
+          }
+        }
+      `;
+
+      expect(specifiers(source)).toEqual([
+        'computed',
+        'keyword',
+        'computed-class',
+        'keyword-class',
+      ]);
+    });
+
+    it('does not treat a for-await loop body as an ordinary method', () => {
+      const source = `
+        async function outer(values) {
+          for await (const value of values) {
+            await /require('fake')/;
+          }
+        }
+      `;
+
+      expect(specifiers(source)).toEqual([]);
     });
   });
 

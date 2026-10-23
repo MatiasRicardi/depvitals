@@ -50,6 +50,11 @@ export type ProjectManifest = {
   packageType: string | undefined;
 };
 
+/** The package-type hint declared by one package scope, or `undefined` when no manifest exists. */
+export type PackageTypeHint = {
+  packageType: string | undefined;
+};
+
 /**
  * Why a manifest could not be turned into a {@link ProjectManifest}.
  *
@@ -97,6 +102,48 @@ export async function loadProjectManifest(projectRoot: string): Promise<ProjectM
   }
 
   return parseManifest(root, packageJsonPath, text);
+}
+
+/**
+ * Read only the static `type` hint from the manifest in `directory`.
+ *
+ * Source-mode resolution calls this for nested package scopes. A missing manifest means that the
+ * parent scope remains applicable; an existing manifest with no string `type` starts a new scope
+ * with script/CommonJS behavior.
+ */
+export async function loadPackageTypeHint(directory: string): Promise<PackageTypeHint | undefined> {
+  const packageJsonPath = join(resolve(directory), MANIFEST_FILENAME);
+
+  let text: string;
+  try {
+    text = await readFile(packageJsonPath, 'utf8');
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return undefined;
+    }
+
+    throw new ProjectManifestError(
+      `Could not read ${MANIFEST_FILENAME} at ${packageJsonPath}`,
+      'unreadable',
+      error,
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    throw new ProjectManifestError(`${packageJsonPath} is not valid JSON`, 'invalid-json', error);
+  }
+
+  if (!isPlainRecord(parsed)) {
+    throw new ProjectManifestError(
+      `${packageJsonPath} must contain a JSON object`,
+      'invalid-shape',
+    );
+  }
+
+  return { packageType: readOptionalString(parsed, 'type') };
 }
 
 /**
