@@ -32,7 +32,12 @@ function runBuilt(project: string): RunResult {
       ...process.env,
       DEPVITALS_NO_UPDATE_CHECK: '1',
     },
+    timeout: 10_000,
   });
+
+  expect(result.error).toBeUndefined();
+  expect(result.signal).toBeNull();
+  expect(result.status).not.toBeNull();
 
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
@@ -88,7 +93,7 @@ describe('Step 68.4 compiled CLI gate', () => {
   });
 });
 
-describe('Step 68.6 async boundaries through analyzer and compiled CLI', () => {
+describe('Steps 68.6 and 68.7 function contexts through analyzer and compiled CLI', () => {
   const cases = [
     {
       name: 'A: newline before an ordinary block arrow',
@@ -108,6 +113,47 @@ describe('Step 68.6 async boundaries through analyzer and compiled CLI', () => {
       dependency: 'real',
       isUsage: true,
     },
+    {
+      name: 'A1: default function callback',
+      source: `async function outer(cb = function () {}) { await /require('fake')/; }`,
+      dependency: 'fake',
+      isUsage: false,
+    },
+    {
+      name: 'A2: default block arrow callback',
+      source: `async function outer(cb = () => {}) { await /require('fake')/; }`,
+      dependency: 'fake',
+      isUsage: false,
+    },
+    {
+      name: 'A3: apostrophe regex and real require',
+      source: `async function outer(cb = function () {}) { await /don't/; require("real"); }`,
+      dependency: 'real',
+      isUsage: true,
+    },
+    {
+      name: 'B1: control statements inside an async property function',
+      source: `const obj = { f: async function () {
+        if (ok) /require('fake-head')/.test(text);
+        if (ok) { await /require('fake-block')/; }
+      } / require('real') / 2 };`,
+      dependency: 'real',
+      isUsage: true,
+    },
+    ...['', 'async '].flatMap((modifier) => [
+      {
+        name: `B1: ${modifier}function property`,
+        source: `const obj = { f: ${modifier}function () {} / require("real") / 2 };`,
+        dependency: 'real',
+        isUsage: true,
+      },
+      {
+        name: `B2: ${modifier}function conditional alternative`,
+        source: `const n = flag ? function () {} : ${modifier}function () {} / require("real") / 2;`,
+        dependency: 'real',
+        isUsage: true,
+      },
+    ]),
   ];
 
   for (const declared of [false, true]) {
@@ -152,4 +198,23 @@ describe('Step 68.6 async boundaries through analyzer and compiled CLI', () => {
       }
     });
   }
+
+  it('keeps incomplete source as an operational error without partial output', async () => {
+    const project = join(REPO_ROOT, 'test', 'fixtures', 'analysis', 'tsx-types-incomplete');
+    const before = readdirSync(project).map((name) => [
+      name,
+      readFileSync(join(project, name), 'utf8'),
+    ]);
+    const message = `Source file ${join(project, 'index.tsx')} could not be analyzed: Unterminated JSX type arguments`;
+
+    await expect(analyzeProject(project)).rejects.toThrow(message);
+    expect(runBuilt(project)).toEqual({
+      status: 1,
+      stdout: '',
+      stderr: `${message}\n`,
+    });
+    expect(
+      readdirSync(project).map((name) => [name, readFileSync(join(project, name), 'utf8')]),
+    ).toEqual(before);
+  });
 });

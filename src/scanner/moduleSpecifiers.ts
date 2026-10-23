@@ -110,6 +110,19 @@ type FuncContext = {
   readonly isExpression: boolean;
 };
 
+type LexicalDepth = {
+  readonly parenDepth: number;
+  readonly bracketDepth: number;
+  readonly braceDepth: number;
+  readonly frameDepth: number;
+};
+
+type PendingFuncContext = FuncContext &
+  LexicalDepth & {
+    parameterDepth: number | undefined;
+    parametersClosed: boolean;
+  };
+
 type ExpressionFuncContext = FuncContext & {
   readonly parenDepth: number;
   readonly bracketDepth: number;
@@ -205,8 +218,11 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
   const functionContextStack: FuncContext[] = [];
   // The nearest function body owns the await/yield grammar. An ordinary nested function therefore
   // suspends an async/generator context from an outer function instead of inheriting it.
-  // A pending function signature (`function`/`async`/`*`) that has not yet reached its body `{`.
-  let pendingFunctionContext: FuncContext | undefined;
+  // A default callback may open and finish while an outer signature is still reading parameters.
+  // Only a signature with closed parameters at its original depth can own the next body brace.
+  const pendingFunctionContexts: PendingFuncContext[] = [];
+  const conditionalContexts: LexicalDepth[] = [];
+  let colonIsExpression = false;
   const expressionFunctionContexts: ExpressionFuncContext[] = [];
   let bracketDepth = 0;
   // Whether the most recent `}` closed an object literal. It is only consulted while that `}` is
@@ -224,6 +240,17 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
   let parenDepth = 0;
   let controlParenDepth: number | undefined;
 
+  const atLexicalDepth = (context: LexicalDepth): boolean =>
+    parenDepth === context.parenDepth &&
+    bracketDepth === context.bracketDepth &&
+    braceContexts.length === context.braceDepth &&
+    frames.length === context.frameDepth;
+
+  const insideObjectLiteral = (): boolean =>
+    braceContexts[braceContexts.length - 1] === true &&
+    functionBodyBraces[functionBodyBraces.length - 1] !== true &&
+    classBodyBraces[classBodyBraces.length - 1] !== true;
+
   // Reset the expression-start state at the beginning of a fresh `${...}` expression.
   const resetExpressionState = (): void => {
     prevKind = 'start';
@@ -234,9 +261,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     pendingControlKeyword = undefined;
     closedObjectBrace = false;
     lineTerminatorSinceLastToken = false;
-    // A function signature is not part of a `${...}` expression; drop a half-written one so it can
-    // not leak across the boundary.
-    pendingFunctionContext = undefined;
+    // Pending signatures retain their own depth across template/JSX expressions in parameters.
   };
 
   // A finished JSX element leaves an expression value behind: a following `/` divides, and the
@@ -264,6 +289,19 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     if (ch === undefined) {
       i++;
       continue;
+    }
+
+    let conditional = conditionalContexts[conditionalContexts.length - 1];
+
+    while (
+      conditional !== undefined &&
+      (conditional.parenDepth > parenDepth ||
+        conditional.bracketDepth > bracketDepth ||
+        conditional.braceDepth > braceContexts.length ||
+        conditional.frameDepth > frames.length)
+    ) {
+      conditionalContexts.pop();
+      conditional = conditionalContexts[conditionalContexts.length - 1];
     }
 
     let expressionFunctionContext =
@@ -612,6 +650,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
           prevKind,
           prevPunct,
           previousIdentifier,
+          colonIsExpression,
         );
         if (
           isIdentifier(tokens[tokens.length - 1], 'default') &&
@@ -650,7 +689,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       pendingControlKeyword = pendingControlKeywordAfter(
         value,
         isMemberName ||
-          braceContexts[braceContexts.length - 1] === true ||
+          insideObjectLiteral() ||
           classBodyBraces[classBodyBraces.length - 1] === true,
         pendingControlKeyword,
       );
@@ -666,13 +705,24 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
           prevKind === 'identifier' &&
           !hasLineTerminator(source, prevIdentifierEnd, start);
 
-        pendingFunctionContext = {
+        pendingFunctionContexts.push({
           async: isAsync,
           generator: false,
           isExpression: isAsync
             ? asyncFunctionIsExpression
-            : functionIsExpressionPosition(prevKind, prevPunct, previousIdentifier),
-        };
+            : functionIsExpressionPosition(
+                prevKind,
+                prevPunct,
+                previousIdentifier,
+                colonIsExpression,
+              ),
+          parenDepth,
+          bracketDepth,
+          braceDepth: braceContexts.length,
+          frameDepth: frames.length,
+          parameterDepth: undefined,
+          parametersClosed: false,
+        });
       }
       tokens.push({ kind: 'identifier', value, offset: start });
       prevKind = 'identifier';
@@ -703,19 +753,43 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     }
 
     // Any other single character is punctuation.
+    if (ch === '?' && source[i + 1] !== '?' && source[i - 1] !== '?' && source[i + 1] !== '.') {
+      conditionalContexts.push({
+        parenDepth,
+        bracketDepth,
+        braceDepth: braceContexts.length,
+        frameDepth: frames.length,
+      });
+    } else if (ch === ':') {
+      const isConditional = conditional !== undefined && atLexicalDepth(conditional);
+
+      if (isConditional) {
+        conditionalContexts.pop();
+      }
+
+      colonIsExpression = isConditional || insideObjectLiteral();
+    } else if (ch === ';' && conditional !== undefined && atLexicalDepth(conditional)) {
+      conditionalContexts.pop();
+    }
+
     if (ch === '{') {
       // Record what this brace opens, so its `}` knows whether an expression or a statement ended.
-      // The enclosing entry is inspected before pushing, so a `:` knows if it separates a property.
       let isObject = opensObjectLiteral(
         prevKind,
         prevPunct,
         prevIdentifier,
         prevIsExpressionKeyword,
         frame?.kind === 'template-expr' || frame?.kind === 'jsx-expr',
-        braceContexts[braceContexts.length - 1] === true,
+        colonIsExpression,
       );
-      const isClassBody =
-        !isObject && pendingFunctionContext === undefined && opensClassBody(tokens);
+      const pending = pendingFunctionContexts[pendingFunctionContexts.length - 1];
+      let context: FuncContext | undefined;
+
+      if (pending?.parametersClosed === true && atLexicalDepth(pending)) {
+        context = pendingFunctionContexts.pop();
+      }
+
+      const isClassBody = !isObject && context === undefined && opensClassBody(tokens);
 
       // A statement-block brace that consumes a pending function signature is a function body. A
       // function expression used as a value ends an expression (so a following `/` divides), while a
@@ -724,20 +798,17 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       // Arrows and methods carry no `function` keyword, so their context is inferred from the tokens
       // before the brace. Ordinary methods are accepted only inside a known object/class container;
       // elsewhere the same `name() {` shape may be a control head such as `if (cond) {`.
-      if (pendingFunctionContext === undefined && !isObject && !isClassBody) {
-        pendingFunctionContext = inferFunctionBodyContext(
+      if (context === undefined && !isObject && !isClassBody) {
+        context = inferFunctionBodyContext(
           source,
           tokens,
-          braceContexts[braceContexts.length - 1] === true ||
-            classBodyBraces[classBodyBraces.length - 1] === true,
+          insideObjectLiteral() || classBodyBraces[classBodyBraces.length - 1] === true,
         );
       }
 
       let wasFunctionBody = false;
-      if (!isObject && pendingFunctionContext !== undefined) {
+      if (!isObject && context !== undefined) {
         wasFunctionBody = true;
-        const context = pendingFunctionContext;
-        pendingFunctionContext = undefined;
         isObject = context.isExpression;
         functionContextStack.push(context);
       }
@@ -753,6 +824,16 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     } else if (ch === '(') {
       // A `(` after a control keyword opens a control head; only its matching `)` may then be
       // followed by a regex literal, so the nesting depth of every `(` has to be tracked.
+      const pending = pendingFunctionContexts[pendingFunctionContexts.length - 1];
+
+      if (
+        pending !== undefined &&
+        pending.parameterDepth === undefined &&
+        atLexicalDepth(pending)
+      ) {
+        pending.parameterDepth = parenDepth + 1;
+      }
+
       parenDepth++;
 
       if (pendingControlKeyword !== undefined) {
@@ -764,6 +845,17 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     } else if (ch === '[') {
       bracketDepth++;
     } else if (ch === ')') {
+      const pending = pendingFunctionContexts[pendingFunctionContexts.length - 1];
+
+      if (
+        pending?.parameterDepth === parenDepth &&
+        bracketDepth === pending.bracketDepth &&
+        braceContexts.length === pending.braceDepth &&
+        frames.length === pending.frameDepth
+      ) {
+        pending.parametersClosed = true;
+      }
+
       afterControlHead = controlParenDepth !== undefined && parenDepth === controlParenDepth;
 
       if (afterControlHead) {
@@ -799,13 +891,23 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
 
     // A `*` right after `function` (whitespace/comments aside) marks a generator: `function*` and
     // `function *`. It is recorded on the pending signature, consumed at the body `{`.
-    if (ch === '*' && prevIdentifier === 'function' && pendingFunctionContext !== undefined) {
-      pendingFunctionContext = { ...pendingFunctionContext, generator: true };
+    const pending = pendingFunctionContexts[pendingFunctionContexts.length - 1];
+
+    if (
+      ch === '*' &&
+      prevKind === 'identifier' &&
+      prevIdentifier === 'function' &&
+      pending !== undefined
+    ) {
+      pendingFunctionContexts[pendingFunctionContexts.length - 1] = {
+        ...pending,
+        generator: true,
+      };
     }
 
-    // A `;` ends a statement, so any half-written function signature cannot continue.
-    if (ch === ';') {
-      pendingFunctionContext = undefined;
+    // A callback's statements cannot invalidate a signature outside its body or parameter list.
+    if (ch === ';' && pending !== undefined && atLexicalDepth(pending)) {
+      pendingFunctionContexts.pop();
     }
 
     tokens.push({ kind: 'punct', value: ch, offset: i });
@@ -1531,9 +1633,8 @@ function pendingControlKeywordAfter(
  * expression on its right: assignment (`= {`), an argument or element list (`f({`, `[{`) and the
  * separators and binary/logical operators. `>` is absent because it usually ends an arrow function
  * (`() => {}`), whose `{` opens a function body, and `)`/`}` are absent because they close
- * statement heads and blocks. `:` is decided separately, in {@link opensObjectLiteral}, because it
- * is a property separator inside an object literal but a label or `case`/`default` separator
- * otherwise.
+ * statement heads and blocks. `:` is classified separately using property/conditional depth,
+ * because labels and `case`/`default` clauses instead introduce statements.
  */
 const EXPRESSION_BEFORE_BRACE: ReadonlySet<string> = new Set([
   '=',
@@ -1563,9 +1664,10 @@ function functionIsExpressionPosition(
   prevKind: PrevKind,
   prevPunct: string | undefined,
   previousIdentifier: string | undefined,
+  colonIsExpression: boolean,
 ): boolean {
   if (prevKind === 'punct') {
-    return EXPRESSION_BEFORE_BRACE.has(prevPunct ?? '');
+    return prevPunct === ':' ? colonIsExpression : EXPRESSION_BEFORE_BRACE.has(prevPunct ?? '');
   }
   if (prevKind === 'identifier') {
     return REGEX_PRECEDING_KEYWORDS.has(previousIdentifier ?? '');
@@ -1575,8 +1677,8 @@ function functionIsExpressionPosition(
 
 /**
  * Whether a `{` opens an expression (an object literal or a destructuring pattern) instead of a
- * statement block or function body. `enclosingIsObjectLiteral` reports what the enclosing `{`, if
- * any, opened. Statement position is the default, so an unknown context keeps the existing
+ * statement block or function body. `colonIsExpression` distinguishes property/conditional colons
+ * from statement separators. Statement position is the default, so an unknown context keeps the existing
  * behaviour of allowing a regex literal after the matching `}`.
  */
 function opensObjectLiteral(
@@ -1585,14 +1687,14 @@ function opensObjectLiteral(
   prevIdentifier: string | undefined,
   prevIsExpressionKeyword: boolean,
   inTemplateExpression: boolean,
-  enclosingIsObjectLiteral: boolean,
+  colonIsExpression: boolean,
 ): boolean {
   if (prevKind === 'punct') {
     // Inside an object literal a `:` separates a property from its value (`{ scale: {} }`, where a
     // following `/` divides), while at statement level the same `:` follows a label
     // (`label: {}`) or a `case`/`default` clause, whose `{` opens a block.
     if (prevPunct === ':') {
-      return enclosingIsObjectLiteral;
+      return colonIsExpression;
     }
 
     return EXPRESSION_BEFORE_BRACE.has(prevPunct ?? '');
