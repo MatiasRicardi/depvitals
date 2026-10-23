@@ -1084,6 +1084,7 @@ describe('extractModuleSpecifiers', () => {
       `const n = async /* note */ function () {} / require('real') / 2;`,
       `const n = async \t function named() {} / require('real') / 2;`,
       `function outer() { return async function () {} / require('real') / 2; }`,
+      `export default (async function () {} / require('real') / 2);`,
     ])('preserves function expression division in %s', (source) => {
       expect(specifiers(source)).toEqual(['real']);
     });
