@@ -3,6 +3,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
+    // Builds dist/ before workers collect files and before every watch-mode rerun.
+    globalSetup: ['test/globalSetup.ts'],
     coverage: {
       provider: 'v8',
       // Files that are never imported by tests are reported too, so uncovered code is visible.

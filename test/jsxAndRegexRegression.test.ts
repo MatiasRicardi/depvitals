@@ -10,7 +10,7 @@
  * compared is the scanner's own report.
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -29,9 +29,8 @@ const VERSION = (
 
 const OPTIONS: CliOptions = { version: VERSION, cwd: tmpdir() };
 
-/** The packaged CLI entry point, only reachable once `pnpm run build` has produced `dist/`. */
+/** The packaged CLI entry point, built by the shared Vitest `globalSetup` before any worker runs. */
 const BUILT_ENTRY = join(REPO_ROOT, 'dist', 'cli', 'index.js');
-const itBuilt = existsSync(BUILT_ENTRY) ? it : it.skip;
 
 const CLEAN_REPORT = 'DepVitals\n\nNo dependency issues found.\n';
 
@@ -169,7 +168,7 @@ describe('Step 68.2: the packaged entry point wires the JSX mode by extension an
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
   }
 
-  itBuilt('scans a TSX/JSX component tree cleanly', () => {
+  it('scans a TSX/JSX component tree cleanly', () => {
     expect(runBuilt(fixture('jsx-react-component'))).toEqual({
       status: 0,
       stdout: CLEAN_REPORT,
@@ -177,7 +176,7 @@ describe('Step 68.2: the packaged entry point wires the JSX mode by extension an
     });
   });
 
-  itBuilt('scans JSX in plain JavaScript extensions cleanly', () => {
+  it('scans JSX in plain JavaScript extensions cleanly', () => {
     expect(runBuilt(fixture('jsx-javascript-extensions'))).toEqual({
       status: 0,
       stdout: CLEAN_REPORT,
@@ -185,7 +184,7 @@ describe('Step 68.2: the packaged entry point wires the JSX mode by extension an
     });
   });
 
-  itBuilt('does not report the text of a regex as a missing dependency', () => {
+  it('does not report the text of a regex as a missing dependency', () => {
     expect(runBuilt(fixture('regex-await-yield-clean'))).toEqual({
       status: 0,
       stdout: CLEAN_REPORT,

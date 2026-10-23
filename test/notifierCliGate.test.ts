@@ -21,15 +21,15 @@
  * these tests never read or write the real user cache - and the scanned project itself is compared
  * file-by-file before and after, because a normal scan must still not create anything.
  *
- * CI runs the test job before the build job, so - exactly like the Step 62 gate - the process-level
- * cases below only apply once `pnpm run build` has produced `dist/`.
+ * `dist/` is prepared once by the shared Vitest `globalSetup` before any worker collects a file, so
+ * the process-level cases below always run against a current artifact and are never skipped.
  */
 
-import { execFile, spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
@@ -50,72 +50,6 @@ const PROBE = join(REPO_ROOT, 'test', 'helpers', 'notifierFetchProbe.mjs');
 const ANALYSIS_FIXTURES = join(REPO_ROOT, 'test', 'fixtures', 'analysis');
 const MANIFEST_FIXTURES = join(REPO_ROOT, 'test', 'fixtures', 'manifest');
 
-/**
- * Newest modification time inside a directory tree, used as the freshness signal for `dist/`.
- * Unreadable entries are ignored; an empty tree reports 0.
- */
-function newestMtime(directory: string): number {
-  let newest = 0;
-
-  for (const entry of readdirSync(directory, { withFileTypes: true, recursive: true })) {
-    if (!entry.isFile()) {
-      continue;
-    }
-
-    const parent = isAbsolute(entry.parentPath)
-      ? entry.parentPath
-      : join(directory, entry.parentPath);
-    const time = statSync(join(parent, entry.name)).mtimeMs;
-
-    if (time > newest) {
-      newest = time;
-    }
-  }
-
-  return newest;
-}
-
-/**
- * Build the CLI when `dist/` is absent or older than `src/`.
- *
- * `pnpm run check` (and CI) run the tests before the build step, so a plain existence check would let
- * this gate silently exercise a stale artifact that predates the notifier wiring under test. Building
- * here keeps the promise of the file honest on a fresh clone as well as on a dirty worktree. Any build
- * failure - non-zero exit, no entry point, or an entry point that is still older than `src/` - is
- * reported instead of degrading into a skipped gate.
- *
- * This runs at collection time, before any test of this file starts, and this file is the only one
- * that reads `dist/` (verified by `grep -r "dist/cli" test/`), so no other worker can observe a
- * half-written artifact and the shared Vitest configuration stays untouched.
- */
-function ensureBuiltCli(): void {
-  const sourceTime = newestMtime(join(REPO_ROOT, 'src'));
-  const entryTime = existsSync(BUILT_ENTRY) ? statSync(BUILT_ENTRY).mtimeMs : 0;
-
-  if (entryTime >= sourceTime) {
-    return;
-  }
-
-  const build = spawnSync(
-    process.execPath,
-    [join(REPO_ROOT, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', 'tsconfig.build.json'],
-    { cwd: REPO_ROOT, encoding: 'utf8' },
-  );
-
-  const rebuiltTime = existsSync(BUILT_ENTRY) ? statSync(BUILT_ENTRY).mtimeMs : 0;
-
-  if (build.status !== 0 || rebuiltTime < sourceTime) {
-    throw new Error(
-      `could not build the CLI for the notifier gate (status ${String(build.status)}, entry mtime ${String(rebuiltTime)}, source mtime ${String(sourceTime)}): ${(build.stderr + build.stdout).trim().slice(0, 500)}`,
-    );
-  }
-}
-
-ensureBuiltCli();
-
-/** Runs against the built artifact, which {@link ensureBuiltCli} has just made current. */
-const itBuilt = existsSync(BUILT_ENTRY) ? it : it.skip;
-
 /** The version in package.json, i.e. the version the notice compares against. */
 const CURRENT_VERSION = (
   JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')) as { version: string }
@@ -125,7 +59,12 @@ const CURRENT_VERSION = (
 const CANNED_LATEST = '999.999.999';
 
 /** Environment variables that would decide eligibility before this test does. */
-const INELIGIBLE_VARIABLES = new Set(['CI', 'GITHUB_ACTIONS', 'DEPVITALS_NO_UPDATE_CHECK']);
+const INELIGIBLE_VARIABLES = new Set([
+  'CI',
+  'GITHUB_ACTIONS',
+  'DEPVITALS_NO_UPDATE_CHECK',
+  'DEPVITALS_TEST_FORCE_TTY',
+]);
 
 /** Environment variables that could point the cache at a real user profile. */
 const CACHE_ROOT_VARIABLES = new Set(['XDG_CACHE_HOME', 'LOCALAPPDATA', 'HOME', 'USERPROFILE']);
@@ -168,6 +107,22 @@ function neutralEnvironment(overrides: RunOptions['env']): Record<string, string
   }
 
   return env;
+}
+
+/** Run work with the test-only TTY override set, then restore its previous value. */
+async function withAmbientForcedTty<T>(work: () => Promise<T>): Promise<T> {
+  const previous = process.env['DEPVITALS_TEST_FORCE_TTY'];
+  process.env['DEPVITALS_TEST_FORCE_TTY'] = '1';
+
+  try {
+    return await work();
+  } finally {
+    if (previous === undefined) {
+      delete process.env['DEPVITALS_TEST_FORCE_TTY'];
+    } else {
+      process.env['DEPVITALS_TEST_FORCE_TTY'] = previous;
+    }
+  }
 }
 
 /** The environment of an observed child: request log plus a redirected cache root. */
@@ -301,7 +256,7 @@ describe('Step 67 gate: the built CLI keeps the report byte-identical', () => {
     { name: 'basic', exitCode: 1 },
   ] as const;
 
-  itBuilt.each(reportCases)(
+  it.each(reportCases)(
     '$name scan: stdout is exactly the deterministic report even when a notice exists',
     async (testCase) => {
       const project = join(ANALYSIS_FIXTURES, testCase.name);
@@ -317,7 +272,7 @@ describe('Step 67 gate: the built CLI keeps the report byte-identical', () => {
     },
   );
 
-  itBuilt('writes nothing into the analyzed project while checking for an update', async () => {
+  it('writes nothing into the analyzed project while checking for an update', async () => {
     const project = join(ANALYSIS_FIXTURES, 'clean');
     const before = await treeOf(project);
 
@@ -326,7 +281,7 @@ describe('Step 67 gate: the built CLI keeps the report byte-identical', () => {
     expect(await treeOf(project)).toEqual(before);
   });
 
-  itBuilt('reports help and version with the pre-notifier bytes and exit code 0', async () => {
+  it('reports help and version with the pre-notifier bytes and exit code 0', async () => {
     const help = await runObserved(['--help'], { tty: true, latest: CANNED_LATEST });
     const version = await runObserved(['--version'], { tty: true, latest: CANNED_LATEST });
     // The pure orchestration is the source of truth for the pre-notifier help bytes; the built CLI must
@@ -355,62 +310,58 @@ describe('Step 67 gate: the built CLI keeps the report byte-identical', () => {
     }
   });
 
-  itBuilt(
-    'reports a usage error and an operational error without any update activity',
-    async () => {
-      const usage = await runObserved(['--scan'], { tty: true, latest: CANNED_LATEST });
-      const failure = await runObserved([MANIFEST_FIXTURES], { tty: true, latest: CANNED_LATEST });
+  it('reports a usage error and an operational error without any update activity', async () => {
+    const usage = await runObserved(['--scan'], { tty: true, latest: CANNED_LATEST });
+    const failure = await runObserved([MANIFEST_FIXTURES], { tty: true, latest: CANNED_LATEST });
 
-      expect(usage.exitCode).toBe(1);
-      expect(usage.stdout).toBe('');
-      // The step text paraphrases the parse failure; the parser's message is the locked contract
-      // already asserted by `test/cli.test.ts` and `test/cliGate.test.ts`, so it is checked verbatim.
-      expect(usage.stderr).toContain('Unknown option: --scan');
-      expect(usage.stderr.includes('npx depvitals@latest')).toBe(false);
+    expect(usage.exitCode).toBe(1);
+    expect(usage.stdout).toBe('');
+    // The step text paraphrases the parse failure; the parser's message is the locked contract
+    // already asserted by `test/cli.test.ts` and `test/cliGate.test.ts`, so it is checked verbatim.
+    expect(usage.stderr).toContain('Unknown option: --scan');
+    expect(usage.stderr.includes('npx depvitals@latest')).toBe(false);
 
-      expect(failure.exitCode).toBe(1);
-      expect(failure.stdout).toBe('');
-      expect(failure.stderr).toContain('No package.json found at');
-      expect(failure.stderr.includes('npx depvitals@latest')).toBe(false);
+    expect(failure.exitCode).toBe(1);
+    expect(failure.stdout).toBe('');
+    expect(failure.stderr).toContain('No package.json found at');
+    expect(failure.stderr.includes('npx depvitals@latest')).toBe(false);
 
-      for (const outcome of [usage, failure]) {
-        expect(outcome.requests).toEqual([]);
-        expect(outcome.cacheCreated).toBe(false);
-      }
-    },
-  );
+    for (const outcome of [usage, failure]) {
+      expect(outcome.requests).toEqual([]);
+      expect(outcome.cacheCreated).toBe(false);
+    }
+  });
 });
 
 describe('Step 67 gate: eligibility and the request bound hold for the built CLI', () => {
   const cleanProject = join(ANALYSIS_FIXTURES, 'clean');
 
-  itBuilt(
-    'makes no request and prints nothing extra when eligibility denies the check',
-    async () => {
-      // Denied by the environment, or denied by a non-interactive stream: in every case the request log
-      // and the cache root must stay empty.
-      const opted = await runObserved([cleanProject], {
-        tty: true,
-        env: { DEPVITALS_NO_UPDATE_CHECK: '1' },
-      });
-      const ci = await runObserved([cleanProject], { tty: true, env: { CI: '1' } });
-      const actions = await runObserved([cleanProject], {
-        tty: true,
-        env: { GITHUB_ACTIONS: 'true' },
-      });
-      const piped = await runObserved([cleanProject], { latest: CANNED_LATEST });
+  it('makes no request and prints nothing extra when eligibility denies the check', async () => {
+    // Denied by the environment, or denied by a non-interactive stream: in every case the request log
+    // and the cache root must stay empty.
+    const opted = await runObserved([cleanProject], {
+      tty: true,
+      env: { DEPVITALS_NO_UPDATE_CHECK: '1' },
+    });
+    const ci = await runObserved([cleanProject], { tty: true, env: { CI: '1' } });
+    const actions = await runObserved([cleanProject], {
+      tty: true,
+      env: { GITHUB_ACTIONS: 'true' },
+    });
+    const piped = await withAmbientForcedTty(() =>
+      runObserved([cleanProject], { latest: CANNED_LATEST }),
+    );
 
-      for (const outcome of [opted, ci, actions, piped]) {
-        expect(outcome.exitCode).toBe(0);
-        expect(outcome.stdout).toBe('DepVitals\n\nNo dependency issues found.\n');
-        expect(outcome.stderr).toBe('');
-        expect(outcome.requests).toEqual([]);
-        expect(outcome.cacheCreated).toBe(false);
-      }
-    },
-  );
+    for (const outcome of [opted, ci, actions, piped]) {
+      expect(outcome.exitCode).toBe(0);
+      expect(outcome.stdout).toBe('DepVitals\n\nNo dependency issues found.\n');
+      expect(outcome.stderr).toBe('');
+      expect(outcome.requests).toEqual([]);
+      expect(outcome.cacheCreated).toBe(false);
+    }
+  });
 
-  itBuilt('asks the fixed public endpoint once and records what it learned', async () => {
+  it('asks the fixed public endpoint once and records what it learned', async () => {
     const outcome = await runObserved([join(ANALYSIS_FIXTURES, 'basic')], {
       tty: true,
       latest: CANNED_LATEST,
@@ -425,7 +376,7 @@ describe('Step 67 gate: eligibility and the request bound hold for the built CLI
     expect(Number.isFinite(entry?.checkedAt ?? Number.NaN)).toBe(true);
   });
 
-  itBuilt('serves the next run from the fresh cache without any request', async () => {
+  it('serves the next run from the fresh cache without any request', async () => {
     // Two children sharing one cache root: the second must not ask again, which is the whole point of
     // the daily cache, and it must still reach the same conclusion.
     const root = await mkdtemp(join(tmpdir(), 'depvitals-step67-gate-shared-'));
@@ -455,90 +406,84 @@ describe('Step 67 gate: eligibility and the request bound hold for the built CLI
     }
   });
 
-  itBuilt(
-    'runs the full cache lifecycle through the built CLI: lookup, reuse, then refresh',
-    async () => {
-      // Three eligible runs share one throwaway cache root. The first asks the registry once and
-      // writes the cache; the second reuses that fresh cache with no request; the third, after the
-      // cached timestamp is aged past the 24h TTL, performs exactly one new bounded lookup and
-      // refreshes the cache. Nothing here waits on real time: the timestamp is rewritten in place.
-      const root = await mkdtemp(join(tmpdir(), 'depvitals-step68-lifecycle-'));
-      const cacheFile = join(root, 'cache-root', 'depvitals', UPDATE_CACHE_FILE_NAME);
+  it('runs the full cache lifecycle through the built CLI: lookup, reuse, then refresh', async () => {
+    // Three eligible runs share one throwaway cache root. The first asks the registry once and
+    // writes the cache; the second reuses that fresh cache with no request; the third, after the
+    // cached timestamp is aged past the 24h TTL, performs exactly one new bounded lookup and
+    // refreshes the cache. Nothing here waits on real time: the timestamp is rewritten in place.
+    const root = await mkdtemp(join(tmpdir(), 'depvitals-step68-lifecycle-'));
+    const cacheFile = join(root, 'cache-root', 'depvitals', UPDATE_CACHE_FILE_NAME);
 
-      try {
-        const HOUR_MS = 60 * 60 * 1000;
-        const argv = [cleanProject];
-        const first = join(root, 'first.txt');
-        const second = join(root, 'second.txt');
-        const third = join(root, 'third.txt');
-        const options: RunOptions = { tty: true, latest: CANNED_LATEST };
+    try {
+      const HOUR_MS = 60 * 60 * 1000;
+      const argv = [cleanProject];
+      const first = join(root, 'first.txt');
+      const second = join(root, 'second.txt');
+      const third = join(root, 'third.txt');
+      const options: RunOptions = { tty: true, latest: CANNED_LATEST };
 
-        const firstRun = await runChild(
-          argv,
-          probeEnvironment(root, { ...options, requestLog: first }),
-        );
-        const secondRun = await runChild(
-          argv,
-          probeEnvironment(root, { ...options, requestLog: second }),
-        );
+      const firstRun = await runChild(
+        argv,
+        probeEnvironment(root, { ...options, requestLog: first }),
+      );
+      const secondRun = await runChild(
+        argv,
+        probeEnvironment(root, { ...options, requestLog: second }),
+      );
 
-        // Age the cache record past the 24h TTL so the third run must look up again.
-        const entry = JSON.parse(await readFile(cacheFile, 'utf8')) as { latest: string };
+      // Age the cache record past the 24h TTL so the third run must look up again.
+      const entry = JSON.parse(await readFile(cacheFile, 'utf8')) as { latest: string };
 
-        await writeFile(
-          cacheFile,
-          JSON.stringify({ latest: entry.latest, checkedAt: Date.now() - 25 * HOUR_MS }),
-          'utf8',
-        );
+      await writeFile(
+        cacheFile,
+        JSON.stringify({ latest: entry.latest, checkedAt: Date.now() - 25 * HOUR_MS }),
+        'utf8',
+      );
 
-        const thirdRun = await runChild(
-          argv,
-          probeEnvironment(root, { ...options, requestLog: third }),
-        );
+      const thirdRun = await runChild(
+        argv,
+        probeEnvironment(root, { ...options, requestLog: third }),
+      );
 
-        // The deterministic report never changes and the notice only ever rides on stderr, so the
-        // three runs keep byte-identical stdout and stderr across the whole lifecycle. CANNED_LATEST
-        // is strictly newer than the installed version, so every run emits the same notice on stderr;
-        // pinning stderr on all three also catches any unexpected output on the initial or expired run.
-        for (const run of [firstRun, secondRun, thirdRun]) {
-          expect(run.stdout).toBe(await reportOf(cleanProject));
-          expect(run.stderr).toBe(expectedNotice(CURRENT_VERSION, CANNED_LATEST));
-        }
-
-        // Exactly one request on the first and third runs, none on the fresh-cache second run.
-        expect(await readRequests(first)).toEqual([NPM_DIST_TAGS_ENDPOINT]);
-        expect(await readRequests(second)).toEqual([]);
-        expect(await readRequests(third)).toEqual([NPM_DIST_TAGS_ENDPOINT]);
-
-        // The third run refreshed the cache with a recent timestamp, so the next run is fresh again.
-        const refreshed = JSON.parse(await readFile(cacheFile, 'utf8')) as { checkedAt: number };
-
-        expect(Date.now() - refreshed.checkedAt).toBeLessThan(HOUR_MS);
-      } finally {
-        await rm(root, { recursive: true, force: true });
+      // The deterministic report never changes and the notice only ever rides on stderr, so the
+      // three runs keep byte-identical stdout and stderr across the whole lifecycle. CANNED_LATEST
+      // is strictly newer than the installed version, so every run emits the same notice on stderr;
+      // pinning stderr on all three also catches any unexpected output on the initial or expired run.
+      for (const run of [firstRun, secondRun, thirdRun]) {
+        expect(run.stdout).toBe(await reportOf(cleanProject));
+        expect(run.stderr).toBe(expectedNotice(CURRENT_VERSION, CANNED_LATEST));
       }
-    },
-  );
 
-  itBuilt(
-    'degrades silently when the registry transport fails, keeping report and status',
-    async () => {
-      // No canned answer: the probe fails every request loudly. The scan must not notice.
-      const clean = await runObserved([cleanProject], { tty: true });
-      const findings = await runObserved([join(ANALYSIS_FIXTURES, 'basic')], { tty: true });
+      // Exactly one request on the first and third runs, none on the fresh-cache second run.
+      expect(await readRequests(first)).toEqual([NPM_DIST_TAGS_ENDPOINT]);
+      expect(await readRequests(second)).toEqual([]);
+      expect(await readRequests(third)).toEqual([NPM_DIST_TAGS_ENDPOINT]);
 
-      expect(clean.exitCode).toBe(0);
-      expect(findings.exitCode).toBe(1);
-      expect(clean.stdout).toBe(await reportOf(cleanProject));
-      expect(findings.stdout).toBe(await reportOf(join(ANALYSIS_FIXTURES, 'basic')));
-      expect(clean.stderr).toBe('');
-      expect(findings.stderr).toBe('');
-      expect(clean.requests).toEqual([NPM_DIST_TAGS_ENDPOINT]);
-      expect(clean.cacheCreated).toBe(false);
-    },
-  );
+      // The third run refreshed the cache with a recent timestamp, so the next run is fresh again.
+      const refreshed = JSON.parse(await readFile(cacheFile, 'utf8')) as { checkedAt: number };
 
-  itBuilt('prints no notice when the published version is not newer', async () => {
+      expect(Date.now() - refreshed.checkedAt).toBeLessThan(HOUR_MS);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('degrades silently when the registry transport fails, keeping report and status', async () => {
+    // No canned answer: the probe fails every request loudly. The scan must not notice.
+    const clean = await runObserved([cleanProject], { tty: true });
+    const findings = await runObserved([join(ANALYSIS_FIXTURES, 'basic')], { tty: true });
+
+    expect(clean.exitCode).toBe(0);
+    expect(findings.exitCode).toBe(1);
+    expect(clean.stdout).toBe(await reportOf(cleanProject));
+    expect(findings.stdout).toBe(await reportOf(join(ANALYSIS_FIXTURES, 'basic')));
+    expect(clean.stderr).toBe('');
+    expect(findings.stderr).toBe('');
+    expect(clean.requests).toEqual([NPM_DIST_TAGS_ENDPOINT]);
+    expect(clean.cacheCreated).toBe(false);
+  });
+
+  it('prints no notice when the published version is not newer', async () => {
     const outcome = await runObserved([cleanProject], { tty: true, latest: CURRENT_VERSION });
 
     expect(outcome.exitCode).toBe(0);
@@ -551,7 +496,7 @@ describe('Step 67 gate: eligibility and the request bound hold for the built CLI
     expect(Number.isFinite(entry?.checkedAt ?? Number.NaN)).toBe(true);
   });
 
-  itBuilt.each([
+  it.each([
     { label: 'a prerelease payload', latest: '0.0.1-rc.1' },
     { label: 'a garbage payload', latest: 'not-a-version' },
   ])('prints no notice for $label and caches nothing', async (testCase) => {
