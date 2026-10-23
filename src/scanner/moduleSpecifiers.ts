@@ -129,7 +129,12 @@ type ExpressionFuncContext = FuncContext & {
 type Frame =
   | { readonly kind: 'template-expr'; depth: number; readonly offset: number }
   | { readonly kind: 'jsx-expr'; depth: number; readonly offset: number }
-  | { readonly kind: 'jsx-tag'; readonly name: string; readonly offset: number }
+  | {
+      readonly kind: 'jsx-tag';
+      readonly name: string;
+      readonly offset: number;
+      readonly nameEnd: number;
+    }
   | { readonly kind: 'jsx-text'; readonly name: string | null; readonly offset: number };
 
 /**
@@ -358,7 +363,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         // Nested element `<name ...`.
         if (after !== undefined && isIdentifierStart(after)) {
           const tag = readJsxTagName(source, i + 1, n);
-          frames.push({ kind: 'jsx-tag', name: tag.name, offset: i });
+          frames.push({ kind: 'jsx-tag', name: tag.name, offset: i, nameEnd: tag.end });
           i = tag.end;
           continue;
         }
@@ -375,6 +380,13 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     // JSX open tag: attribute names, `=` and namespaces are inert; quoted values are inert text and
     // `{...}` returns to real JavaScript.
     if (frame?.kind === 'jsx-tag') {
+      if (ch === '<' && skipTrivia(source, frame.nameEnd, n) === i) {
+        pushBoundary(i);
+        i = readJsxTypeArguments(source, i, n, tokens);
+        pushBoundary(i);
+        continue;
+      }
+
       if (ch === '{') {
         frames.push({ kind: 'jsx-expr', depth: 0, offset: i });
         pushBoundary(i);
@@ -497,7 +509,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
 
       if (after !== undefined && isIdentifierStart(after) && !jsxTagIsGeneric(source, i + 1, n)) {
         const tag = readJsxTagName(source, i + 1, n);
-        frames.push({ kind: 'jsx-tag', name: tag.name, offset: i });
+        frames.push({ kind: 'jsx-tag', name: tag.name, offset: i, nameEnd: tag.end });
         pushBoundary(i);
         i = tag.end;
         continue;
@@ -815,42 +827,39 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
 // `<T extends U>`, `<const T,>`) or a generic function signature (`<T>(x: T) => T`) is not a JSX
 // element. `<T>` alone in expression position remains ambiguous and is treated as JSX.
 function jsxTagIsGeneric(source: string, i: number, n: number): boolean {
-  if (!isIdentifierStart(source[i])) {
-    return false;
-  }
-
-  let k = i;
-
-  while (k < n && isIdentifierPart(source[k])) {
-    k++;
-  }
-
-  const next = source[k];
-
-  if (next === ',' || next === '=') {
-    return true;
-  }
-
-  if (next === '>') {
-    let j = k + 1;
-
-    while (j < n && isWhitespace(source[j])) {
-      j++;
+  try {
+    if (!isIdentifierStart(source[i])) {
+      return false;
     }
 
-    if (source[j] === '(') {
-      return arrowFollowsParameters(source, j, n);
-    }
-  }
+    let k = i;
 
-  if (isWhitespace(next)) {
-    const name = source.slice(i, k);
-
-    while (k < n && isWhitespace(source[k])) {
+    while (k < n && isIdentifierPart(source[k])) {
       k++;
     }
 
-    if (source.slice(k, k + 7) === 'extends' || source.slice(k, k + 10) === 'implements') {
+    const name = source.slice(i, k);
+    k = skipTrivia(source, k, n);
+    const next = source[k];
+
+    if (next === ',' || next === '=') {
+      return true;
+    }
+
+    if (next === '>') {
+      const j = skipTrivia(source, k + 1, n);
+
+      if (source[j] === '(') {
+        return arrowFollowsParameters(source, j, n);
+      }
+    }
+
+    let end = k;
+    while (end < n && isIdentifierPart(source[end])) {
+      end++;
+    }
+
+    if (source.slice(k, end) === 'extends' || source.slice(k, end) === 'implements') {
       return true;
     }
 
@@ -858,16 +867,29 @@ function jsxTagIsGeneric(source: string, i: number, n: number): boolean {
     if (name === 'const' && k < n && isIdentifierStart(source[k])) {
       return jsxTagIsGeneric(source, k, n);
     }
-  }
 
-  return false;
+    return false;
+  } catch (error) {
+    if (error instanceof ModuleSpecifierError) {
+      // This is speculative: an apostrophe or `/*` may be inert JSX children, not broken JS.
+      // Let the normal JSX path scan it; genuinely incomplete markup will still fail there.
+      return false;
+    }
+    throw error;
+  }
 }
 
 function arrowFollowsParameters(source: string, open: number, n: number): boolean {
   let depth = 0;
 
   for (let k = open; k < n; k++) {
+    k = skipTrivia(source, k, n);
     const ch = source[k];
+
+    if (ch === "'" || ch === '"') {
+      k = readString(source, k).next - 1;
+      continue;
+    }
 
     if (ch === '(') {
       depth++;
@@ -875,11 +897,7 @@ function arrowFollowsParameters(source: string, open: number, n: number): boolea
       depth--;
 
       if (depth === 0) {
-        let j = k + 1;
-
-        while (j < n && isWhitespace(source[j])) {
-          j++;
-        }
+        const j = skipTrivia(source, k + 1, n);
 
         return source[j] === '=' && source[j + 1] === '>';
       }
@@ -887,6 +905,62 @@ function arrowFollowsParameters(source: string, open: number, n: number): boolea
   }
 
   return false;
+}
+
+/**
+ * Lex only the boundaries of a component's type arguments. These tokens preserve literal imports
+ * without changing the surrounding JavaScript function/brace state or treating type braces as JSX.
+ */
+function readJsxTypeArguments(source: string, open: number, n: number, tokens: Token[]): number {
+  const closers = ['>'];
+  let i = open + 1;
+
+  while (i < n) {
+    i = skipTrivia(source, i, n);
+    const ch = source[i];
+
+    if (ch === undefined) {
+      break;
+    }
+
+    if (ch === "'" || ch === '"') {
+      const { value, next } = readString(source, i);
+      tokens.push({ kind: 'string', value, offset: i });
+      i = next;
+      continue;
+    }
+
+    if (ch === '`') {
+      throw new ModuleSpecifierError(
+        'Template literal types in JSX type arguments are not supported',
+        'invalid-source',
+        i,
+      );
+    }
+
+    if (isIdentifierStart(ch)) {
+      const start = i++;
+      while (i < n && isIdentifierPart(source[i])) {
+        i++;
+      }
+      tokens.push({ kind: 'identifier', value: source.slice(start, i), offset: start });
+      continue;
+    }
+
+    if (ch === '<' || ch === '(' || ch === '{' || ch === '[') {
+      closers.push(ch === '<' ? '>' : ch === '(' ? ')' : ch === '{' ? '}' : ']');
+    } else if (ch === closers[closers.length - 1] && !(ch === '>' && source[i - 1] === '=')) {
+      closers.pop();
+      if (closers.length === 0) {
+        return i + 1;
+      }
+    }
+
+    tokens.push({ kind: 'punct', value: ch, offset: i });
+    i++;
+  }
+
+  throw new ModuleSpecifierError('Unterminated JSX type arguments', 'invalid-source', open);
 }
 
 /**
