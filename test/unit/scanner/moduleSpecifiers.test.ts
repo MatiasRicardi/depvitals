@@ -898,6 +898,45 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(source)).toEqual(['after']);
     });
 
+    it('uses an async expression arrow inside an ordinary function as the nearest context', () => {
+      const source = `
+        function outer() {
+          const nested = async () => await /require('fake')/;
+          require('real');
+        }
+      `;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('uses an ordinary expression arrow inside an async function as the nearest context', () => {
+      const source = `
+        async function outer() {
+          const nested = () => await / require('real') / 2;
+        }
+      `;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('keeps an outer async arrow active across a nested arrow parameter list', () => {
+      const source = `
+        const nested = async () => (() => 1, await /require('fake')/);
+        require('after');
+      `;
+
+      expect(specifiers(source)).toEqual(['after']);
+    });
+
+    it('ends every nested expression-arrow context at their shared boundary', () => {
+      const source = `
+        const nested = async () => value => await / require('inside') / 2;
+        await / require('after') / 2;
+      `;
+
+      expect(specifiers(source)).toEqual(['inside', 'after']);
+    });
+
     it('ends an async arrow expression at a call argument boundary', () => {
       const source = `call(async () => await /require('fake')/, () => require('real'));`;
 

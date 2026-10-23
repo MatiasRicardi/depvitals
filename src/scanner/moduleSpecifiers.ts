@@ -100,8 +100,8 @@ type Token =
 
 type PrevKind = 'start' | 'identifier' | 'number' | 'string' | 'punct' | 'regex' | 'template';
 
-// Async/generator context of a function body. `await`/`yield` are treated as keywords only while
-// an enclosing body carries the matching flag. `isExpression` marks a function expression used as a
+// Async/generator context of a function. `await`/`yield` follow the nearest context, whether its body
+// is a brace block or an arrow expression. `isExpression` marks a function expression used as a
 // value (its closing `}` ends an expression, so a following `/` is division) versus a declaration
 // in statement position (its closing `}` starts a block, so a following `/` may be a regex).
 type FuncContext = {
@@ -252,11 +252,12 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       continue;
     }
 
-    const expressionFunctionContext =
+    let expressionFunctionContext =
       expressionFunctionContexts[expressionFunctionContexts.length - 1];
 
-    if (
+    while (
       expressionFunctionContext !== undefined &&
+      !closingParenBelongsToArrowParameters(source, i, n) &&
       expressionFunctionBodyEnded(
         ch,
         parenDepth,
@@ -267,6 +268,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       )
     ) {
       expressionFunctionContexts.pop();
+      expressionFunctionContext = expressionFunctionContexts[expressionFunctionContexts.length - 1];
     }
 
     // Template literal text: skip everything until `${`, a nested `` ` ``, or the closing `` ` ``.
@@ -561,20 +563,20 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       // `await`/`yield` are keywords only inside an async / generator function body. A member name
       // (`obj.await`) is always a property access, never a keyword, so a following `/` divides.
       if (!isMemberName) {
-        const functionContext = functionContextStack[functionContextStack.length - 1];
         const expressionContext = expressionFunctionContexts[expressionFunctionContexts.length - 1];
+        const bodyContext = functionContextStack[functionContextStack.length - 1];
+        const functionContext =
+          expressionContext !== undefined &&
+          functionContextStack.length <= expressionContext.functionDepth
+            ? expressionContext
+            : bodyContext;
+
         if (
           value === 'await' &&
-          (functionContext?.async === true ||
-            (functionContext === undefined && expressionContext?.async === true) ||
-            (functionContext === undefined && expressionContext === undefined && module))
+          (functionContext?.async === true || (functionContext === undefined && module))
         ) {
           isExpressionKeyword = true;
-        } else if (
-          value === 'yield' &&
-          (functionContext?.generator === true ||
-            (functionContext === undefined && expressionContext?.generator === true))
-        ) {
+        } else if (value === 'yield' && functionContext?.generator === true) {
           isExpressionKeyword = true;
         }
       }
@@ -1008,6 +1010,21 @@ function expressionFunctionBodyEnded(
   }
 
   return false;
+}
+
+/** A `)` followed by `=>` belongs to a nested arrow signature, not the outer arrow's boundary. */
+function closingParenBelongsToArrowParameters(source: string, close: number, n: number): boolean {
+  if (source[close] !== ')') {
+    return false;
+  }
+
+  let next = close + 1;
+
+  while (next < n && isWhitespace(source[next])) {
+    next++;
+  }
+
+  return source[next] === '=' && source[next + 1] === '>';
 }
 
 /** Whether a token is the given identifier. */

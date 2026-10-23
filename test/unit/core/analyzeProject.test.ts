@@ -151,6 +151,30 @@ describe('analyzeProject', () => {
       expect(result.unusedDependencies).toEqual(['fake']);
       expect(result.missingDependencies).toEqual([]);
     });
+
+    it('uses the innermost expression-arrow context during project analysis', async () => {
+      const result = await analyzeTemporaryProject(
+        {
+          name: 'nested-arrow-expressions',
+          version: '0.0.0',
+          dependencies: { fake: '1.0.0' },
+        },
+        {
+          'index.cjs': `
+            function ordinaryOuter() {
+              const asyncInner = async () => await /require('fake')/;
+            }
+
+            async function asyncOuter() {
+              const ordinaryInner = () => await / require('real') / 2;
+            }
+          `,
+        },
+      );
+
+      expect(result.unusedDependencies).toEqual(['fake']);
+      expect(result.missingDependencies).toEqual(['real']);
+    });
   });
 
   describe('basic pipeline', () => {
