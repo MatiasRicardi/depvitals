@@ -48,8 +48,9 @@
  */
 
 import { readFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 
-import { loadProjectManifest } from '../scanner/projectManifest.js';
+import { loadPackageTypeHint, loadProjectManifest } from '../scanner/projectManifest.js';
 import { discoverSourceFiles } from '../scanner/sourceFiles.js';
 import { extractModuleSpecifiers } from '../scanner/moduleSpecifiers.js';
 import { classifyPackageSpecifier } from '../scanner/packageSpecifier.js';
@@ -155,9 +156,13 @@ export async function analyzeProject(
 
   // External package roots referenced by source files, collapsed to their package root.
   const sourceUsedNames = new Set<string>();
+  const packageTypeByDirectory = new Map<string, string | undefined>([
+    [manifest.root, manifest.packageType],
+  ]);
 
   for (const file of sourceFiles) {
-    const specifiers = await readAndExtract(file);
+    const packageType = await packageTypeForFile(file, manifest.root, packageTypeByDirectory);
+    const specifiers = await readAndExtract(file, packageType);
 
     for (const specifier of specifiers) {
       const classified = classifyPackageSpecifier(specifier);
@@ -200,6 +205,39 @@ export async function analyzeProject(
 }
 
 /**
+ * Resolve the nearest package scope for one discovered source file.
+ *
+ * An existing nested `package.json` starts a new scope even when it omits `type`; directories
+ * without one inherit their parent. Results are cached per directory for the rest of the scan.
+ */
+async function packageTypeForFile(
+  file: string,
+  projectRoot: string,
+  cache: Map<string, string | undefined>,
+): Promise<string | undefined> {
+  return packageTypeForDirectory(dirname(file), projectRoot, cache);
+}
+
+async function packageTypeForDirectory(
+  directory: string,
+  projectRoot: string,
+  cache: Map<string, string | undefined>,
+): Promise<string | undefined> {
+  if (cache.has(directory)) {
+    return cache.get(directory);
+  }
+
+  const hint = await loadPackageTypeHint(directory);
+  const packageType =
+    hint === undefined
+      ? await packageTypeForDirectory(dirname(directory), projectRoot, cache)
+      : hint.packageType;
+
+  cache.set(directory, packageType);
+  return packageType;
+}
+
+/**
  * Read a discovered source file and extract its statically known specifiers.
  *
  * A filesystem read failure becomes {@link AnalysisError} with code `unreadable-source`; a lexical
@@ -207,7 +245,10 @@ export async function analyzeProject(
  * preserve the original error as `cause` and include the affected path, so a broken file never
  * yields a partial result or a misleading "clean" analysis.
  */
-async function readAndExtract(file: string): Promise<readonly string[]> {
+async function readAndExtract(
+  file: string,
+  packageType: string | undefined,
+): Promise<readonly string[]> {
   let source: string;
 
   try {
@@ -220,8 +261,32 @@ async function readAndExtract(file: string): Promise<readonly string[]> {
     );
   }
 
+  /**
+   * Determine the narrow Node source mode needed for top-level `await`.
+   *
+   * Explicit module extensions win over the package type. CommonJS extensions remain scripts even
+   * under a module package, while `.js` and `.ts` follow the nearest package scope's exact
+   * `type: "module"` declaration.
+   */
+  function isModuleSource(file: string, packageType: string | undefined): boolean {
+    const lower = file.toLowerCase();
+
+    if (lower.endsWith('.mjs') || lower.endsWith('.mts')) {
+      return true;
+    }
+
+    if (lower.endsWith('.cjs') || lower.endsWith('.cts')) {
+      return false;
+    }
+
+    return (lower.endsWith('.js') || lower.endsWith('.ts')) && packageType === 'module';
+  }
+
   try {
-    const occurrences = extractModuleSpecifiers(source, { jsx: usesJsxSyntax(file, source) });
+    const occurrences = extractModuleSpecifiers(source, {
+      jsx: usesJsxSyntax(file, source),
+      module: isModuleSource(file, packageType),
+    });
     return occurrences.map((occurrence) => occurrence.specifier);
   } catch (error) {
     if (error instanceof Error && error.name === 'ModuleSpecifierError') {

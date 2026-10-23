@@ -845,11 +845,30 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(`while (c) { require('real'); }`)).toEqual(['real']);
     });
 
-    it('keeps the enclosing async context inside an ordinary nested arrow', () => {
-      // An arrow has no `await` binding of its own, so the enclosing async function still decides.
+    it('suspends the enclosing async context inside an ordinary nested arrow', () => {
+      // An ordinary arrow is its own function boundary, so await is an identifier and the slashes
+      // are division in its body.
       const source = `async function f(){ const g = () => { await /require('fake')/; }; }`;
 
-      expect(specifiers(source)).toEqual([]);
+      expect(specifiers(source)).toEqual(['fake']);
+    });
+
+    it('finds a require divided by await in an ordinary function nested in async code', () => {
+      const source = `async function outer(){ function inner(await){ return await / require('real') / 2; } }`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('finds a require divided by yield in an ordinary function nested in generator code', () => {
+      const source = `function* outer(){ function inner(yield){ return yield / require('real') / 2; } }`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('treats await as an identifier in an ordinary method nested in async code', () => {
+      const source = `async function outer(){ const object = { inner() { return await /require('fake')/; } }; }`;
+
+      expect(specifiers(source)).toEqual(['fake']);
     });
 
     it('does not leak an inner async arrow context to the enclosing ordinary function', () => {
@@ -864,6 +883,168 @@ describe('extractModuleSpecifiers', () => {
       const source = `async\nfunction f() {\n  return await / require('real') / 2;\n}`;
 
       expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('treats an arrow after a line-terminated `async` as an ordinary arrow', () => {
+      // A line terminator between `async` and the arrow parameters means the arrow is not async,
+      // so `await` is an ordinary identifier and the slashes are divisions, not a regex decoy.
+      const source = `async\n(x) => await / require('real') / 2;`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+  });
+
+  describe('async arrow expression bodies and module await', () => {
+    it('does not scan a regex decoy in an async arrow expression body', () => {
+      const source = `
+        const first = async () => await /require('fake')/;
+        const second = async (value) => await /require('fake')/;
+        const third = async () => await /require('fake')/;
+        require('after');
+      `;
+
+      expect(specifiers(source)).toEqual(['after']);
+    });
+
+    it('uses an async expression arrow inside an ordinary function as the nearest context', () => {
+      const source = `
+        function outer() {
+          const nested = async () => await /require('fake')/;
+          require('real');
+        }
+      `;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('uses an ordinary expression arrow inside an async function as the nearest context', () => {
+      const source = `
+        async function outer() {
+          const nested = () => await / require('real') / 2;
+        }
+      `;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('keeps an outer async arrow active across a nested arrow parameter list', () => {
+      const source = `
+        const nested = async () => (() => 1, await /require('fake')/);
+        require('after');
+      `;
+
+      expect(specifiers(source)).toEqual(['after']);
+    });
+
+    it('ends every nested expression-arrow context at their shared boundary', () => {
+      const source = `
+        const nested = async () => value => await / require('inside') / 2;
+        await / require('after') / 2;
+      `;
+
+      expect(specifiers(source)).toEqual(['inside', 'after']);
+    });
+
+    it('ends an async arrow expression at a call argument boundary', () => {
+      const source = `call(async () => await /require('fake')/, () => require('real'));`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('ends expression arrows at enclosing call, array and object boundaries', () => {
+      const call = `foo(async () => 1); async function f(){ await /require('fake')/; }`;
+      const array = `[value => value]; await /require('fake')/;`;
+      const object = `({ f: value => value }); await /require('fake')/;`;
+
+      expect(specifiers(call)).toEqual([]);
+      expect(
+        extractModuleSpecifiers(array, { module: true }).map(({ specifier }) => specifier),
+      ).toEqual([]);
+      expect(
+        extractModuleSpecifiers(object, { module: true }).map(({ specifier }) => specifier),
+      ).toEqual([]);
+    });
+
+    it('keeps an async expression arrow active across nested calls and indexes', () => {
+      const source = `
+        const first = async () => foo(value) + await /require('fake-call')/;
+        const second = async () => values[index] && await /require('fake-index')/;
+      `;
+
+      expect(specifiers(source)).toEqual([]);
+    });
+
+    it('ends an expression arrow at ASI and enclosing-brace boundaries', () => {
+      const asi = `
+        const f = async () => 1
+        await / require('after-asi') / 2;
+      `;
+      const brace = `
+        if (condition) { const f = async () => 1 }
+        await / require('after-brace') / 2;
+      `;
+
+      expect(specifiers(asi)).toEqual(['after-asi']);
+      expect(specifiers(brace)).toEqual(['after-brace']);
+    });
+
+    it('recognizes a commented block arrow without leaking an expression context', () => {
+      const source = `
+        const f = async () => /* block body follows */ {}
+        await / require('real') / 2;
+      `;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('treats top-level await as a keyword only in module mode', () => {
+      const source = `await /require('fake')/; require('after');`;
+
+      expect(specifiers(source)).toEqual(['fake', 'after']);
+      expect(
+        extractModuleSpecifiers(source, { module: true }).map(({ specifier }) => specifier),
+      ).toEqual(['after']);
+    });
+
+    it('keeps CommonJS script behavior as the default', () => {
+      expect(specifiers(`await / require('real') / 2;`)).toEqual(['real']);
+    });
+  });
+
+  describe('ordinary method function boundaries', () => {
+    it('suspends outer async grammar in computed-name and keyword-named methods', () => {
+      const source = `
+        async function outer() {
+          const object = {
+            [name](await) { return await / require('computed') / 2; },
+            if(await) { return await / require('keyword') / 2; }
+          };
+
+          class Example {
+            [name](await) { return await / require('computed-class') / 2; }
+            if(await) { return await / require('keyword-class') / 2; }
+          }
+        }
+      `;
+
+      expect(specifiers(source)).toEqual([
+        'computed',
+        'keyword',
+        'computed-class',
+        'keyword-class',
+      ]);
+    });
+
+    it('does not treat a for-await loop body as an ordinary method', () => {
+      const source = `
+        async function outer(values) {
+          for await (const value of values) {
+            await /require('fake')/;
+          }
+        }
+      `;
+
+      expect(specifiers(source)).toEqual([]);
     });
   });
 

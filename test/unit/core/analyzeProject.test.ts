@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import type * as nodeFsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it, vi } from 'vitest';
@@ -39,6 +39,27 @@ async function captureAnalysisError(run: () => Promise<AnalysisResult>): Promise
   throw new Error('Expected analyzeProject to reject, but it resolved');
 }
 
+async function analyzeTemporaryProject(
+  manifest: Record<string, unknown>,
+  files: Readonly<Record<string, string>>,
+): Promise<AnalysisResult> {
+  const sandbox = mkdtempSync(join(tmpdir(), 'depvitals-function-context-'));
+
+  try {
+    writeFileSync(join(sandbox, 'package.json'), JSON.stringify(manifest));
+
+    for (const [name, source] of Object.entries(files)) {
+      const path = join(sandbox, name);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, source);
+    }
+
+    return await analyzeProject(sandbox);
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+}
+
 // A narrowly targeted mock of node:fs/promises.readFile: it preserves the real implementation for
 // every path and only simulates an EACCES failure for a single, explicitly selected source file.
 // This is deterministic across platforms, unlike a chmod-based test. hoisted.target is set inside
@@ -65,6 +86,133 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 });
 
 describe('analyzeProject', () => {
+  describe('function contexts and module await', () => {
+    it('finds a require divided by await in an ordinary function nested in async code', async () => {
+      const result = await analyzeTemporaryProject(
+        { name: 'nested-async', version: '0.0.0' },
+        {
+          'index.cjs': `
+            async function outer() {
+              function inner(await) {
+                return await / require('real') / 2;
+              }
+            }
+          `,
+        },
+      );
+
+      expect(result.projectRoot).toBeTruthy();
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.unusedDevDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual(['real']);
+    });
+
+    it('treats top-level await as a module keyword for mjs and module-type js', async () => {
+      const moduleSource = `await /require('fake')/; require('real');`;
+      const mjs = await analyzeTemporaryProject(
+        { name: 'module-mjs', version: '0.0.0' },
+        { 'index.mjs': moduleSource },
+      );
+      const typedJs = await analyzeTemporaryProject(
+        { name: 'module-js', version: '0.0.0', type: 'module' },
+        { 'index.js': moduleSource },
+      );
+
+      expect(mjs.missingDependencies).toEqual(['real']);
+      expect(typedJs.missingDependencies).toEqual(['real']);
+    });
+
+    it('applies module package type to ts while preserving mts and cts overrides', async () => {
+      const result = await analyzeTemporaryProject(
+        { name: 'typescript-modes', version: '0.0.0', type: 'module' },
+        {
+          'module.ts': `await /require('fake-ts')/; require('real-ts');`,
+          'explicit.mts': `await /require('fake-mts')/; require('real-mts');`,
+          'commonjs.cts': `await / require('real-cts') / 2;`,
+        },
+      );
+
+      expect(result.missingDependencies).toEqual(['real-cts', 'real-mts', 'real-ts']);
+    });
+
+    it('uses the nearest nested package scope for js source mode', async () => {
+      const result = await analyzeTemporaryProject(
+        { name: 'root-module', version: '0.0.0', type: 'module' },
+        {
+          'root.js': `await /require('fake-root')/; require('real-root');`,
+          'nested-commonjs/package.json': JSON.stringify({
+            name: 'nested-commonjs',
+            type: 'commonjs',
+          }),
+          'nested-commonjs/index.js': `await / require('real-commonjs') / 2;`,
+          'nested-module/package.json': JSON.stringify({
+            name: 'nested-module',
+            type: 'module',
+          }),
+          'nested-module/index.js': `await /require('fake-nested')/; require('real-nested');`,
+        },
+      );
+
+      expect(result.missingDependencies).toEqual(['real-commonjs', 'real-nested', 'real-root']);
+    });
+
+    it('keeps cjs as script when the package type is module', async () => {
+      const result = await analyzeTemporaryProject(
+        { name: 'module-cjs', version: '0.0.0', type: 'module' },
+        { 'index.cjs': `await / require('real') / 2;` },
+      );
+
+      expect(result.missingDependencies).toEqual(['real']);
+    });
+
+    it('falls back to script behavior for an unknown package type value', async () => {
+      const result = await analyzeTemporaryProject(
+        { name: 'unknown-type', version: '0.0.0', type: { unexpected: true } },
+        { 'index.js': `await / require('real') / 2;` },
+      );
+
+      expect(result.missingDependencies).toEqual(['real']);
+    });
+
+    it('does not credit a dependency inside an async arrow expression regex', async () => {
+      const result = await analyzeTemporaryProject(
+        {
+          name: 'arrow-expression',
+          version: '0.0.0',
+          dependencies: { fake: '1.0.0' },
+        },
+        { 'index.js': `const f = async () => await /require('fake')/;` },
+      );
+
+      expect(result.unusedDependencies).toEqual(['fake']);
+      expect(result.missingDependencies).toEqual([]);
+    });
+
+    it('uses the innermost expression-arrow context during project analysis', async () => {
+      const result = await analyzeTemporaryProject(
+        {
+          name: 'nested-arrow-expressions',
+          version: '0.0.0',
+          dependencies: { fake: '1.0.0' },
+        },
+        {
+          'index.cjs': `
+            function ordinaryOuter() {
+              const asyncInner = async () => await /require('fake')/;
+            }
+
+            async function asyncOuter() {
+              const ordinaryInner = () => await / require('real') / 2;
+            }
+          `,
+        },
+      );
+
+      expect(result.unusedDependencies).toEqual(['fake']);
+      expect(result.missingDependencies).toEqual(['real']);
+    });
+  });
+
   describe('basic pipeline', () => {
     it('classifies used, unused and missing dependencies', async () => {
       const result = await analyzeProject(fixture('basic'));
