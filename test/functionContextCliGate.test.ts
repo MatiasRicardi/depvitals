@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import { analyzeProject } from '../src/core/analyzeProject.js';
@@ -225,6 +226,180 @@ describe('Steps 68.6 and 68.7 function contexts through analyzer and compiled CL
       });
     } finally {
       rmSync(project, { recursive: true, force: true });
+    }
+  });
+
+  describe('Step 68.8 frame and typed-return boundaries through analyzer and CLI', () => {
+    const cases = [
+      {
+        name: 'A1 template text does not terminate an async arrow',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'fake', used: false }],
+        source: `const f = async () => \`,\` + (await /require('fake')/);`,
+      },
+      {
+        name: 'A2 ordinary arrow finds a require after template text',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `async function outer() { const f = () => \`,\` + await / require("real") / 2; }`,
+      },
+      {
+        name: 'A3 closing an interpolation does not terminate an async arrow',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'fake', used: false }],
+        source: "const f = async () => `${0}` + (await /require('fake')/);",
+      },
+      {
+        name: 'A4 JSX containers do not terminate an async arrow',
+        fileName: 'index.tsx',
+        dependencies: [{ name: 'fake', used: false }],
+        source: `const f = async () => (
+          <p>
+            {0}
+            {await /require('fake')/}
+          </p>
+        );`,
+      },
+      {
+        name: 'B1 typed async function does not leak into its body',
+        fileName: 'index.ts',
+        dependencies: [{ name: 'fake', used: false }],
+        source: `async function check(): Promise<{ ok: boolean }> { const ok = await /require('fake')/; return { ok }; }`,
+      },
+      {
+        name: 'B3 typed async arrow does not leak into its body',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const check = async (): Promise<{ ok: boolean }> => { await /require('fake')/; return { ok: true }; }; require("real");`,
+      },
+      {
+        name: 'B3 typed async method does not leak into its body',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `class C { async check(): Promise<{ ok: boolean }> { await /require('fake')/; return { ok: true }; } } require("real");`,
+      },
+      {
+        name: 'B4 typed function expression preserves division',
+        fileName: 'index.ts',
+        dependencies: [{ name: 'real', used: true }],
+        source: `const n = async function (): Promise<{ ok: boolean }> { return { ok: true }; } / require("real") / 2;`,
+      },
+      {
+        name: 'typed callback return keeps the real body boundary',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `async function check(): () => void { await /require('fake')/; } require("real");`,
+      },
+    ] as const;
+
+    it.each(cases)('$name uses valid source syntax', ({ fileName, source }) => {
+      if (fileName.endsWith('.cjs')) {
+        const result = spawnSync(process.execPath, ['--check', '--input-type=commonjs'], {
+          input: source,
+          encoding: 'utf8',
+          timeout: 10_000,
+        });
+
+        expect(result.error).toBeUndefined();
+        expect(result.status, result.stderr).toBe(0);
+        return;
+      }
+
+      const result = ts.transpileModule(source, {
+        fileName,
+        compilerOptions: { jsx: ts.JsxEmit.Preserve },
+        reportDiagnostics: true,
+      });
+
+      expect(
+        result.diagnostics?.map((diagnostic) =>
+          ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
+        ),
+      ).toEqual([]);
+    });
+
+    for (const declared of [false, true]) {
+      it.each(cases)(
+        '$name through analyzer and compiled CLI, declared=$declared',
+        async (scenario) => {
+          const project = mkdtempSync(join(tmpdir(), 'depvitals-step68-8-'));
+          const manifest = JSON.stringify({
+            name: 'frame-and-return-boundaries',
+            version: '0.0.0',
+            ...(declared
+              ? {
+                  dependencies: Object.fromEntries(
+                    scenario.dependencies.map(({ name }) => [name, '*']),
+                  ),
+                }
+              : {}),
+          });
+          const sourcePath = join(project, scenario.fileName);
+
+          try {
+            writeFileSync(join(project, 'package.json'), manifest);
+            writeFileSync(sourcePath, scenario.source);
+
+            const missing = scenario.dependencies
+              .filter(({ used }) => used && !declared)
+              .map(({ name }) => name);
+            const unused = scenario.dependencies
+              .filter(({ used }) => !used && declared)
+              .map(({ name }) => name);
+            const expectedAnalysis = {
+              projectRoot: project,
+              unusedDependencies: unused,
+              unusedDevDependencies: [],
+              missingDependencies: missing,
+            };
+            const sections = ['DepVitals', ''];
+
+            if (missing.length > 0) {
+              sections.push(
+                `Missing dependencies (${String(missing.length)})`,
+                ...missing.map((name) => `  ${name}`),
+              );
+            }
+
+            if (unused.length > 0) {
+              if (missing.length > 0) {
+                sections.push('');
+              }
+              sections.push(
+                `Unused dependencies (${String(unused.length)})`,
+                ...unused.map((name) => `  ${name}`),
+              );
+            }
+
+            const expectedCli = {
+              status: missing.length + unused.length > 0 ? 1 : 0,
+              stdout:
+                missing.length + unused.length > 0
+                  ? `${sections.join('\n')}\n`
+                  : 'DepVitals\n\nNo dependency issues found.\n',
+              stderr: '',
+            };
+
+            expect(await analyzeProject(project)).toEqual(expectedAnalysis);
+            expect(await analyzeProject(project)).toEqual(expectedAnalysis);
+            expect(runBuilt(project)).toEqual(expectedCli);
+            expect(readdirSync(project).sort()).toEqual([scenario.fileName, 'package.json'].sort());
+            expect(readFileSync(join(project, 'package.json'), 'utf8')).toBe(manifest);
+            expect(readFileSync(sourcePath, 'utf8')).toBe(scenario.source);
+          } finally {
+            rmSync(project, { recursive: true, force: true });
+          }
+        },
+      );
     }
   });
 

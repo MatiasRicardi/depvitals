@@ -384,6 +384,123 @@ describe('extractModuleSpecifiers', () => {
     });
   });
 
+  describe('Step 68.8: arrow frames and typed return boundaries', () => {
+    it.each([
+      ['template punctuation', `const f = async () => \`,\` + (await /require('fake')/);`, []],
+      [
+        'template interpolation closure',
+        "const f = async () => `${0}` + (await /require('fake')/);",
+        [],
+      ],
+      [
+        'template text preserves an ordinary arrow context',
+        'async function outer() { const f = () => `,` + await / require("real") / 2; }',
+        ['real'],
+      ],
+    ] as const)('keeps expression-arrow context across %s', (_name, source, expected) => {
+      expect(specifiers(source)).toEqual(expected);
+    });
+
+    it.each([
+      ['JSX text', `const f = async () => <p>,</p> + (await /require('fake')/);`],
+      [
+        'sibling JSX expression containers',
+        `const f = async () => (<p>{0}{await /require('fake')/}</p>);`,
+      ],
+    ])('keeps expression-arrow context across %s', (_name, source) => {
+      expect(jsxSpecifiers(source)).toEqual([]);
+    });
+
+    it('recognizes a real require in an ordinary arrow inside a template', () => {
+      expect(
+        specifiers(
+          'async function outer() { const t = `${(() => await / require("first") / 2)()},${await /require(\'fake\')/}`; require("after"); }',
+        ),
+      ).toEqual(['first', 'after']);
+    });
+
+    it('does not let an ordinary arrow in a JSX container inherit async context', () => {
+      expect(
+        jsxSpecifiers(
+          `async function outer() { const view = (<p>{() => 0}{await /require('fake')/}</p>); require('real'); }`,
+        ),
+      ).toEqual(['real']);
+    });
+
+    it('does not scan a regex decoy after a typed async function return annotation', () => {
+      const source = `async function check(): Promise<{ ok: boolean }> { const ok = await /don't/.test("don't"); return { ok }; }`;
+
+      expect(() => extractModuleSpecifiers(source)).not.toThrow();
+      expect(specifiers(source)).toEqual([]);
+    });
+
+    it.each([
+      [
+        'typed async function declaration',
+        `async function check(): Promise<{ ok: boolean }> { await /require('fake')/; return { ok: true }; } require("real");`,
+      ],
+      [
+        'typed async arrow',
+        `const check = async (): Promise<{ ok: boolean }> => { await /require('fake')/; return { ok: true }; }; require("real");`,
+      ],
+      [
+        'typed async method',
+        `class C { async check(): Promise<{ ok: boolean }> { await /require('fake')/; return { ok: true }; } } require("real");`,
+      ],
+    ])('does not inherit async through a %s return type', (_name, source) => {
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('keeps division after a typed async function expression', () => {
+      expect(
+        specifiers(
+          `const n = async function (): Promise<{ ok: boolean }> { return { ok: true }; } / require("real") / 2;`,
+        ),
+      ).toEqual(['real']);
+    });
+
+    it('preserves literal type imports inside a return annotation', () => {
+      expect(
+        specifiers(
+          `async function load(): Promise<{ value: import("types-pkg").Value }> { await /require('fake')/; return null as never; } require("real");`,
+        ),
+      ).toEqual(['types-pkg', 'real']);
+    });
+
+    it.each([
+      [
+        'generator return type',
+        `function* values(): Generator<number> { yield /require('fake')/; } require("real");`,
+      ],
+      [
+        'async generator return type',
+        `async function* values(): AsyncGenerator<number> { await /require('fake')/; yield 1; } require("real");`,
+      ],
+      [
+        'nested ordinary function with a typed return',
+        `async function outer() { function inner(await: number): { ok: boolean } { const n = await / require("real") / 2; return { ok: !!n }; } }`,
+      ],
+      [
+        'typed async arrow expression body',
+        `const check = async (): Promise<boolean> => await /require('fake')/; require("real");`,
+      ],
+      [
+        'callback function return type',
+        `async function check(): () => void { await /require('fake')/; } require("real");`,
+      ],
+      [
+        'typed class-field arrow',
+        `class C { check = async (): Promise<{ ok: boolean }> => { await /require('fake')/; return { ok: true }; }; } require("real");`,
+      ],
+      [
+        'object method with nested callback return type and semicolons',
+        `const service = { async check(): Promise<{ readonly result?: { ok: boolean }; callback: (value: string) => { done: boolean } }> { await /require('fake')/; return null as never; } }; require("real");`,
+      ],
+    ])('keeps typed %s boundaries', (_name, source) => {
+      expect(specifiers(source)).toEqual(['real']);
+    });
+  });
+
   describe('false positives must not be reported', () => {
     it('ignores specifiers inside line and block comments', () => {
       const source = `

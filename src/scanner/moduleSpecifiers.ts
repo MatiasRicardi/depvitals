@@ -127,7 +127,22 @@ type ExpressionFuncContext = FuncContext & {
   readonly parenDepth: number;
   readonly bracketDepth: number;
   readonly braceDepth: number;
+  readonly frameDepth: number;
   readonly functionDepth: number;
+};
+
+// Return types use separate delimiter depths so their braces/arrows never become runtime bodies.
+type TypedReturnAnnotation = {
+  readonly context: FuncContext;
+  readonly isFunctionKeyword: boolean;
+  readonly startsWithParen: boolean;
+  parenDepth: number;
+  bracketDepth: number;
+  braceDepth: number;
+  angleDepth: number;
+  sawTypeToken: boolean;
+  functionTypeArrowSeen: boolean;
+  afterFunctionTypeArrow: boolean;
 };
 
 // Lexical frames opened by a template interpolation or by the JSX overlay. The tokenizer keeps them
@@ -224,6 +239,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
   const conditionalContexts: LexicalDepth[] = [];
   let colonIsExpression = false;
   const expressionFunctionContexts: ExpressionFuncContext[] = [];
+  let typedReturnAnnotation: TypedReturnAnnotation | undefined;
   let bracketDepth = 0;
   // Whether the most recent `}` closed an object literal. It is only consulted while that `}` is
   // the previous token, exactly like `prevPunct`.
@@ -285,6 +301,8 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
 
   while (i < n) {
     const ch = source[i];
+    let typedArrowContext: FuncContext | undefined;
+    let startedTypedReturnAnnotation = false;
 
     if (ch === undefined) {
       i++;
@@ -309,12 +327,17 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
 
     while (
       expressionFunctionContext !== undefined &&
+      typedReturnAnnotation === undefined &&
+      !inText &&
+      frames[frames.length - 1]?.kind !== 'jsx-text' &&
+      frames[frames.length - 1]?.kind !== 'jsx-tag' &&
       !closingParenBelongsToArrowParameters(source, i, n) &&
       expressionFunctionBodyEnded(
         ch,
         parenDepth,
         bracketDepth,
         braceContexts.length,
+        frames.length,
         functionContextStack.length,
         expressionFunctionContext,
       )
@@ -489,11 +512,17 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       continue;
     }
 
-    if (lineTerminatorSinceLastToken) {
+    if (typedReturnAnnotation?.afterFunctionTypeArrow === true && ch !== '{') {
+      typedReturnAnnotation.afterFunctionTypeArrow = false;
+    }
+
+    if (lineTerminatorSinceLastToken && typedReturnAnnotation === undefined) {
       let context = expressionFunctionContexts[expressionFunctionContexts.length - 1];
 
       while (
         context !== undefined &&
+        frames[frames.length - 1]?.kind !== 'jsx-text' &&
+        frames[frames.length - 1]?.kind !== 'jsx-tag' &&
         lineTerminatorEndsExpressionFunctionBody(
           ch,
           prevKind,
@@ -501,6 +530,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
           parenDepth,
           bracketDepth,
           braceContexts.length,
+          frames.length,
           functionContextStack.length,
           context,
         )
@@ -528,6 +558,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     // a TypeScript type-argument list (`<T,>`, `<T extends U>`) is excluded explicitly.
     if (
       jsx &&
+      typedReturnAnnotation === undefined &&
       ch === '<' &&
       i + 1 < n &&
       isRegexStart(
@@ -558,7 +589,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
 
     // A `}` in code mode closes the innermost open `${...}` or JSX `{...}` expression only when that
     // expression has no open braces of its own; otherwise it is an ordinary brace inside it.
-    if (ch === '}') {
+    if (ch === '}' && typedReturnAnnotation === undefined) {
       if (frame?.kind === 'template-expr' || frame?.kind === 'jsx-expr') {
         if (frame.depth === 0) {
           frames.pop();
@@ -622,6 +653,9 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     if (ch === "'" || ch === '"') {
       const { value, next } = readString(source, i);
       tokens.push({ kind: 'string', value, offset: i });
+      if (typedReturnAnnotation !== undefined) {
+        typedReturnAnnotation.sawTypeToken = true;
+      }
       prevKind = 'string';
       afterControlHead = false;
       pendingControlKeyword = undefined;
@@ -644,6 +678,9 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       }
 
       const value = source.slice(start, i);
+      if (typedReturnAnnotation !== undefined) {
+        typedReturnAnnotation.sawTypeToken = true;
+      }
       const previousIdentifier = prevIdentifier;
       if (value === 'async') {
         asyncFunctionIsExpression = functionIsExpressionPosition(
@@ -697,7 +734,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       // an expression (`const f = function(){}`) or a declaration (`function f(){}`), and whether it
       // is async (`async function`, i.e. preceded by `async`) or a generator (`function*`, resolved
       // when a following `*` is seen). The context is consumed at the body `{`.
-      if (value === 'function' && !isMemberName) {
+      if (value === 'function' && !isMemberName && typedReturnAnnotation === undefined) {
         // `async function` is only async without a line terminator between the two words: a line
         // break ends the `async` statement, so the declaration that follows is an ordinary one.
         const isAsync =
@@ -746,10 +783,114 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       }
 
       tokens.push({ kind: 'number', offset: start });
+      if (typedReturnAnnotation !== undefined) {
+        typedReturnAnnotation.sawTypeToken = true;
+      }
       prevKind = 'number';
       afterControlHead = false;
       pendingControlKeyword = undefined;
       continue;
+    }
+
+    let inTypedReturnType = typedReturnAnnotation !== undefined;
+
+    if (ch === ':' && typedReturnAnnotation === undefined) {
+      const candidate = typedReturnSignatureContext(
+        source,
+        tokens,
+        pendingFunctionContexts[pendingFunctionContexts.length - 1],
+        atLexicalDepth,
+        insideObjectLiteral() || classBodyBraces[classBodyBraces.length - 1] === true,
+      );
+
+      if (candidate !== undefined) {
+        const startsWithParen =
+          skipTrivia(source, i + 1, n) < n && source[skipTrivia(source, i + 1, n)] === '(';
+        typedReturnAnnotation = {
+          ...candidate,
+          startsWithParen,
+          parenDepth: 0,
+          bracketDepth: 0,
+          braceDepth: 0,
+          angleDepth: 0,
+          sawTypeToken: false,
+          functionTypeArrowSeen: false,
+          afterFunctionTypeArrow: false,
+        };
+        inTypedReturnType = true;
+        startedTypedReturnAnnotation = true;
+      }
+    }
+
+    if (typedReturnAnnotation !== undefined && !startedTypedReturnAnnotation) {
+      const annotation = typedReturnAnnotation;
+      const atTypeRoot =
+        annotation.parenDepth === 0 &&
+        annotation.bracketDepth === 0 &&
+        annotation.braceDepth === 0 &&
+        annotation.angleDepth === 0;
+      const isTypeFunctionArrow = ch === '>' && prevPunct === '=';
+
+      if (
+        ch === '{' &&
+        atTypeRoot &&
+        annotation.sawTypeToken &&
+        !annotation.afterFunctionTypeArrow
+      ) {
+        typedReturnAnnotation = undefined;
+        inTypedReturnType = false;
+        lineTerminatorSinceLastToken = false;
+
+        if (!annotation.isFunctionKeyword) {
+          pendingFunctionContexts.push({
+            ...annotation.context,
+            parenDepth,
+            bracketDepth,
+            braceDepth: braceContexts.length,
+            frameDepth: frames.length,
+            parameterDepth: undefined,
+            parametersClosed: true,
+          });
+        }
+      } else if (isTypeFunctionArrow && atTypeRoot && annotation.startsWithParen) {
+        if (!annotation.functionTypeArrowSeen) {
+          annotation.functionTypeArrowSeen = true;
+          annotation.afterFunctionTypeArrow = true;
+          annotation.sawTypeToken = true;
+        } else {
+          typedArrowContext = annotation.context;
+          typedReturnAnnotation = undefined;
+          inTypedReturnType = false;
+          lineTerminatorSinceLastToken = false;
+        }
+      } else if (isTypeFunctionArrow && atTypeRoot) {
+        typedArrowContext = annotation.context;
+        typedReturnAnnotation = undefined;
+        inTypedReturnType = false;
+        lineTerminatorSinceLastToken = false;
+      } else {
+        if (ch === '{') {
+          annotation.braceDepth++;
+          annotation.afterFunctionTypeArrow = false;
+        } else if (ch === '}') {
+          annotation.braceDepth = Math.max(0, annotation.braceDepth - 1);
+          annotation.afterFunctionTypeArrow = false;
+        } else if (ch === '(') {
+          annotation.parenDepth++;
+        } else if (ch === ')') {
+          annotation.parenDepth = Math.max(0, annotation.parenDepth - 1);
+        } else if (ch === '[') {
+          annotation.bracketDepth++;
+        } else if (ch === ']') {
+          annotation.bracketDepth = Math.max(0, annotation.bracketDepth - 1);
+        } else if (ch === '<') {
+          annotation.angleDepth++;
+        } else if (ch === '>' && annotation.angleDepth > 0) {
+          annotation.angleDepth--;
+        }
+
+        annotation.sawTypeToken = true;
+      }
     }
 
     // Any other single character is punctuation. This (and the `:`/`;`/`}` handlers below) is the
@@ -757,14 +898,20 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     // JavaScript: template text, JSX markup and `${...}`/`{...}` expression bodies are consumed by
     // the text-mode gates above, so inert punctuation inside them never contributes a conditional.
     // A `?` in template text is a plain character, not a ternary, so it must not leak here.
-    if (ch === '?' && source[i + 1] !== '?' && source[i - 1] !== '?' && source[i + 1] !== '.') {
+    if (
+      !inTypedReturnType &&
+      ch === '?' &&
+      source[i + 1] !== '?' &&
+      source[i - 1] !== '?' &&
+      source[i + 1] !== '.'
+    ) {
       conditionalContexts.push({
         parenDepth,
         bracketDepth,
         braceDepth: braceContexts.length,
         frameDepth: frames.length,
       });
-    } else if (ch === ':') {
+    } else if (!inTypedReturnType && ch === ':') {
       const isConditional = conditional !== undefined && atLexicalDepth(conditional);
 
       if (isConditional) {
@@ -772,11 +919,16 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       }
 
       colonIsExpression = isConditional || insideObjectLiteral();
-    } else if (ch === ';' && conditional !== undefined && atLexicalDepth(conditional)) {
+    } else if (
+      !inTypedReturnType &&
+      ch === ';' &&
+      conditional !== undefined &&
+      atLexicalDepth(conditional)
+    ) {
       conditionalContexts.pop();
     }
 
-    if (ch === '{') {
+    if (!inTypedReturnType && ch === '{') {
       // Record what this brace opens, so its `}` knows whether an expression or a statement ended.
       let isObject = opensObjectLiteral(
         prevKind,
@@ -791,6 +943,9 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
 
       if (pending?.parametersClosed === true && atLexicalDepth(pending)) {
         context = pendingFunctionContexts.pop();
+      }
+      if (context !== undefined) {
+        isObject = false;
       }
 
       const isClassBody = !isObject && context === undefined && opensClassBody(tokens);
@@ -825,7 +980,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       if (frame?.kind === 'template-expr' || frame?.kind === 'jsx-expr') {
         frame.depth += 1;
       }
-    } else if (ch === '(') {
+    } else if (!inTypedReturnType && ch === '(') {
       // A `(` after a control keyword opens a control head; only its matching `)` may then be
       // followed by a regex literal, so the nesting depth of every `(` has to be tracked.
       const pending = pendingFunctionContexts[pendingFunctionContexts.length - 1];
@@ -846,9 +1001,9 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       }
 
       afterControlHead = false;
-    } else if (ch === '[') {
+    } else if (!inTypedReturnType && ch === '[') {
       bracketDepth++;
-    } else if (ch === ')') {
+    } else if (!inTypedReturnType && ch === ')') {
       const pending = pendingFunctionContexts[pendingFunctionContexts.length - 1];
 
       if (
@@ -869,7 +1024,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       if (parenDepth > 0) {
         parenDepth--;
       }
-    } else if (ch === ']') {
+    } else if (!inTypedReturnType && ch === ']') {
       if (bracketDepth > 0) {
         bracketDepth--;
       }
@@ -877,19 +1032,34 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
 
     // An arrow's expression body has no brace where its function context can be consumed. Record
     // its bounded context after `=>`; a following delimiter removes it again.
-    if (ch === '>' && prevPunct === '=') {
-      const context = inferArrowContext(source, tokens, tokens.length - 1);
+    if (!inTypedReturnType && ch === '>' && prevPunct === '=') {
+      const context = typedArrowContext ?? inferArrowContext(source, tokens, tokens.length - 1);
       const next = skipTrivia(source, i + 1, n);
 
-      if (context !== undefined && source[next] !== '{') {
-        expressionFunctionContexts.push({
-          ...context,
-          isExpression: true,
-          parenDepth,
-          bracketDepth,
-          braceDepth: braceContexts.length,
-          functionDepth: functionContextStack.length,
-        });
+      if (context !== undefined) {
+        if (source[next] === '{') {
+          if (typedArrowContext !== undefined) {
+            pendingFunctionContexts.push({
+              ...typedArrowContext,
+              parenDepth,
+              bracketDepth,
+              braceDepth: braceContexts.length,
+              frameDepth: frames.length,
+              parameterDepth: undefined,
+              parametersClosed: true,
+            });
+          }
+        } else {
+          expressionFunctionContexts.push({
+            ...context,
+            isExpression: true,
+            parenDepth,
+            bracketDepth,
+            braceDepth: braceContexts.length,
+            frameDepth: frames.length,
+            functionDepth: functionContextStack.length,
+          });
+        }
       }
     }
 
@@ -898,6 +1068,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     const pending = pendingFunctionContexts[pendingFunctionContexts.length - 1];
 
     if (
+      !inTypedReturnType &&
       ch === '*' &&
       prevKind === 'identifier' &&
       prevIdentifier === 'function' &&
@@ -910,7 +1081,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     }
 
     // A callback's statements cannot invalidate a signature outside its body or parameter list.
-    if (ch === ';' && pending !== undefined && atLexicalDepth(pending)) {
+    if (!inTypedReturnType && ch === ';' && pending !== undefined && atLexicalDepth(pending)) {
       pendingFunctionContexts.pop();
     }
 
@@ -1384,15 +1555,123 @@ function inferArrowContext(
   };
 }
 
+function typedReturnSignatureContext(
+  source: string,
+  tokens: readonly Token[],
+  pending: PendingFuncContext | undefined,
+  atDepth: (context: LexicalDepth) => boolean,
+  insideMethodContainer: boolean,
+): { readonly context: FuncContext; readonly isFunctionKeyword: boolean } | undefined {
+  if (pending?.parametersClosed === true && atDepth(pending)) {
+    return { context: pending, isFunctionKeyword: true };
+  }
+
+  if (tokens.length === 0) {
+    return undefined;
+  }
+
+  const closeIndex = tokens.length - 1;
+  const closeToken = tokens[closeIndex];
+
+  if (closeToken?.kind !== 'punct' || closeToken.value !== ')') {
+    return undefined;
+  }
+
+  const openIndex = matchingOpenParen(tokens, closeIndex);
+
+  if (openIndex < 0) {
+    return undefined;
+  }
+
+  const name = tokens[openIndex - 1];
+  const marker = tokens[openIndex - 2];
+  const startsArrowParameters =
+    (isIdentifier(name, 'async') &&
+      (openIndex === 1 ||
+        (marker?.kind === 'punct' && ['=', '(', '[', ',', ':'].includes(marker.value)) ||
+        isIdentifier(marker, 'return'))) ||
+    (name?.kind === 'punct' && ['=', '(', '[', ',', ':'].includes(name.value)) ||
+    isIdentifier(name, 'return') ||
+    (name?.kind === 'punct' &&
+      name.value === '>' &&
+      marker?.kind === 'punct' &&
+      marker.value === '=');
+
+  if (startsArrowParameters) {
+    const parameterStart = tokens[openIndex];
+
+    if (parameterStart === undefined) {
+      return undefined;
+    }
+
+    if (parameterStart.kind !== 'punct' || parameterStart.value !== '(') {
+      return undefined;
+    }
+
+    const asyncToken = name?.kind === 'identifier' && name.value === 'async' ? name : undefined;
+    const async =
+      asyncToken !== undefined &&
+      !hasLineTerminator(source, asyncToken.offset, parameterStart.offset);
+
+    return {
+      context: { async, generator: false, isExpression: false },
+      isFunctionKeyword: false,
+    };
+  }
+
+  if (name?.kind === 'identifier' && isIdentifier(marker, 'async')) {
+    return {
+      context: { async: true, generator: false, isExpression: false },
+      isFunctionKeyword: false,
+    };
+  }
+
+  if (name?.kind === 'identifier' && marker?.kind === 'punct' && marker.value === '*') {
+    return {
+      context: {
+        async: isIdentifier(tokens[openIndex - 3], 'async'),
+        generator: true,
+        isExpression: false,
+      },
+      isFunctionKeyword: false,
+    };
+  }
+
+  if (insideMethodContainer) {
+    if (name?.kind === 'identifier') {
+      return {
+        context: { async: false, generator: false, isExpression: false },
+        isFunctionKeyword: false,
+      };
+    }
+
+    if (name?.kind === 'punct' && name.value === ']') {
+      return {
+        context: { async: false, generator: false, isExpression: false },
+        isFunctionKeyword: false,
+      };
+    }
+
+    return undefined;
+  }
+
+  return undefined;
+}
+
 function expressionFunctionBodyEnded(
   ch: string,
   parenDepth: number,
   bracketDepth: number,
   braceDepth: number,
+  frameDepth: number,
   functionDepth: number,
   context: ExpressionFuncContext,
 ): boolean {
-  if (functionDepth > context.functionDepth || braceDepth > context.braceDepth) {
+  if (
+    functionDepth > context.functionDepth ||
+    braceDepth > context.braceDepth ||
+    frameDepth !== context.frameDepth
+  ) {
     return false;
   }
 
@@ -1433,6 +1712,7 @@ function lineTerminatorEndsExpressionFunctionBody(
   parenDepth: number,
   bracketDepth: number,
   braceDepth: number,
+  frameDepth: number,
   functionDepth: number,
   context: ExpressionFuncContext,
 ): boolean {
@@ -1440,7 +1720,8 @@ function lineTerminatorEndsExpressionFunctionBody(
     functionDepth > context.functionDepth ||
     parenDepth !== context.parenDepth ||
     bracketDepth !== context.bracketDepth ||
-    braceDepth !== context.braceDepth
+    braceDepth !== context.braceDepth ||
+    frameDepth !== context.frameDepth
   ) {
     return false;
   }
