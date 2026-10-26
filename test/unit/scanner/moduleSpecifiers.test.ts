@@ -385,6 +385,10 @@ describe('extractModuleSpecifiers', () => {
   });
 
   describe('Step 68.8: arrow frames and typed return boundaries', () => {
+    // A body whose `/require('fake')/` decoy stays inert only while the enclosing signature is
+    // async, so the extraction reports the context the scanner really inferred.
+    const asyncBody = `{ await /require('fake')/; require('real'); }`;
+
     // Each case keeps a real usage after the decoy so a scanner that stops scanning at the
     // template frame cannot pass by accident.
     it.each([
@@ -648,6 +652,183 @@ describe('extractModuleSpecifiers', () => {
         expect(specifiers(source)).toEqual(expected);
       },
     );
+
+    // The `:` of a conditional expression is never a return annotation, whatever the branch before
+    // it holds: the candidate member has to start at a real member position, not at the tail of an
+    // expression such as `new F()`, `typeof f()` or `2 * f()`.
+    it.each([
+      [
+        'a `new` branch',
+        `const o = {
+  x: cond ? new F() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+        ['real'],
+      ],
+      [
+        'a `typeof` branch',
+        `const o = {
+  x: cond ? typeof f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+        ['real'],
+      ],
+      [
+        'a `void` branch',
+        `const o = {
+  x: cond ? void f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+        ['real'],
+      ],
+      [
+        'a multiplication branch',
+        `const o = {
+  x: cond ? 2 * f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+        ['real'],
+      ],
+      [
+        'an `await` branch inside an async function',
+        `async function outer() {
+  const o = {
+    x: cond ? await f() : async () => {
+      await /require('fake')/;
+      require('real');
+    }
+  };
+}`,
+        ['real'],
+      ],
+      [
+        'a class field ternary',
+        `class C {
+  field = cond ? new F() : async () => {
+    await /require('fake')/;
+    require('real');
+  };
+}`,
+        ['real'],
+      ],
+      [
+        'a computed property key ternary',
+        `const o = {
+  [cond ? new F() : async () => {
+    await /require('fake')/;
+    require('real');
+  }]: 1
+};`,
+        ['real'],
+      ],
+      [
+        'an `async` call branch',
+        `const o = {
+  x: cond ? async f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+        ['real'],
+      ],
+      [
+        'a member call branch',
+        `const o = {
+  x: cond ? a?.b['c'](1) : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+        ['real'],
+      ],
+      [
+        'a sequence expression branch',
+        `const o = {
+  x: cond ? (1, 2) : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+        ['real'],
+      ],
+      [
+        'a multi-line `new` branch',
+        `const o = {
+  x: cond
+    ? new F()
+    : async () => {
+        await /require('fake')/;
+        require('real');
+      }
+};`,
+        ['real'],
+      ],
+    ] as const)(
+      'does not treat the colon of %s as a return annotation',
+      (_name, source, expected) => {
+        expect(specifiers(source)).toEqual(expected);
+      },
+    );
+
+    // Modifiers, decorators and computed names still describe a real member, so the async context
+    // of their typed signatures survives.
+    it.each([
+      ['an object method', `const o = { async check(): Promise<void> ${asyncBody} };`],
+      ['a static async method', `class C { static async check(): Promise<void> ${asyncBody} }`],
+      [
+        'an override async method',
+        `class C { override async check(): Promise<void> ${asyncBody} }`,
+      ],
+      [
+        'an async generator method',
+        `class C { async *check(): AsyncGenerator<void> { await /require('fake')/; yield; require('real'); } }`,
+      ],
+      ['a decorated async method', `class C { @dec async check(): Promise<void> ${asyncBody} }`],
+      [
+        'a decorated call async method',
+        `class C { @dec(1) async check(): Promise<void> ${asyncBody} }`,
+      ],
+      [
+        'a parenthesized decorator async method',
+        `class C { @(dec) async check(): Promise<void> ${asyncBody} }`,
+      ],
+      [
+        'a member decorator async method',
+        `class C { @a.b async check(): Promise<void> ${asyncBody} }`,
+      ],
+      [
+        'two decorators on an async method',
+        `class C { @a @b async check(): Promise<void> ${asyncBody} }`,
+      ],
+      ['a computed async method', `const o = { async [k](): Promise<void> ${asyncBody} }`],
+      [
+        'a computed async method with a nested key',
+        `const o = { async [a[0]](): Promise<void> ${asyncBody} }`,
+      ],
+    ] as const)('keeps the async context of %s', (_name, source) => {
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    // A decorator elsewhere in the class body does not make an expression colon a signature.
+    it('does not treat the colon of a decorated class field as a return annotation', () => {
+      const source = `class C {
+  @dec
+  field = cond ? a.b() : async () => {
+    await /require('fake')/;
+    require('real');
+  };
+}`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
   });
 
   describe('false positives must not be reported', () => {

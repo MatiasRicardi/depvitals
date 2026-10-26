@@ -391,6 +391,108 @@ require('real');`,
         source: `const flag = false;
 const service = { x: flag ? 1 : 2, async run(): Promise<void> { await /require('fake')/; require("real"); } };`,
       },
+      // The `:` of a conditional expression never starts a return annotation, so the async arrow
+      // keeps its body and the decoy regex stays inert.
+      {
+        name: 'D1 a `new` ternary branch keeps the async arrow body',
+        fileName: 'index.cjs',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const o = {
+  x: cond ? new F() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+      },
+      {
+        name: 'D2 a `typeof` ternary branch keeps the async arrow body',
+        fileName: 'index.cjs',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const o = {
+  x: cond ? typeof f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+      },
+      {
+        name: 'D3 a `void` ternary branch keeps the async arrow body',
+        fileName: 'index.cjs',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const o = {
+  x: cond ? void f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+      },
+      {
+        name: 'D4 a multiplication ternary branch keeps the async arrow body',
+        fileName: 'index.cjs',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const o = {
+  x: cond ? 2 * f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+      },
+      {
+        name: 'D5 an `await` ternary branch keeps the async arrow body',
+        fileName: 'index.cjs',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `async function outer() {
+  const o = {
+    x: cond ? await f() : async () => {
+      await /require('fake')/;
+      require('real');
+    }
+  };
+}`,
+      },
+      {
+        name: 'D6 a class field ternary keeps the async arrow body',
+        fileName: 'index.cjs',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `class C {
+  field = cond ? new F() : async () => {
+    await /require('fake')/;
+    require('real');
+  };
+}`,
+      },
+      {
+        name: 'D7 a computed property key ternary keeps the async arrow body',
+        fileName: 'index.cjs',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const o = {
+  [cond ? new F() : async () => {
+    await /require('fake')/;
+    require('real');
+  }]: 1
+};`,
+      },
     ] as const;
 
     it.each(cases)('$name uses valid source syntax', ({ fileName, source }) => {
@@ -493,6 +595,33 @@ const service = { x: flag ? 1 : 2, async run(): Promise<void> { await /require('
         },
       );
     }
+
+    it('reports only the real usage of a ternary async arrow', () => {
+      const source = `const o = {
+  x: cond ? new F() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`;
+      const declared = runProject(
+        { name: 'ternary-async-arrow', version: '0.0.0', dependencies: { real: '*' } },
+        { 'index.cjs': source },
+      );
+
+      expect(declared).toEqual({
+        status: 0,
+        stdout: 'DepVitals\n\nNo dependency issues found.\n',
+        stderr: '',
+      });
+
+      expect(
+        runProject({ name: 'ternary-async-arrow', version: '0.0.0' }, { 'index.cjs': source }),
+      ).toEqual({
+        status: 1,
+        stdout: 'DepVitals\n\nMissing dependencies (1)\n  real\n',
+        stderr: '',
+      });
+    });
   });
 
   it('keeps incomplete source as an operational error without partial output', async () => {

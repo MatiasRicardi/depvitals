@@ -1606,26 +1606,144 @@ function signatureNameIndex(tokens: readonly Token[], openIndex: number): number
 }
 
 /**
- * Whether a token can sit directly before a method name inside an object literal or class body: a
- * member separator, or one of the modifiers (`async`, `static`, `get`, ...). Without this test the `:`
- * of an unrelated expression (`cond ? f() : g()`) or of a computed property key can look like the
- * start of a return annotation and leave a stale function context behind.
+ * Modifiers that may sit between a member separator and a method name.
+ *
+ * `new`, `typeof`, `void` and `await` are absent on purpose: they are operators, so an identifier
+ * after them belongs to an expression and never starts a member declaration.
  */
-function isMethodMemberStart(marker: Token | undefined): boolean {
-  if (marker === undefined) {
-    return false;
+const MEMBER_MODIFIERS: ReadonlySet<string> = new Set([
+  'abstract',
+  'async',
+  'get',
+  'override',
+  'private',
+  'protected',
+  'public',
+  'set',
+  'static',
+]);
+
+/** Punctuation that can start a member declaration inside an object literal, class body or interface. */
+const MEMBER_SEPARATORS: ReadonlySet<string> = new Set(['{', '}', ',', ';']);
+
+type MemberHead = {
+  readonly async: boolean;
+  readonly generator: boolean;
+};
+
+/**
+ * Index of the `@` that starts the decorator ending at `index`, or -1 when the tokens ending there
+ * are not a decorator. Only the tail of a decorator is known from the member side, so the
+ * LeftHandSideExpression of `@dec`, `@dec(1)`, `@a.b` and `@(dec)` is scanned backwards.
+ */
+function decoratorStartIndex(tokens: readonly Token[], index: number): number {
+  let depth = 0;
+
+  for (let k = index; k >= 0; k--) {
+    const token = tokens[k];
+
+    if (token === undefined) {
+      return -1;
+    }
+
+    if (token.kind !== 'punct') {
+      continue;
+    }
+
+    if (token.value === ')' || token.value === ']' || token.value === '}') {
+      depth++;
+    } else if (token.value === '(' || token.value === '[' || token.value === '{') {
+      // An unmatched opener means the scan left the decorator expression.
+      if (depth === 0) {
+        return -1;
+      }
+
+      depth--;
+    } else if (depth === 0) {
+      if (token.value === '@') {
+        return k;
+      }
+
+      // Only property access (`@a.b`, `@a?.b`) continues a decorator name.
+      if (token.value !== '.' && token.value !== '?') {
+        return -1;
+      }
+    }
   }
 
-  return (
-    marker.kind === 'identifier' ||
-    (marker.kind === 'punct' &&
-      (marker.value === '{' ||
-        marker.value === '}' ||
-        marker.value === ',' ||
-        marker.value === ';' ||
-        marker.value === '*' ||
-        marker.value === '['))
-  );
+  return -1;
+}
+
+/**
+ * The async/generator flags of the member declaration whose name is the token at `nameIndex`, or
+ * `undefined` when no member declaration starts there.
+ *
+ * A member starts at a member separator (`{`, `}`, `,`, `;`) after any decorators and modifiers, so
+ * this test rejects the `:` of an unrelated expression: `cond ? new F() : g()`, `typeof f()`,
+ * `void f()`, `await f()` and a `*` that multiplies instead of marking a generator. Without it such
+ * a colon looks like a return annotation and installs a context the body never had.
+ */
+function memberDeclarationHead(
+  tokens: readonly Token[],
+  nameIndex: number,
+): MemberHead | undefined {
+  // A computed member (`[key]() {}`) is named by the `]` that closes its key.
+  let index = nameIndex - 1;
+
+  if (isPunct(tokens[nameIndex], ']')) {
+    const open = matchingOpenBracket(tokens, nameIndex);
+
+    if (open < 0) {
+      return undefined;
+    }
+
+    index = open - 1;
+  }
+
+  let async = false;
+  let generator = false;
+
+  for (;;) {
+    while (index >= 0) {
+      const token = tokens[index];
+
+      if (isPunct(token, '*')) {
+        generator = true;
+        index--;
+        continue;
+      }
+
+      if (token?.kind === 'identifier') {
+        if (token.value === 'async') {
+          async = true;
+          index--;
+          continue;
+        }
+
+        if (MEMBER_MODIFIERS.has(token.value)) {
+          index--;
+          continue;
+        }
+      }
+
+      break;
+    }
+
+    const start = tokens[index];
+
+    if (start?.kind === 'punct' && MEMBER_SEPARATORS.has(start.value)) {
+      return { async, generator };
+    }
+
+    // Decorators precede the modifiers they apply to, and each one ends just before them.
+    const decorator = decoratorStartIndex(tokens, index);
+
+    if (decorator < 0) {
+      return undefined;
+    }
+
+    index = decorator - 1;
+  }
 }
 
 function isPunct(token: Token | undefined, value: string): boolean {
@@ -1671,34 +1789,21 @@ function inferFunctionBodyContext(
 
     const nameIndex = signatureNameIndex(tokens, open);
     const methodName = tokens[nameIndex];
-    const marker = tokens[nameIndex - 1];
+    const head = memberDeclarationHead(tokens, nameIndex);
 
-    if (methodName?.kind === 'identifier' && isIdentifier(marker, 'async')) {
-      return { async: true, generator: false, isExpression: false };
-    }
-
-    if (isPunct(marker, '*')) {
-      return {
-        async: isIdentifier(tokens[nameIndex - 2], 'async'),
-        generator: true,
-        isExpression: false,
-      };
-    }
-
-    if (!insideMethodContainer || !isMethodMemberStart(marker)) {
+    if (head === undefined) {
       return undefined;
     }
 
-    if (methodName?.kind === 'identifier') {
-      // `for await (...) {}` is a loop head, not a method named `await`.
-      if (methodName.value === 'await' && isIdentifier(marker, 'for')) {
-        return undefined;
-      }
-
-      return { async: false, generator: false, isExpression: false };
+    if (head.async || head.generator) {
+      return { async: head.async, generator: head.generator, isExpression: false };
     }
 
-    if (isPunct(methodName, ']')) {
+    if (!insideMethodContainer) {
+      return undefined;
+    }
+
+    if (methodName?.kind === 'identifier' || isPunct(methodName, ']')) {
       return { async: false, generator: false, isExpression: false };
     }
   }
@@ -1826,45 +1931,32 @@ function typedReturnSignatureContext(
     };
   }
 
-  if (name?.kind === 'identifier' && isIdentifier(marker, 'async')) {
+  // Without a `function` keyword the parameter list must start a real member declaration, so the
+  // `:` of a conditional expression or of an unrelated expression never claims a return annotation.
+  const head = memberDeclarationHead(tokens, nameIndex);
+
+  if (head === undefined) {
+    return undefined;
+  }
+
+  if (head.async || head.generator) {
     return {
-      context: { async: true, generator: false, isExpression: false },
+      context: { async: head.async, generator: head.generator, isExpression: false },
       isFunctionKeyword: false,
       isArrowSignature: false,
     };
   }
 
-  if (isPunct(marker, '*')) {
-    return {
-      context: {
-        async: isIdentifier(tokens[nameIndex - 2], 'async'),
-        generator: true,
-        isExpression: false,
-      },
-      isFunctionKeyword: false,
-      isArrowSignature: false,
-    };
+  // An ordinary name only annotates a member of an object literal, class body or interface.
+  if (!insideMethodContainer || !(name?.kind === 'identifier' || isPunct(name, ']'))) {
+    return undefined;
   }
 
-  if (insideMethodContainer && isMethodMemberStart(marker)) {
-    if (name?.kind === 'identifier') {
-      return {
-        context: { async: false, generator: false, isExpression: false },
-        isFunctionKeyword: false,
-        isArrowSignature: false,
-      };
-    }
-
-    if (isPunct(name, ']')) {
-      return {
-        context: { async: false, generator: false, isExpression: false },
-        isFunctionKeyword: false,
-        isArrowSignature: false,
-      };
-    }
-  }
-
-  return undefined;
+  return {
+    context: { async: false, generator: false, isExpression: false },
+    isFunctionKeyword: false,
+    isArrowSignature: false,
+  };
 }
 
 function expressionFunctionBodyEnded(
@@ -1945,6 +2037,33 @@ function lineTerminatorEndsExpressionFunctionBody(
 /** Whether a token is the given identifier. */
 function isIdentifier(token: Token | undefined, value: string): boolean {
   return token?.kind === 'identifier' && token.value === value;
+}
+
+/**
+ * The index of the `[` matching the `]` at `closeIndex`, or `-1` when the source has no match.
+ */
+function matchingOpenBracket(tokens: readonly Token[], closeIndex: number): number {
+  let depth = 0;
+
+  for (let k = closeIndex; k >= 0; k--) {
+    const token = tokens[k];
+
+    if (token?.kind !== 'punct') {
+      continue;
+    }
+
+    if (token.value === ']') {
+      depth++;
+    } else if (token.value === '[') {
+      depth--;
+
+      if (depth === 0) {
+        return k;
+      }
+    }
+  }
+
+  return -1;
 }
 
 /**
