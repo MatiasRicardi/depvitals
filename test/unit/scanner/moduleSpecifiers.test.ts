@@ -385,12 +385,18 @@ describe('extractModuleSpecifiers', () => {
   });
 
   describe('Step 68.8: arrow frames and typed return boundaries', () => {
+    // Each case keeps a real usage after the decoy so a scanner that stops scanning at the
+    // template frame cannot pass by accident.
     it.each([
-      ['template punctuation', `const f = async () => \`,\` + (await /require('fake')/);`, []],
+      [
+        'template punctuation',
+        `const f = async () => \`,\` + require('inside') + (await /require('fake')/);`,
+        ['inside'],
+      ],
       [
         'template interpolation closure',
-        "const f = async () => `${0}` + (await /require('fake')/);",
-        [],
+        "const f = async () => `${0}` + require('inside') + (await /require('fake')/);",
+        ['inside'],
       ],
       [
         'template text preserves an ordinary arrow context',
@@ -402,13 +408,18 @@ describe('extractModuleSpecifiers', () => {
     });
 
     it.each([
-      ['JSX text', `const f = async () => <p>,</p> + (await /require('fake')/);`],
+      [
+        'JSX text',
+        `const f = async () => <p>,</p> + require('inside') + (await /require('fake')/);`,
+        ['inside'],
+      ],
       [
         'sibling JSX expression containers',
-        `const f = async () => (<p>{0}{await /require('fake')/}</p>);`,
+        `const f = async () => (<p>{0}{require('inside')}{await /require('fake')/}</p>);`,
+        ['inside'],
       ],
-    ])('keeps expression-arrow context across %s', (_name, source) => {
-      expect(jsxSpecifiers(source)).toEqual([]);
+    ] as const)('keeps expression-arrow context across %s', (_name, source, expected) => {
+      expect(jsxSpecifiers(source)).toEqual(expected);
     });
 
     it('recognizes a real require in an ordinary arrow inside a template', () => {
@@ -428,27 +439,31 @@ describe('extractModuleSpecifiers', () => {
     });
 
     it('does not scan a regex decoy after a typed async function return annotation', () => {
-      const source = `async function check(): Promise<{ ok: boolean }> { const ok = await /don't/.test("don't"); return { ok }; }`;
+      const source = `async function check(): Promise<{ ok: boolean }> { const ok = await /don't/.test("don't"); require('inside'); return { ok }; } require('real');`;
 
       expect(() => extractModuleSpecifiers(source)).not.toThrow();
-      expect(specifiers(source)).toEqual([]);
+      expect(specifiers(source)).toEqual(['inside', 'real']);
     });
 
+    // The `inside` usage proves the body is still scanned after the return annotation ends.
     it.each([
       [
         'typed async function declaration',
-        `async function check(): Promise<{ ok: boolean }> { await /require('fake')/; return { ok: true }; } require("real");`,
+        `async function check(): Promise<{ ok: boolean }> { await /require('fake')/; require("inside"); return { ok: true }; } require("real");`,
+        ['inside', 'real'],
       ],
       [
         'typed async arrow',
-        `const check = async (): Promise<{ ok: boolean }> => { await /require('fake')/; return { ok: true }; }; require("real");`,
+        `const check = async (): Promise<{ ok: boolean }> => { await /require('fake')/; require("inside"); return { ok: true }; }; require("real");`,
+        ['inside', 'real'],
       ],
       [
         'typed async method',
-        `class C { async check(): Promise<{ ok: boolean }> { await /require('fake')/; return { ok: true }; } } require("real");`,
+        `class C { async check(): Promise<{ ok: boolean }> { await /require('fake')/; require("inside"); return { ok: true }; } } require("real");`,
+        ['inside', 'real'],
       ],
-    ])('does not inherit async through a %s return type', (_name, source) => {
-      expect(specifiers(source)).toEqual(['real']);
+    ] as const)('does not inherit async through a %s return type', (_name, source, expected) => {
+      expect(specifiers(source)).toEqual(expected);
     });
 
     it('keeps division after a typed async function expression', () => {
@@ -468,37 +483,171 @@ describe('extractModuleSpecifiers', () => {
     });
 
     it.each([
+      // Each case keeps a real usage inside the annotated body so a scanner that swallows the body
+      // after the return annotation cannot pass by accident.
       [
         'generator return type',
-        `function* values(): Generator<number> { yield /require('fake')/; } require("real");`,
+        `function* values(): Generator<number> { yield /require('fake')/; require("inside"); } require("real");`,
+        ['inside', 'real'],
       ],
       [
         'async generator return type',
-        `async function* values(): AsyncGenerator<number> { await /require('fake')/; yield 1; } require("real");`,
+        `async function* values(): AsyncGenerator<number> { await /require('fake')/; yield 1; require("inside"); } require("real");`,
+        ['inside', 'real'],
       ],
       [
         'nested ordinary function with a typed return',
-        `async function outer() { function inner(await: number): { ok: boolean } { const n = await / require("real") / 2; return { ok: !!n }; } }`,
+        `async function outer() { function inner(await: number): { ok: boolean } { require("inside"); const n = await / require("real") / 2; return { ok: !!n }; } }`,
+        ['inside', 'real'],
       ],
       [
         'typed async arrow expression body',
-        `const check = async (): Promise<boolean> => await /require('fake')/; require("real");`,
+        `const check = async (): Promise<boolean> => await /require('fake')/ || require("inside"); require("real");`,
+        ['inside', 'real'],
       ],
       [
         'callback function return type',
-        `async function check(): () => void { await /require('fake')/; } require("real");`,
+        `async function check(): () => void { await /require('fake')/; require("inside"); } require("real");`,
+        ['inside', 'real'],
       ],
       [
         'typed class-field arrow',
-        `class C { check = async (): Promise<{ ok: boolean }> => { await /require('fake')/; return { ok: true }; }; } require("real");`,
+        `class C { check = async (): Promise<{ ok: boolean }> => { await /require('fake')/; require("inside"); return { ok: true }; }; } require("real");`,
+        ['inside', 'real'],
       ],
       [
         'object method with nested callback return type and semicolons',
-        `const service = { async check(): Promise<{ readonly result?: { ok: boolean }; callback: (value: string) => { done: boolean } }> { await /require('fake')/; return null as never; } }; require("real");`,
+        `const service = { async check(): Promise<{ readonly result?: { ok: boolean }; callback: (value: string) => { done: boolean } }> { await /require('fake')/; require("inside"); return null as never; } }; require("real");`,
+        ['inside', 'real'],
       ],
-    ])('keeps typed %s boundaries', (_name, source) => {
-      expect(specifiers(source)).toEqual(['real']);
+    ] as const)('keeps typed %s boundaries', (_name, source, expected) => {
+      expect(specifiers(source)).toEqual(expected);
     });
+
+    // The return annotation must end exactly where the runtime body begins, whatever the shape of
+    // the annotated type.
+    it.each([
+      [
+        'an intersection with an object type',
+        `async function check(): Promise<void> & { ok: boolean } { await /require('fake')/; require("inside"); } require("real");`,
+        ['inside', 'real'],
+      ],
+      [
+        'a union with an object type',
+        `async function check(): null | { ok: boolean } { await /require('fake')/; require("inside"); } require("real");`,
+        ['inside', 'real'],
+      ],
+      [
+        'a parenthesized object type',
+        `async function check(): (Promise<{ ok: boolean }>) { await /require('fake')/; require("inside"); } require("real");`,
+        ['inside', 'real'],
+      ],
+      [
+        'a template literal type',
+        "async function check(): `a${number}b` { await /require('fake')/; require('inside'); } require('real');",
+        ['inside', 'real'],
+      ],
+      [
+        'an alias of a template literal type',
+        "type Name = `a${'x'}b`;\nasync function check(): Name { await /require('fake')/; require('inside'); } require('real');",
+        ['inside', 'real'],
+      ],
+      [
+        'a function type return on an arrow',
+        `const make = (): () => void => { require("inside"); return () => 0; }; require("real");`,
+        ['inside', 'real'],
+      ],
+      [
+        'a parenthesized function type return on an arrow',
+        `const make = (): (() => void) => { require("inside"); return () => 0; }; require("real");`,
+        ['inside', 'real'],
+      ],
+      [
+        'a parenthesized non-function type on an arrow',
+        `const check = async (): (Promise<void>) => { await /require('fake')/; require("inside"); }; require("real");`,
+        ['inside', 'real'],
+      ],
+    ] as const)('ends a return annotation of %s before the body', (_name, source, expected) => {
+      expect(specifiers(source)).toEqual(expected);
+    });
+
+    // A signature terminated by `;` must not keep its annotation alive for whatever follows.
+    it.each([
+      [
+        'an async function declaration',
+        `declare function check(): Promise<void>;\nasync function check(): Promise<void> { await /require('fake')/; require("inside"); } require("real");`,
+        ['inside', 'real'],
+      ],
+      [
+        'an async method implementation',
+        `class C { check(): Promise<void>; async check(): Promise<void> { await /require('fake')/; require("inside"); } } require("real");`,
+        ['inside', 'real'],
+      ],
+      [
+        'an async function expression',
+        `interface I { check(): void; }\nconst run = async function (): Promise<void> { await /require('fake')/; require("inside"); }; require("real");`,
+        ['inside', 'real'],
+      ],
+      [
+        'an async arrow',
+        `declare function check(): Promise<void>;\nconst run = async (): Promise<void> => { await /require('fake')/; require("inside"); }; require("real");`,
+        ['inside', 'real'],
+      ],
+      [
+        'a following regular expression',
+        `interface I { check(): void; }\nconst decoy = /require('fake')/;\nrequire('real');`,
+        ['real'],
+      ],
+    ] as const)('ends a `;`-terminated signature before %s', (_name, source, expected) => {
+      expect(specifiers(source)).toEqual(expected);
+    });
+
+    it('ends a `;`-terminated signature before a JSX element', () => {
+      expect(
+        jsxSpecifiers(
+          `declare function check(): Promise<void>;\nconst el = <p>hi</p>;\nrequire('real');`,
+        ),
+      ).toEqual(['real']);
+    });
+
+    // A `:` after a `)` is not a return annotation unless a plausible member precedes it.
+    it.each([
+      [
+        'a ternary branch ending in a call',
+        `const o = { x: cond ? f() : g(), async run(): Promise<void> { await /require('fake')/; require("inside"); } }; require("real");`,
+        ['inside', 'real'],
+      ],
+      [
+        'a computed property key',
+        `const o = { [key()]: 1, async run(): Promise<void> { await /require('fake')/; require("inside"); } }; require("real");`,
+        ['inside', 'real'],
+      ],
+    ] as const)('does not start a return annotation at %s', (_name, source, expected) => {
+      expect(specifiers(source)).toEqual(expected);
+    });
+
+    it.each([
+      [
+        'generic async arrow',
+        `const check = async <T,>(value: T): Promise<T> => { await /require('fake')/; require("inside"); return value; }; require("real");`,
+        ['inside', 'real'],
+      ],
+      [
+        'generic async method',
+        `class C { async check<T>(): Promise<T> { await /require('fake')/; require("inside"); } } require("real");`,
+        ['inside', 'real'],
+      ],
+      [
+        'generic async generator method',
+        `class C { async *check<T>(): AsyncGenerator<T> { await /require('fake')/; yield 1; require("inside"); } } require("real");`,
+        ['inside', 'real'],
+      ],
+    ] as const)(
+      'keeps the async context of a %s with a return annotation',
+      (_name, source, expected) => {
+        expect(specifiers(source)).toEqual(expected);
+      },
+    );
   });
 
   describe('false positives must not be reported', () => {

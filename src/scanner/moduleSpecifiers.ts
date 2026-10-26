@@ -131,18 +131,25 @@ type ExpressionFuncContext = FuncContext & {
   readonly functionDepth: number;
 };
 
-// Return types use separate delimiter depths so their braces/arrows never become runtime bodies.
-type TypedReturnAnnotation = {
+// The signature a `:` starts a return annotation for. `isFunctionKeyword` marks the ones that already
+// pushed their pending context, `isArrowSignature` the shapes whose body may be an arrow expression
+// (`=> ...`) instead of a block.
+type TypedReturnSignature = {
   readonly context: FuncContext;
   readonly isFunctionKeyword: boolean;
-  readonly startsWithParen: boolean;
+  readonly isArrowSignature: boolean;
+};
+
+// A return type in progress. It uses separate delimiter depths so its braces and arrows never become
+// runtime delimiters. `typeOperandExpected` records whether the next token has to begin a type: a `{`
+// where an operand is expected opens an object type (`{ ok: boolean }`), while a `{` read after a
+// complete type begins the runtime body.
+type TypedReturnAnnotation = TypedReturnSignature & {
   parenDepth: number;
   bracketDepth: number;
   braceDepth: number;
   angleDepth: number;
-  sawTypeToken: boolean;
-  functionTypeArrowSeen: boolean;
-  afterFunctionTypeArrow: boolean;
+  typeOperandExpected: boolean;
 };
 
 // Lexical frames opened by a template interpolation or by the JSX overlay. The tokenizer keeps them
@@ -302,7 +309,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
   while (i < n) {
     const ch = source[i];
     let typedArrowContext: FuncContext | undefined;
-    let startedTypedReturnAnnotation = false;
+    let inTypedReturnType = typedReturnAnnotation !== undefined;
 
     if (ch === undefined) {
       i++;
@@ -512,10 +519,6 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       continue;
     }
 
-    if (typedReturnAnnotation?.afterFunctionTypeArrow === true && ch !== '{') {
-      typedReturnAnnotation.afterFunctionTypeArrow = false;
-    }
-
     if (lineTerminatorSinceLastToken && typedReturnAnnotation === undefined) {
       let context = expressionFunctionContexts[expressionFunctionContexts.length - 1];
 
@@ -542,11 +545,18 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       lineTerminatorSinceLastToken = false;
     }
 
-    // A backtick in code mode opens a (possibly nested) template literal.
+    // A backtick in code mode opens a (possibly nested) template literal. Inside a return annotation
+    // that is a template-literal type: its text stays inert and the annotation keeps running until the
+    // type itself ends.
     if (ch === '`') {
       templateStart = i;
       inText = true;
       prevKind = 'template';
+
+      if (typedReturnAnnotation !== undefined) {
+        typedReturnAnnotation.typeOperandExpected = false;
+      }
+
       i++;
       continue;
     }
@@ -584,6 +594,113 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         pushBoundary(i);
         i = tag.end;
         continue;
+      }
+    }
+
+    // A typed return annotation is read as a type, never as runtime code. It ends where the signature
+    // itself ends: at the `{` that opens the runtime body, at the runtime `=>` of an arrow signature, or
+    // at the `;`/`,`/`)`/`]`/`}` that terminates a signature without a body (`declare function f(): void;`,
+    // an interface member, an overload). Its delimiters are counted on their own, so the braces of an
+    // object type never become a function body and the `=>` of a function type never ends a frame.
+    if (typedReturnAnnotation !== undefined) {
+      const annotation = typedReturnAnnotation;
+      const atTypeRoot =
+        annotation.parenDepth === 0 &&
+        annotation.bracketDepth === 0 &&
+        annotation.braceDepth === 0 &&
+        annotation.angleDepth === 0;
+      const isTypeArrow = ch === '>' && prevPunct === '=';
+
+      // The `}` of a `${...}` or JSX `{...}` expression belongs to its frame, not to the type, as long
+      // as the annotation owns no braces of its own.
+      if (
+        ch === '}' &&
+        annotation.braceDepth === 0 &&
+        (frame?.kind === 'template-expr' || frame?.kind === 'jsx-expr') &&
+        frame.depth === 0
+      ) {
+        frames.pop();
+        pushBoundary(i);
+        i++;
+
+        if (frame.kind === 'template-expr') {
+          inText = true;
+          resetExpressionState();
+        } else {
+          // Back to the enclosing JSX tag or text frame, which reads the next character itself.
+          endJsxElement();
+        }
+
+        continue;
+      }
+
+      if (ch === '{' && atTypeRoot && !annotation.typeOperandExpected) {
+        // A complete type was read, so this brace opens the runtime body.
+        typedReturnAnnotation = undefined;
+        inTypedReturnType = false;
+        lineTerminatorSinceLastToken = false;
+
+        if (!annotation.isFunctionKeyword) {
+          pendingFunctionContexts.push({
+            ...annotation.context,
+            parenDepth,
+            bracketDepth,
+            braceDepth: braceContexts.length,
+            frameDepth: frames.length,
+            parameterDepth: undefined,
+            parametersClosed: true,
+          });
+        }
+      } else if (
+        isTypeArrow &&
+        atTypeRoot &&
+        (!annotation.isArrowSignature || !functionTypeArrowContinues(source, i, n))
+      ) {
+        // The signature's own `=>`: everything after it is the body, not the return type.
+        typedArrowContext = annotation.context;
+        typedReturnAnnotation = undefined;
+        inTypedReturnType = false;
+        lineTerminatorSinceLastToken = false;
+      } else if (
+        atTypeRoot &&
+        (ch === ';' || ch === ',' || ch === ')' || ch === ']' || ch === '}')
+      ) {
+        // A signature with no body of its own. Neither the annotation nor a pending signature may
+        // outlive it, otherwise later code (a JSX text `<`, another method body, an async arrow) is
+        // misread.
+        typedReturnAnnotation = undefined;
+        inTypedReturnType = false;
+      } else {
+        if (ch === '{') {
+          annotation.braceDepth++;
+          annotation.typeOperandExpected = true;
+        } else if (ch === '}') {
+          annotation.braceDepth = Math.max(0, annotation.braceDepth - 1);
+          annotation.typeOperandExpected = false;
+        } else if (ch === '(') {
+          annotation.parenDepth++;
+          annotation.typeOperandExpected = true;
+        } else if (ch === ')') {
+          annotation.parenDepth = Math.max(0, annotation.parenDepth - 1);
+          annotation.typeOperandExpected = false;
+        } else if (ch === '[') {
+          annotation.bracketDepth++;
+          annotation.typeOperandExpected = true;
+        } else if (ch === ']') {
+          annotation.bracketDepth = Math.max(0, annotation.bracketDepth - 1);
+          annotation.typeOperandExpected = false;
+        } else if (ch === '<') {
+          annotation.angleDepth++;
+          annotation.typeOperandExpected = true;
+        } else if (isTypeArrow) {
+          // A function type's own arrow (`(x: A) => B`) still expects a type on its right.
+          annotation.typeOperandExpected = true;
+        } else if (ch === '>' && annotation.angleDepth > 0) {
+          annotation.angleDepth--;
+          annotation.typeOperandExpected = false;
+        } else if (ch === ':' || ch === '?' || ch === '.' || ch === '|' || ch === '&') {
+          annotation.typeOperandExpected = true;
+        }
       }
     }
 
@@ -653,8 +770,9 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     if (ch === "'" || ch === '"') {
       const { value, next } = readString(source, i);
       tokens.push({ kind: 'string', value, offset: i });
+
       if (typedReturnAnnotation !== undefined) {
-        typedReturnAnnotation.sawTypeToken = true;
+        typedReturnAnnotation.typeOperandExpected = false;
       }
       prevKind = 'string';
       afterControlHead = false;
@@ -678,8 +796,10 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       }
 
       const value = source.slice(start, i);
+
       if (typedReturnAnnotation !== undefined) {
-        typedReturnAnnotation.sawTypeToken = true;
+        // `keyof`/`extends`/... still expect a type to follow; any other name completes one.
+        typedReturnAnnotation.typeOperandExpected = TYPE_OPERAND_KEYWORDS.has(value);
       }
       const previousIdentifier = prevIdentifier;
       if (value === 'async') {
@@ -783,16 +903,16 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       }
 
       tokens.push({ kind: 'number', offset: start });
+
       if (typedReturnAnnotation !== undefined) {
-        typedReturnAnnotation.sawTypeToken = true;
+        typedReturnAnnotation.typeOperandExpected = false;
       }
+
       prevKind = 'number';
       afterControlHead = false;
       pendingControlKeyword = undefined;
       continue;
     }
-
-    let inTypedReturnType = typedReturnAnnotation !== undefined;
 
     if (ch === ':' && typedReturnAnnotation === undefined) {
       const candidate = typedReturnSignatureContext(
@@ -804,92 +924,15 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       );
 
       if (candidate !== undefined) {
-        const startsWithParen =
-          skipTrivia(source, i + 1, n) < n && source[skipTrivia(source, i + 1, n)] === '(';
         typedReturnAnnotation = {
           ...candidate,
-          startsWithParen,
           parenDepth: 0,
           bracketDepth: 0,
           braceDepth: 0,
           angleDepth: 0,
-          sawTypeToken: false,
-          functionTypeArrowSeen: false,
-          afterFunctionTypeArrow: false,
+          typeOperandExpected: true,
         };
         inTypedReturnType = true;
-        startedTypedReturnAnnotation = true;
-      }
-    }
-
-    if (typedReturnAnnotation !== undefined && !startedTypedReturnAnnotation) {
-      const annotation = typedReturnAnnotation;
-      const atTypeRoot =
-        annotation.parenDepth === 0 &&
-        annotation.bracketDepth === 0 &&
-        annotation.braceDepth === 0 &&
-        annotation.angleDepth === 0;
-      const isTypeFunctionArrow = ch === '>' && prevPunct === '=';
-
-      if (
-        ch === '{' &&
-        atTypeRoot &&
-        annotation.sawTypeToken &&
-        !annotation.afterFunctionTypeArrow
-      ) {
-        typedReturnAnnotation = undefined;
-        inTypedReturnType = false;
-        lineTerminatorSinceLastToken = false;
-
-        if (!annotation.isFunctionKeyword) {
-          pendingFunctionContexts.push({
-            ...annotation.context,
-            parenDepth,
-            bracketDepth,
-            braceDepth: braceContexts.length,
-            frameDepth: frames.length,
-            parameterDepth: undefined,
-            parametersClosed: true,
-          });
-        }
-      } else if (isTypeFunctionArrow && atTypeRoot && annotation.startsWithParen) {
-        if (!annotation.functionTypeArrowSeen) {
-          annotation.functionTypeArrowSeen = true;
-          annotation.afterFunctionTypeArrow = true;
-          annotation.sawTypeToken = true;
-        } else {
-          typedArrowContext = annotation.context;
-          typedReturnAnnotation = undefined;
-          inTypedReturnType = false;
-          lineTerminatorSinceLastToken = false;
-        }
-      } else if (isTypeFunctionArrow && atTypeRoot) {
-        typedArrowContext = annotation.context;
-        typedReturnAnnotation = undefined;
-        inTypedReturnType = false;
-        lineTerminatorSinceLastToken = false;
-      } else {
-        if (ch === '{') {
-          annotation.braceDepth++;
-          annotation.afterFunctionTypeArrow = false;
-        } else if (ch === '}') {
-          annotation.braceDepth = Math.max(0, annotation.braceDepth - 1);
-          annotation.afterFunctionTypeArrow = false;
-        } else if (ch === '(') {
-          annotation.parenDepth++;
-        } else if (ch === ')') {
-          annotation.parenDepth = Math.max(0, annotation.parenDepth - 1);
-        } else if (ch === '[') {
-          annotation.bracketDepth++;
-        } else if (ch === ']') {
-          annotation.bracketDepth = Math.max(0, annotation.bracketDepth - 1);
-        } else if (ch === '<') {
-          annotation.angleDepth++;
-        } else if (ch === '>' && annotation.angleDepth > 0) {
-          annotation.angleDepth--;
-        }
-
-        annotation.sawTypeToken = true;
       }
     }
 
@@ -1433,6 +1476,163 @@ function skipTrivia(source: string, start: number, n: number): number {
 }
 
 /**
+ * Type keywords that still expect a type after them, so a `{` following one opens an object type and
+ * not a function body (`T extends { ok: boolean } ? A : B`).
+ */
+const TYPE_OPERAND_KEYWORDS: ReadonlySet<string> = new Set([
+  'as',
+  'asserts',
+  'await',
+  'const',
+  'extends',
+  'in',
+  'infer',
+  'is',
+  'keyof',
+  'new',
+  'readonly',
+  'satisfies',
+  'typeof',
+]);
+
+/**
+ * Whether a root-level `=>` inside a return annotation is an arrow of the return type itself rather
+ * than the signature's runtime arrow. A function type keeps a second arrow at the same nesting level
+ * (`(): (x: number) => void => {}`); once the return type is over, the next significant token is the
+ * body (`{`), a statement terminator or a delimiter that closes the surrounding code.
+ */
+function functionTypeArrowContinues(source: string, arrowEnd: number, n: number): boolean {
+  let depth = 0;
+
+  for (let i = arrowEnd + 1; i < n; i++) {
+    const ch = source[i];
+
+    if (ch === '(' || ch === '[' || ch === '<') {
+      depth++;
+    } else if (ch === '>' && depth > 0) {
+      depth--;
+    } else if (ch === ')' || ch === ']') {
+      if (depth === 0) {
+        return false;
+      }
+
+      depth--;
+    } else if (depth === 0) {
+      if (ch === '{' || ch === ';' || ch === ',') {
+        return false;
+      }
+
+      if (ch === '=' && source[i + 1] === '>') {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Index of the token that names a `(` parameter list. A generic signature keeps its type-parameter
+ * list between the name and the `(` (`async function f<T>(): T {}`, `async <T,>(value: T) => {}`,
+ * `async check<T>(): T {}`), so a balanced `<...>` directly before the `(` is skipped. The index of
+ * the token directly before the `(` is returned unchanged when no such list precedes it.
+ */
+function signatureNameIndex(tokens: readonly Token[], openIndex: number): number {
+  let index = openIndex - 1;
+  const angle = tokens[index];
+
+  if (angle?.kind !== 'punct' || angle.value !== '>') {
+    return index;
+  }
+
+  let angleDepth = 0;
+
+  while (index >= 0) {
+    const token = tokens[index];
+
+    if (token === undefined) {
+      break;
+    }
+
+    // Identifier, string and number tokens continue the type-parameter list.
+    if (token.kind !== 'punct') {
+      index--;
+      continue;
+    }
+
+    if (token.value === '>') {
+      // The `>` of an arrow in a default value (`<T = () => void>`) closes nothing.
+      if (isPunct(tokens[index - 1], '=')) {
+        index -= 2;
+        continue;
+      }
+
+      angleDepth++;
+      index--;
+      continue;
+    }
+
+    if (token.value === '<') {
+      angleDepth--;
+
+      if (angleDepth === 0) {
+        return index - 1;
+      }
+
+      index--;
+      continue;
+    }
+
+    // A type-parameter list separates its parameters and uses `[]`, `|`, `&`, `.` and `?` inside
+    // constraints and defaults. Any other punctuation means the `>` did not close a list.
+    if (
+      token.value !== ',' &&
+      token.value !== '[' &&
+      token.value !== ']' &&
+      token.value !== '.' &&
+      token.value !== '?' &&
+      token.value !== '|' &&
+      token.value !== '&' &&
+      token.value !== '='
+    ) {
+      break;
+    }
+
+    index--;
+  }
+
+  // The `>` does not close a balanced type-parameter list, so the token before `(` names the list.
+  return openIndex - 1;
+}
+
+/**
+ * Whether a token can sit directly before a method name inside an object literal or class body: a
+ * member separator, or one of the modifiers (`async`, `static`, `get`, ...). Without this test the `:`
+ * of an unrelated expression (`cond ? f() : g()`) or of a computed property key can look like the
+ * start of a return annotation and leave a stale function context behind.
+ */
+function isMethodMemberStart(marker: Token | undefined): boolean {
+  if (marker === undefined) {
+    return false;
+  }
+
+  return (
+    marker.kind === 'identifier' ||
+    (marker.kind === 'punct' &&
+      (marker.value === '{' ||
+        marker.value === '}' ||
+        marker.value === ',' ||
+        marker.value === ';' ||
+        marker.value === '*' ||
+        marker.value === '['))
+  );
+}
+
+function isPunct(token: Token | undefined, value: string): boolean {
+  return token?.kind === 'punct' && token.value === value;
+}
+
+/**
  * The async/generator context of a function body whose signature carries no `function` keyword,
  * inferred from the tokens emitted just before its `{`.
  *
@@ -1469,22 +1669,23 @@ function inferFunctionBodyContext(
       return undefined;
     }
 
-    const methodName = tokens[open - 1];
-    const marker = tokens[open - 2];
+    const nameIndex = signatureNameIndex(tokens, open);
+    const methodName = tokens[nameIndex];
+    const marker = tokens[nameIndex - 1];
 
     if (methodName?.kind === 'identifier' && isIdentifier(marker, 'async')) {
       return { async: true, generator: false, isExpression: false };
     }
 
-    if (methodName?.kind === 'identifier' && marker?.kind === 'punct' && marker.value === '*') {
+    if (isPunct(marker, '*')) {
       return {
-        async: isIdentifier(tokens[open - 3], 'async'),
+        async: isIdentifier(tokens[nameIndex - 2], 'async'),
         generator: true,
         isExpression: false,
       };
     }
 
-    if (!insideMethodContainer) {
+    if (!insideMethodContainer || !isMethodMemberStart(marker)) {
       return undefined;
     }
 
@@ -1497,7 +1698,7 @@ function inferFunctionBodyContext(
       return { async: false, generator: false, isExpression: false };
     }
 
-    if (methodName?.kind === 'punct' && methodName.value === ']') {
+    if (isPunct(methodName, ']')) {
       return { async: false, generator: false, isExpression: false };
     }
   }
@@ -1538,7 +1739,12 @@ function inferArrowContext(
   }
 
   // Only trivia before the parameters can break the async modifier; newlines inside `(...)` cannot.
-  const markerToken = tokens[parametersIndex - 1];
+  // A generic arrow keeps its type-parameter list between `async` and the parameter list.
+  const markerIndex =
+    parametersStart.kind === 'punct' && parametersStart.value === '('
+      ? signatureNameIndex(tokens, parametersIndex)
+      : parametersIndex - 1;
+  const markerToken = tokens[markerIndex];
   const async =
     markerToken?.kind === 'identifier' &&
     markerToken.value === 'async' &&
@@ -1561,9 +1767,9 @@ function typedReturnSignatureContext(
   pending: PendingFuncContext | undefined,
   atDepth: (context: LexicalDepth) => boolean,
   insideMethodContainer: boolean,
-): { readonly context: FuncContext; readonly isFunctionKeyword: boolean } | undefined {
+): TypedReturnSignature | undefined {
   if (pending?.parametersClosed === true && atDepth(pending)) {
-    return { context: pending, isFunctionKeyword: true };
+    return { context: pending, isFunctionKeyword: true, isArrowSignature: false };
   }
 
   if (tokens.length === 0) {
@@ -1583,19 +1789,19 @@ function typedReturnSignatureContext(
     return undefined;
   }
 
-  const name = tokens[openIndex - 1];
-  const marker = tokens[openIndex - 2];
+  const nameIndex = signatureNameIndex(tokens, openIndex);
+  const name = tokens[nameIndex];
+  const marker = tokens[nameIndex - 1];
+  // A generic signature has no name of its own before `(` when it is anonymous (`async <T,>(v: T) => {}`).
+  const genericParameters = nameIndex !== openIndex - 1;
   const startsArrowParameters =
-    (isIdentifier(name, 'async') &&
+    ((isIdentifier(name, 'async') || genericParameters) &&
       (openIndex === 1 ||
         (marker?.kind === 'punct' && ['=', '(', '[', ',', ':'].includes(marker.value)) ||
         isIdentifier(marker, 'return'))) ||
     (name?.kind === 'punct' && ['=', '(', '[', ',', ':'].includes(name.value)) ||
     isIdentifier(name, 'return') ||
-    (name?.kind === 'punct' &&
-      name.value === '>' &&
-      marker?.kind === 'punct' &&
-      marker.value === '=');
+    (isPunct(name, '>') && isPunct(marker, '='));
 
   if (startsArrowParameters) {
     const parameterStart = tokens[openIndex];
@@ -1616,6 +1822,7 @@ function typedReturnSignatureContext(
     return {
       context: { async, generator: false, isExpression: false },
       isFunctionKeyword: false,
+      isArrowSignature: true,
     };
   }
 
@@ -1623,36 +1830,38 @@ function typedReturnSignatureContext(
     return {
       context: { async: true, generator: false, isExpression: false },
       isFunctionKeyword: false,
+      isArrowSignature: false,
     };
   }
 
-  if (name?.kind === 'identifier' && marker?.kind === 'punct' && marker.value === '*') {
+  if (isPunct(marker, '*')) {
     return {
       context: {
-        async: isIdentifier(tokens[openIndex - 3], 'async'),
+        async: isIdentifier(tokens[nameIndex - 2], 'async'),
         generator: true,
         isExpression: false,
       },
       isFunctionKeyword: false,
+      isArrowSignature: false,
     };
   }
 
-  if (insideMethodContainer) {
+  if (insideMethodContainer && isMethodMemberStart(marker)) {
     if (name?.kind === 'identifier') {
       return {
         context: { async: false, generator: false, isExpression: false },
         isFunctionKeyword: false,
+        isArrowSignature: false,
       };
     }
 
-    if (name?.kind === 'punct' && name.value === ']') {
+    if (isPunct(name, ']')) {
       return {
         context: { async: false, generator: false, isExpression: false },
         isFunctionKeyword: false,
+        isArrowSignature: false,
       };
     }
-
-    return undefined;
   }
 
   return undefined;

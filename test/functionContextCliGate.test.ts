@@ -231,11 +231,16 @@ describe('Steps 68.6 and 68.7 function contexts through analyzer and compiled CL
 
   describe('Step 68.8 frame and typed-return boundaries through analyzer and CLI', () => {
     const cases = [
+      // Each frame case keeps a real usage next to the decoy, so a scanner that stops scanning
+      // inside the frame cannot pass by accident.
       {
         name: 'A1 template text does not terminate an async arrow',
         fileName: 'index.cjs',
-        dependencies: [{ name: 'fake', used: false }],
-        source: `const f = async () => \`,\` + (await /require('fake')/);`,
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const f = async () => \`,\` + require('real') + (await /require('fake')/);`,
       },
       {
         name: 'A2 ordinary arrow finds a require after template text',
@@ -246,16 +251,23 @@ describe('Steps 68.6 and 68.7 function contexts through analyzer and compiled CL
       {
         name: 'A3 closing an interpolation does not terminate an async arrow',
         fileName: 'index.cjs',
-        dependencies: [{ name: 'fake', used: false }],
-        source: "const f = async () => `${0}` + (await /require('fake')/);",
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: "const f = async () => `${0}` + require('real') + (await /require('fake')/);",
       },
       {
         name: 'A4 JSX containers do not terminate an async arrow',
         fileName: 'index.tsx',
-        dependencies: [{ name: 'fake', used: false }],
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
         source: `const f = async () => (
           <p>
             {0}
+            {require('real')}
             {await /require('fake')/}
           </p>
         );`,
@@ -263,8 +275,11 @@ describe('Steps 68.6 and 68.7 function contexts through analyzer and compiled CL
       {
         name: 'B1 typed async function does not leak into its body',
         fileName: 'index.ts',
-        dependencies: [{ name: 'fake', used: false }],
-        source: `async function check(): Promise<{ ok: boolean }> { const ok = await /require('fake')/; return { ok }; }`,
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `async function check(): Promise<{ ok: boolean }> { const ok = await /require('fake')/; require('real'); return { ok }; }`,
       },
       {
         name: 'B3 typed async arrow does not leak into its body',
@@ -298,6 +313,83 @@ describe('Steps 68.6 and 68.7 function contexts through analyzer and compiled CL
           { name: 'real', used: true },
         ],
         source: `async function check(): () => void { await /require('fake')/; } require("real");`,
+      },
+      {
+        name: 'C1 intersection return type keeps the real body',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `async function check(): Promise<void> & { ok: boolean } { await /require('fake')/; require("real"); }`,
+      },
+      {
+        name: 'C2 template literal return type keeps the real body',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source:
+          "async function check(): `a${number}b` { await /require('fake')/; require('real'); }",
+      },
+      {
+        name: 'C3 a signature ending in a semicolon does not swallow the next async arrow',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `declare function checkAgain(): Promise<void>;
+const check = async (): Promise<void> => { await /require('fake')/; require("real"); };`,
+      },
+      {
+        name: 'C4 a signature ending in a semicolon does not swallow a JSX element',
+        fileName: 'index.tsx',
+        dependencies: [{ name: 'real', used: true }],
+        source: `declare function check(): Promise<void>;
+const view = <p>hi</p>;
+require('real');`,
+      },
+      {
+        name: 'C5 function type return on an arrow keeps the real body',
+        fileName: 'index.ts',
+        dependencies: [{ name: 'real', used: true }],
+        source: `const make = (): (() => void) => { require("real"); return () => 0; };`,
+      },
+      {
+        name: 'C6 generic async arrow keeps its async body',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const check = async <T,>(value: T): Promise<T> => { await /require('fake')/; require("real"); return value; };`,
+      },
+      {
+        name: 'C7 generic async method keeps its async body',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `class C {
+  async check<T>(): Promise<T> {
+    await /require('fake')/;
+    require("real");
+    throw new Error('unreachable');
+  }
+}`,
+      },
+      {
+        name: 'C8 a ternary call before an async method keeps its async body',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const flag = false;
+const service = { x: flag ? 1 : 2, async run(): Promise<void> { await /require('fake')/; require("real"); } };`,
       },
     ] as const;
 
