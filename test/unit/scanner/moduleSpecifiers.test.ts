@@ -1734,6 +1734,137 @@ describe('extractModuleSpecifiers', () => {
   });
 
   describe('ordinary method function boundaries', () => {
+    it.each([
+      ['number field', 'value = 1'],
+      ['string field', "value = 'text'"],
+      ['array field', 'value = []'],
+      ['call field', 'value = getValue()'],
+    ])('recognizes an async method after a newline-terminated %s', (_label, field) => {
+      const source = `class C {
+  ${field}
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it.each([
+      [
+        'without a return annotation',
+        `class C {
+  value = 1
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      ],
+      [
+        'with a return annotation',
+        `class C {
+  value = 1
+  async run(): Promise<void> {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      ],
+      [
+        'with an explicit semicolon',
+        `class C {
+  value = 1;
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      ],
+    ])('keeps only the real require for a class method %s', (_label, source) => {
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('does not parse an apostrophe in a regex as an unterminated string', () => {
+      const source = `class C {
+  value = 1
+  async run() {
+    await /don't/;
+    require('real');
+  }
+}`;
+
+      expect(() => specifiers(source)).not.toThrow();
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it.each([
+      ['an empty object', '{}'],
+      ['a populated object', '{ x: 1 }'],
+    ])(
+      'does not treat a multiplication operand closing brace as a member separator for %s',
+      (_label, object) => {
+        const source = `const o = {
+  x: cond ? ${object} * f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`;
+
+        expect(specifiers(source)).toEqual(['real']);
+      },
+    );
+
+    it.each([
+      [
+        'a class field ternary',
+        `class C {
+  value = cond ? {} * f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      ],
+      [
+        'a computed object key ternary',
+        `const o = {
+  [cond ? {} * f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }]: 1
+};`,
+      ],
+    ])('keeps the decoy regex inert in %s', (_label, source) => {
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('does not turn a line-continued multiplication into a generator boundary', () => {
+      const source = `class C {
+  value = cond ? {}
+    * f() : async () => {
+      await /require('fake')/;
+      require('real');
+    }
+}`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('preserves a legitimate generator method and multiplication control', () => {
+      expect(
+        specifiers(
+          `const o = {
+  *run() {
+    yield /require('fake')/;
+    require('real');
+  }
+};
+const n = 2 * f();`,
+        ),
+      ).toEqual(['real']);
+    });
+
     it('suspends outer async grammar in computed-name and keyword-named methods', () => {
       const source = `
         async function outer() {

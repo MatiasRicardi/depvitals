@@ -493,6 +493,128 @@ const service = { x: flag ? 1 : 2, async run(): Promise<void> { await /require('
   }]: 1
 };`,
       },
+      {
+        name: 'D8 an empty object before multiplication does not mark a generator',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `const o = {
+  x: cond ? {} * f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+      },
+      {
+        name: 'D9 a populated object before multiplication does not mark a generator',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `const o = {
+  x: cond ? { x: 1 } * f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+      },
+      {
+        name: 'D10 a class field ternary keeps the async arrow body',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value = cond ? {} * f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D11 a computed property key ternary keeps the async arrow body',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `const o = {
+  [cond ? {} * f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }]: 1
+};`,
+      },
+      ...(
+        [
+          ['number', '1'],
+          ['string', "'text'"],
+          ['array', '[]'],
+          ['call', 'getValue()'],
+        ] as const
+      ).map(([label, initializer]) => ({
+        name: `D12 an async class method follows a newline-terminated ${label} field`,
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value = ${initializer}
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      })),
+      {
+        name: 'D13 an async class method with return annotation follows a field',
+        fileName: 'index.ts',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value = 1
+  async run(): Promise<void> {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D14 an explicit semicolon still separates a class field and method',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value = 1;
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D15 an apostrophe in a regex does not cause an operational error',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value = 1
+  async run() {
+    await /don't/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D16 a legitimate generator method retains its generator context',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `const o = {
+  *run() {
+    yield /require('fake')/;
+    require('real');
+  }
+};`,
+      },
+      {
+        name: 'D17 a line-continued multiplication is not a class generator boundary',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value = cond ? {}
+    * f() : async () => {
+      await /require('fake')/;
+      require('real');
+    }
+}`,
+      },
     ] as const;
 
     it.each(cases)('$name uses valid source syntax', ({ fileName, source }) => {
