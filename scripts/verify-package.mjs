@@ -564,6 +564,51 @@ require('real');`,
       writeFileSync(join(directory, fileName), source);
       return directory;
     });
+    const assertionDirs = [
+      [
+        'object-type-ending',
+        'index.ts',
+        "const n = 1 as number & {} / require('real') / 2;",
+        false,
+      ],
+      [
+        'composed-generics',
+        'index.ts',
+        "type Num<T> = number; const n = 1 satisfies Num<string> & Num<number> / require('real') / 2;",
+        false,
+      ],
+      [
+        'import-query',
+        'index.ts',
+        "declare module 'types' { export type Num<T> = number; } const n = 1 as import('types').Num<string> / require('real') / 2;",
+        true,
+      ],
+      [
+        'assertion-named-statement',
+        'index.cjs',
+        "const as = 0, x = 1;\nx\nas < x > /require('fake')/.source.length;\nrequire('real');",
+        false,
+      ],
+    ].flatMap(([name, fileName, source, hasTypes]) =>
+      ['missing', 'clean', 'unused'].map((mode) => {
+        const directory = join(consumerDir, `assertion-${name}-${mode}`);
+        mkdirSync(directory);
+        writeFileSync(
+          join(directory, 'package.json'),
+          JSON.stringify({
+            name: `assertion-${name}-${mode}`,
+            version: '0.0.0',
+            dependencies: {
+              ...(hasTypes ? { types: '*' } : {}),
+              ...(mode !== 'missing' ? { real: '*' } : {}),
+              ...(mode === 'unused' ? { fake: '*' } : {}),
+            },
+          }),
+        );
+        writeFileSync(join(directory, fileName), source);
+        return { directory, mode };
+      }),
+    );
     const invalidTemplateDir = join(consumerDir, 'incomplete-type-template');
     mkdirSync(invalidTemplateDir);
     writeFileSync(
@@ -578,7 +623,13 @@ require('real');`,
       join(invalidTemplateDir, 'index.ts'),
       'require("real"); function f(x: { tag: `x${string',
     );
-    const fixtureDirs = [cleanDir, findingsDir, ...structuralDirs, invalidTemplateDir];
+    const fixtureDirs = [
+      cleanDir,
+      findingsDir,
+      ...structuralDirs,
+      ...assertionDirs.map(({ directory }) => directory),
+      invalidTemplateDir,
+    ];
     const before = snapshotFixtures(fixtureDirs);
 
     // 5. Invoke the installed executable.
@@ -638,6 +689,27 @@ require('real');`,
         result.stdout,
       );
       check(`structural consumer leaves stderr empty: ${directory}`, result.stderr === '');
+    }
+
+    for (const { directory, mode } of assertionDirs) {
+      const result = runInstalledCli(binPath, consumerDir, [directory]);
+      const expected =
+        mode === 'missing'
+          ? 'DepVitals\n\nMissing dependencies (1)\n  real\n'
+          : mode === 'unused'
+            ? 'DepVitals\n\nUnused dependencies (1)\n  fake\n'
+            : 'DepVitals\n\nNo dependency issues found.\n';
+      check(
+        `assertion consumer exit: ${directory}`,
+        result.status === (mode === 'clean' ? 0 : 1),
+        result.stderr,
+      );
+      check(
+        `assertion consumer exact categories: ${directory}`,
+        result.stdout === expected,
+        result.stdout,
+      );
+      check(`assertion consumer stderr: ${directory}`, result.stderr === '');
     }
 
     const invalidTemplate = runInstalledCli(binPath, consumerDir, [invalidTemplateDir]);

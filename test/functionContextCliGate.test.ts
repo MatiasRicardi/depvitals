@@ -15,6 +15,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import { analyzeProject } from '../src/core/analyzeProject.js';
+import { assertionBoundaryCases } from './helpers/pr76AssertionBoundaryCases.js';
 import { remainingParserCases } from './helpers/pr76RemainingCases.js';
 
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
@@ -1197,4 +1198,50 @@ class C {
       readdirSync(project).map((name) => [name, readFileSync(join(project, name), 'utf8')]),
     ).toEqual(before);
   });
+});
+
+// Each report is compared in full: a dependency name in an unused section is not usage evidence.
+describe('PR #76 complete assertion boundaries through the compiled CLI', () => {
+  for (const manifestMode of ['missing', 'clean', 'unused'] as const) {
+    it.each(assertionBoundaryCases)(`$name with ${manifestMode} manifest`, async (scenario) => {
+      const hasTypes = scenario.expected.some(({ specifier }) => specifier === 'types');
+      const dependencies = {
+        ...(hasTypes ? { types: '*' } : {}),
+        ...(manifestMode !== 'missing' ? { real: '*' } : {}),
+        ...(manifestMode === 'unused' ? { fake: '*' } : {}),
+      };
+      const project = mkdtempSync(join(tmpdir(), 'depvitals-assertion-boundary-'));
+      const manifest = JSON.stringify({
+        name: 'assertion-boundaries',
+        version: '0.0.0',
+        dependencies,
+      });
+      const sourcePath = join(project, scenario.fileName);
+      try {
+        writeFileSync(join(project, 'package.json'), manifest);
+        writeFileSync(sourcePath, scenario.source);
+        expect(await analyzeProject(project)).toEqual({
+          projectRoot: project,
+          unusedDependencies: manifestMode === 'unused' ? ['fake'] : [],
+          unusedDevDependencies: [],
+          missingDependencies: manifestMode === 'missing' ? ['real'] : [],
+        });
+        expect(runBuilt(project)).toEqual({
+          status: manifestMode === 'clean' ? 0 : 1,
+          stdout:
+            manifestMode === 'missing'
+              ? 'DepVitals\n\nMissing dependencies (1)\n  real\n'
+              : manifestMode === 'unused'
+                ? 'DepVitals\n\nUnused dependencies (1)\n  fake\n'
+                : 'DepVitals\n\nNo dependency issues found.\n',
+          stderr: '',
+        });
+        expect(readdirSync(project).sort()).toEqual([scenario.fileName, 'package.json'].sort());
+        expect(readFileSync(sourcePath, 'utf8')).toBe(scenario.source);
+        expect(readFileSync(join(project, 'package.json'), 'utf8')).toBe(manifest);
+      } finally {
+        rmSync(project, { recursive: true, force: true });
+      }
+    });
+  }
 });

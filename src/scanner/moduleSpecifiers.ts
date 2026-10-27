@@ -92,6 +92,7 @@ export function extractModuleSpecifiers(
 
 type Token = {
   readonly lineBreakBefore?: boolean;
+  readonly assertionEnd?: boolean;
 } & (
   | {
       readonly kind: 'identifier';
@@ -200,7 +201,13 @@ type TypeAnnotation = TypeDepth &
     | { readonly role: 'field'; readonly owner: ClassContext; readonly member: ClassMember }
     | { readonly role: 'parameter'; readonly owner: ParameterContext }
     | { readonly role: 'class-header'; readonly owner: PendingClassContext }
-    | { readonly role: 'assertion'; readonly owner: LexicalDepth }
+    | {
+        readonly role: 'assertion';
+        readonly owner: LexicalDepth;
+        conditionalDepth: number;
+        conditionalOperand: boolean;
+        importCallPending: boolean;
+      }
   );
 
 type ClassMember = {
@@ -405,7 +412,6 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     let closedExpressionBrace = false;
     let opensClassMemberBoundary = false;
     let matchingOpen: number | undefined;
-    let closedAssertionType = false;
 
     if (ch === undefined) {
       i++;
@@ -626,12 +632,25 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         : undefined;
     if (
       typeAnnotation?.role === 'assertion' &&
+      atLexicalDepth(typeAnnotation.owner) &&
       atTypeRoot(typeAnnotation) &&
-      ((!typeAnnotation.typeOperandExpected &&
-        (identifier !== undefined || ch === '{' || ch === '(')) ||
-        ['/', '+', '-', '*', '%', '!', ';'].includes(ch) ||
-        (ch === '=' && source[i + 1] !== '>'))
+      !(ch === '>' && isArrowHead(tokens[tokens.length - 1], i)) &&
+      !assertionTypeContinues(
+        typeAnnotation,
+        ch,
+        identifier?.value,
+        tokenLineBreakBefore,
+        source[i + 1],
+      )
     ) {
+      // Complete the expression before class-field ASI and slash classification consume it.
+      // The token keeps its type delimiter identity; no runtime brace is invented or popped.
+      const previous = tokens[tokens.length - 1];
+      if (previous !== undefined) {
+        tokens[tokens.length - 1] = { ...previous, assertionEnd: true };
+      }
+      prevIsExpressionKeyword = false;
+      afterControlHead = false;
       typeAnnotation = undefined;
       inType = false;
     }
@@ -809,6 +828,18 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       const atRoot = typeFrame === undefined && atTypeRoot(annotation);
       const isTypeArrow = ch === '>' && isArrowHead(tokens[tokens.length - 1], i);
 
+      if (annotation.role === 'assertion' && atRoot) {
+        if (ch === '?' && annotation.conditionalOperand) {
+          annotation.conditionalDepth++;
+          annotation.conditionalOperand = false;
+        } else if (ch === ':' && annotation.conditionalDepth > 0) {
+          annotation.conditionalDepth--;
+        }
+        if (ch === '(') {
+          annotation.importCallPending = false;
+        }
+      }
+
       // Interpolations own depths relative to the surrounding type, which may itself be an object.
       if (
         ch === '}' &&
@@ -916,12 +947,11 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
           annotation.typeOperandExpected = true;
         }
         if (
-          (annotation.role === 'class-header' || annotation.role === 'assertion') &&
+          annotation.role === 'class-header' &&
           ch === '>' &&
           !isTypeArrow &&
           atTypeRoot(annotation)
         ) {
-          closedAssertionType = annotation.role === 'assertion';
           typeAnnotation = undefined;
         }
       }
@@ -1030,15 +1060,35 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       const value = identifier.value;
 
       if (typeAnnotation !== undefined) {
-        // `keyof`/`extends`/... still expect a type to follow; any other name completes one.
-        typeAnnotation.typeOperandExpected = TYPE_OPERAND_KEYWORDS.has(value);
+        if (typeAnnotation.role === 'assertion') {
+          if (
+            atLexicalDepth(typeAnnotation.owner) &&
+            atTypeRoot(typeAnnotation) &&
+            value === 'extends' &&
+            !typeAnnotation.typeOperandExpected
+          ) {
+            typeAnnotation.conditionalOperand = true;
+          }
+          typeAnnotation.importCallPending = value === 'import';
+        }
+        // `as const` completes an assertion, while prefix keywords still expect an operand.
+        typeAnnotation.typeOperandExpected =
+          TYPE_OPERAND_KEYWORDS.has(value) &&
+          !(typeAnnotation.role === 'assertion' && value === 'const');
       }
       const previousIdentifier = prevIdentifier;
       const startsAssertion =
         (value === 'as' || value === 'satisfies') &&
         !inType &&
+        // TypeScript permits trivia after these operators, but a preceding newline ends them.
+        !tokenLineBreakBefore &&
         !(prevKind === 'punct' && prevPunct === '.') &&
-        !(prevKind === 'punct' && prevPunct === '}' && !closedObjectBrace) &&
+        !(
+          prevKind === 'punct' &&
+          prevPunct === '}' &&
+          !closedObjectBrace &&
+          tokens[tokens.length - 1]?.assertionEnd !== true
+        ) &&
         !afterControlHead &&
         !prevIsExpressionKeyword &&
         canStartTypeAssertion(tokens[tokens.length - 1]);
@@ -1208,6 +1258,9 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       if (startsAssertion) {
         typeAnnotation = {
           role: 'assertion',
+          conditionalDepth: 0,
+          conditionalOperand: false,
+          importCallPending: false,
           owner: {
             parenDepth,
             bracketDepth,
@@ -1623,7 +1676,6 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         ? { memberSeparator: true }
         : {}),
       ...(closedExpressionBrace ? { expressionEnd: true } : {}),
-      ...(closedAssertionType ? { expressionEnd: true } : {}),
     });
     prevKind = 'punct';
     prevPunct = ch;
@@ -2425,6 +2477,9 @@ function lineBreakBetween(tokens: readonly Token[], start: number, end: number):
 }
 
 function isMemberExpressionEnd(token: Token): boolean {
+  if (token.assertionEnd === true) {
+    return true;
+  }
   if (token.kind === 'identifier') {
     return (
       token.propertyName === true ||
@@ -2705,7 +2760,55 @@ function consumeForIterationSeparator(
   return isSeparator;
 }
 
+// At the owner's root, a finished operand can still have a suffix or compose with another
+// type. Only a runtime boundary retires the assertion; internal closers never do so themselves.
+function assertionTypeContinues(
+  annotation: Extract<TypeAnnotation, { role: 'assertion' }>,
+  next: string,
+  identifier: string | undefined,
+  lineBreak: boolean,
+  after: string | undefined,
+): boolean {
+  if (next === '-' && annotation.typeOperandExpected && after !== '-') {
+    return true;
+  }
+  if (identifier !== undefined) {
+    return annotation.typeOperandExpected || (identifier === 'extends' && !lineBreak);
+  }
+  if (next === '?') {
+    return annotation.conditionalOperand;
+  }
+  if (next === ':') {
+    return annotation.conditionalDepth > 0;
+  }
+  if (next === '(') {
+    return annotation.typeOperandExpected || annotation.importCallPending;
+  }
+  if (next === '{' || next === '`' || next === "'" || next === '"') {
+    return annotation.typeOperandExpected;
+  }
+  if (next === '<' || next === '[') {
+    return after !== next && after !== '=' && (annotation.typeOperandExpected || !lineBreak);
+  }
+  if (next === '|' || next === '&') {
+    return after !== next && after !== '=';
+  }
+  if (next === '.') {
+    return true;
+  }
+  if (next === '=' && after === '>') {
+    return true;
+  }
+  return (
+    annotation.typeOperandExpected &&
+    !['/', '+', '-', '*', '%', '!', ';', ',', ')', ']', '}', '=', '>'].includes(next)
+  );
+}
+
 function canStartTypeAssertion(previous: Token | undefined): boolean {
+  if (previous?.assertionEnd === true) {
+    return true;
+  }
   return (
     previous !== undefined &&
     isMemberExpressionEnd(previous) &&
@@ -3143,6 +3246,9 @@ function isRegexStart(
   closedObjectBrace: boolean,
   previous?: Token,
 ): boolean {
+  if (previous?.assertionEnd === true) {
+    return false;
+  }
   if (previous?.kind === 'punct' && previous.value !== '}' && previous.expressionEnd === true) {
     return false;
   }
