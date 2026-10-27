@@ -1,94 +1,70 @@
 # DepVitals
 
-> A simple, lightweight dependency health checker for Node.js projects.
+DepVitals finds unused and undeclared npm dependencies in single-package JavaScript and TypeScript projects. It is a zero-config Node.js CLI with a custom static scanner and no runtime dependencies.
 
-DepVitals scans a Node.js project to identify declared dependencies that appear unused and imported packages that are not declared in `package.json`.
+[Depcheck](https://github.com/depcheck/depcheck)-inspired, DepVitals focuses on dependency declarations and supported usage evidence. Use it to review dependencies during maintenance or before a release; review each finding before changing your manifest.
 
-Inspired by [depcheck](https://github.com/depcheck/depcheck), DepVitals stays deliberately small. It performs lightweight static analysis locally, without making network requests, modifying the analyzed project, or executing its code.
+Documentation on `main` can be ahead of the [published npm package](https://www.npmjs.com/package/depvitals). Check the [changelog](https://github.com/MatiasRicardi/depvitals/blob/main/CHANGELOG.md) for release-specific behavior.
 
-## Usage
+## Quick start
 
-```bash
+Requires **Node.js 22.13.0 or newer**. From a directory containing `package.json`:
+
+```sh
 npx depvitals
+```
+
+Scan an explicit project path, or request standalone help/version:
+
+```sh
 npx depvitals ./path/to/project
 npx depvitals --help
 npx depvitals --version
 ```
 
-Run it from a project directory to scan the current directory, or provide a path to analyze another project.
+These commands run the npm release. For development-branch behavior, build and run the local CLI as described in [Contributing](https://github.com/MatiasRicardi/depvitals/blob/main/CONTRIBUTING.md).
 
-**Requirements:** Node.js `>=22.13.0`.
+## Understand the results
 
-**Version note:** Dependency scanning was introduced in v0.1.0, and v0.1.2 expanded the script executable allowlist. The earlier v0.0.1 release contains only the initial CLI bootstrap.
+| Finding                | Meaning                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Unused dependencies    | Entries in `dependencies` with no supported source, script or configuration usage evidence.                  |
+| Unused devDependencies | The same check for `devDependencies`.                                                                        |
+| Missing dependencies   | Packages referenced by supported source imports/requires but absent from every dependency declaration group. |
 
-**Exit status:**
+**Missing means undeclared, not uninstalled.** DepVitals does not inspect `node_modules`. **Unused is not proof of safe removal**: indirect or unsupported usage may exist. Peer and optional declarations suppress missing findings and are never reported as unused.
 
-```text
-0 = successful clean scan, help, or version
-1 = dependency findings or an operational/CLI error
-```
-
-Scan results, including dependency findings, are printed to `stdout`. Argument errors and operational errors are printed to `stderr`.
-
-## What it detects
-
-- **Unused dependencies** — packages declared in `dependencies` for which no supported source file or `package.json` script provides usage evidence.
-- **Unused devDependencies** — the same analysis applied to packages declared in `devDependencies`.
-- **Missing dependencies** — external packages referenced by supported source imports but not declared in the project's `package.json`.
-
-DepVitals does not inspect `node_modules`, so **"missing" means "not declared", not "not installed"**. An installed but undeclared package can still be reported as missing, and package installation state is never validated.
-
-Similarly, a dependency is reported as unused only when no supported usage evidence is found. Indirect or unsupported usage may still exist.
-
-`peerDependencies` and `optionalDependencies` are considered when checking whether imported packages are declared, but are never reported as unused.
-
-**Example output:**
+A scan can report:
 
 ```text
 DepVitals
 
-Unused dependencies (2)
-  dotenv
+Unused dependencies (1)
   lodash
 
 Unused devDependencies (1)
-  eslint
+  echo-only
 
 Missing dependencies (1)
-  zod
+  undeclared-pkg
 ```
 
-## Supported in v0.1.0
+Reports go to stdout; operational errors go to stderr. Exit status is **0** for a clean scan, help or version, and **1** for findings or errors. An eligible update notice may additionally use stderr without changing the status.
 
-- **JavaScript and TypeScript:** `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs`, `.mts`, `.cts`, including `.d.ts`-style declaration files.
-- **Static ESM imports and exports:** regular imports, side-effect imports, `import type`, and `export ... from`.
-- **Literal dynamic imports:** expressions such as `import("express")`.
-- **Literal CommonJS requires:** expressions such as `require("express")`.
-- **Basic `package.json` script awareness:** a declared dependency invoked by a supported script command counts as used, for example `eslint` in `"lint": "eslint ."`. Script usage can prevent unused findings but does not generate missing-dependency findings.
-- **Known executable names:** since v0.1.2, a static allowlist of 60 known executable commands resolves to 46 declared packages, so a real CLI executable credits the package that declares it, for example `tsserver` → `typescript`, `ng` → `@angular/cli`, `vue-cli-service` → `@vue/cli-service`, `depcruise` → `dependency-cruiser`, `sls` → `serverless`, and `gulp` → `gulp-cli`. Each alias was verified against published `bin` metadata beforehand: nothing is auto-discovered from `bin` fields or from `node_modules`. 32 of them are collision-sensitive, meaning a same-named declared package wins and the mapped provider gets no evidence.
-- **Node.js builtins:** built-in modules, with or without the `node:` prefix, are excluded from missing-dependency findings.
-- **Scoped packages and subpaths:** package specifiers are normalized to their package root. For example, `@scope/ui/button` counts as `@scope/ui`, and `lodash/chunk` counts as `lodash`.
-- **Ignored directories:** generated and vendor trees are skipped, including `node_modules`, `dist`, `build`, `coverage`, `out`, `.next`, `.nuxt`, `.cache`, `.turbo`, and `.git`.
-- **Deterministic output:** findings are grouped into sections in a fixed order, with package names sorted alphabetically within each section.
+## Coverage and fit
 
-Detection uses a lightweight static lexical scanner rather than a full JavaScript/TypeScript parser. Comments, ordinary strings, template text, and regular expressions that merely resemble imports are not counted as dependency usage.
+DepVitals recognizes literal ESM/CommonJS imports, exports and requires in JavaScript, TypeScript, JSX/TSX and declaration files. It normalizes scoped/subpath imports and excludes Node builtins and internal paths.
 
-Function callbacks in default parameters preserve the enclosing function's async/generator context. Function expressions used as object property values or conditional alternatives also preserve real `require()` calls after division operators; regex text after declarations or statement blocks remains inert.
+Supported `package.json` commands and bounded ESLint/Jest configuration hints can prevent unused findings for declared packages. Only source evidence creates missing findings. See the [technical reference](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md) for supported patterns, precedence and exclusions.
 
-Class members retain separate structural contexts, including consecutive newline-terminated fields and TypeScript function-typed fields before generator methods. Block-bodied arrow, function, and class-expression initializers preserve the boundary before a following method, while operators that continue the initializer remain part of that expression. Type annotations keep literal `import()` evidence without turning type arrows into runtime functions. Regex text in those methods remains inert, while real calls in initializers, computed keys, and method bodies still count.
+## Limits and update check
 
-Object-type template interpolations retain their own delimiter boundaries, including nested templates and mapped keys. Method contexts support identifier, string, numeric, and computed names, with balanced nested generic signatures. Postfix updates and the word operators `in` and `instanceof` preserve expression boundaries; a slash after a class expression divides, while a slash after a class declaration can still start a regex.
+Analysis covers one project root, without workspace aggregation, alias/tsconfig resolution or blanket `@types` inference. The scanner is not a full compiler or resolver. Dynamic references can be missed; generated/vendor directories are excluded using fixed rules. There is no JSON output, public analyzer API, per-package explanation or automatic fix.
 
-## Current limitations
+Core analysis is offline and never executes or modifies the analyzed project. After a completed interactive scan, an optional, bounded update check can request public metadata for **DepVitals itself** and cache it outside the project for about 24 hours. It uploads no source or dependency list and adds no telemetry. CI, non-TTY, help/version and failed scans skip the check. Set `DEPVITALS_NO_UPDATE_CHECK=1` to disable it; the [reference](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#update-notice-and-privacy) shows POSIX and PowerShell examples.
 
-- **Single-project analysis:** only one `package.json` is analyzed. Workspaces, monorepos, and parent-manifest lookup are not supported.
-- **No configuration-aware resolution:** framework-specific configurations, plugins, TypeScript `paths`, and bundler aliases are not resolved.
-- **Static specifiers only:** non-literal dynamic `import()`, template-literal specifiers, `require.resolve()`, and property calls such as `obj.require()` are not recognized as usage evidence.
-- **Limited script detection:** script usage relies on supported command patterns, and only the executables in the static allowlist above are translated to their declaring package, and only when the executable appears in a supported direct command position. Every other executable name keeps exact-name matching, mappings are never applied to runner arguments such as `npx tsc` or `pnpm exec tsc`, and ambiguous provider families such as `tailwindcss`, `playwright`, and `webpack` are deliberately unmapped, so only an exactly declared same-name package is credited.
-- **Fixed directory exclusions:** source discovery uses the built-in ignored-directory list above. `.gitignore` and custom ignore rules are not interpreted.
-- **Conservative error handling:** unreadable source files or source content the lexical scanner cannot safely finish scanning, such as unterminated strings, comments, templates, or regular expressions, abort the scan rather than producing partial results.
-- **No remediation features yet:** automatic fixes, custom configuration files, and per-dependency explanations are not available.
+## More
 
-## License
+[Technical reference](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md) · [Contributing](https://github.com/MatiasRicardi/depvitals/blob/main/CONTRIBUTING.md) · [Changelog](https://github.com/MatiasRicardi/depvitals/blob/main/CHANGELOG.md) · [npm](https://www.npmjs.com/package/depvitals) · [Repository](https://github.com/MatiasRicardi/depvitals)
 
-MIT
+[MIT license](https://github.com/MatiasRicardi/depvitals/blob/main/LICENSE).

@@ -7,7 +7,27 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Added
+
+- Bounded static usage hints for legacy ESLint configuration in `package.json` and strict
+  `.eslintrc.json`, and for supported Jest manifest presets, environments and transformers. These
+  hints only prevent unused findings for declared packages and respect root configuration precedence.
+- An optional, cached CLI-self-update notice after eligible interactive scans. Core analysis remains
+  offline; CI, non-TTY, help/version and failed scans skip the check. Set
+  `DEPVITALS_NO_UPDATE_CHECK=1` to disable it.
+
+### Fixed
+
+- More precise JavaScript/TypeScript source detection across function, arrow, class, assertion and
+  JSX/TSX boundaries, preserving real dependency usage while keeping regex, comment and other inert
+  text out of findings. Unfinished lexical constructs still fail operationally.
+- More conservative script-command and shell-comment handling, avoiding evidence from command
+  arguments, quoted payloads and unsupported shell syntax.
+
+### Changed
+
+- Reorganized the README into a compact product guide with a focused technical reference, current
+  contributor guidance and more specific package discovery metadata.
 
 ## [0.1.2] - 2026-10-20
 

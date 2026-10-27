@@ -1,18 +1,18 @@
 {
   "name": "depvitals",
   "version": "0.1.2",
-  "description": "A simple, lightweight dependency health checker for Node.js projects.",
+  "description": "Find unused and undeclared npm dependencies in JavaScript and TypeScript projects with a zero-config CLI and no runtime dependencies.",
   "keywords": [
     "nodejs",
+    "javascript",
     "typescript",
-    "dependencies",
-    "dependency-analysis",
+    "npm",
+    "cli",
     "dependency-checker",
-    "dependency-health",
+    "static-analysis",
     "unused-dependencies",
     "missing-dependencies",
-    "depcheck",
-    "cli"
+    "depcheck"
   ],
   "license": "MIT",
   "type": "module",
