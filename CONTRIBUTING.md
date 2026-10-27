@@ -1,147 +1,69 @@
 # Contributing to DepVitals
 
-Thanks for helping. This document describes the local setup, the conventions the tooling enforces,
-and the release discipline the project follows.
-
-## Before you start
-
-DepVitals deliberately stays small. Every release has an agreed scope, and **features must not be
-implemented ahead of the roadmap**. If you want to work on something that is not scheduled yet, open
-an issue first instead of opening a pull request.
-
-Rules of thumb:
-
-- Normal scanning must never mutate the analyzed project. DepVitals does not modify `package.json`,
-  lockfiles or any other project file during a scan. Mutations may only happen through an explicit
-  fix command, and only once the roadmap release that implements it actually exists.
-- Never execute project code while scanning a repository. DepVitals analyzes projects statically; it
-  does not run the files or the configurations of the project it scans.
-- Prefer marking a result as `Needs Review` over guessing.
-- Keep pull requests small: one feature, one bug fix, one refactor.
+Keep changes focused on dependency analysis and the active task. Discuss broader features before implementing them. Read repository instructions when present, then inspect the current code and tests; historical plans may describe behavior that has changed. Public documentation and code comments use English.
 
 ## Local setup
 
-Requirements: Node.js `>=22.13.0` and pnpm (the exact version is pinned in the `packageManager`
-field of `package.json`).
+Use Node.js **22.13.0 or newer** and the exact pnpm version recorded in `package.json#packageManager`. With Corepack available:
 
-```bash
-corepack enable      # makes the pinned pnpm available
-pnpm install
-pnpm run check       # format check + lint + typecheck + tests
+```sh
+corepack enable
+pnpm install --frozen-lockfile
+pnpm run check
+pnpm run build
 ```
 
-## Commands
+Use pnpm for development. Do not replace the toolchain or add dependencies as a side effect of another task. Dependency changes must be justified and include a consistent `pnpm-lock.yaml`.
 
-| Command                  | What it does                                                    |
-| ------------------------ | --------------------------------------------------------------- |
-| `pnpm run check`         | Everything CI runs: `format:check`, `lint`, `typecheck`, `test` |
-| `pnpm run lint`          | ESLint (`--max-warnings 0`)                                     |
-| `pnpm run lint:fix`      | ESLint with autofix                                             |
-| `pnpm run format`        | Prettier write                                                  |
-| `pnpm run format:check`  | Prettier check                                                  |
-| `pnpm run typecheck`     | `tsc --noEmit` over sources, tests and config files             |
-| `pnpm run test`          | Vitest single run                                               |
-| `pnpm run test:watch`    | Vitest watch mode                                               |
-| `pnpm run test:coverage` | Vitest with V8 coverage into `coverage/`                        |
-| `pnpm run build`         | Emit JavaScript, source maps and declarations into `dist/`      |
-| `pnpm run clean`         | Remove `dist/`                                                  |
+To exercise development behavior without resolving the published npm release:
 
-## Code style
-
-- **Prettier** owns formatting. Do not hand-format against it; run `pnpm run format`.
-- **ESLint** runs type-aware rules (`strictTypeChecked` + `stylisticTypeChecked`) using
-  `tsconfig.json`, with warnings treated as errors.
-- TypeScript is configured aggressively: `strict`, `noUncheckedIndexedAccess`,
-  `exactOptionalPropertyTypes`, `noPropertyAccessFromIndexSignature`, `verbatimModuleSyntax`.
-- ESM only: relative imports must include the `.js` extension (NodeNext resolution).
-- Functions returning values need explicit return types (expressions and typed function
-  expressions are exempt).
-- Prefer `type` over `interface`, and `import type` for type-only imports.
-- No abstractions that are not required by a scheduled release.
-
-## Testing
-
-- Tests live in `test/` and are named `*.test.ts` (Vitest).
-- Import `describe` / `it` / `expect` explicitly from `vitest`; globals are not enabled.
-- Fixture-based integration tests use `test/fixtures/<scenario>/`, where each fixture is a real
-  repository (its own `package.json`) scanned by the engine. Fixture folders are excluded from the
-  root TypeScript project by design: add them to the fixtures README, not to `src/`.
-- Every bug fix requires a regression test, and every supported scenario requires a fixture. Only
-  advertise scenarios that are tested.
-- Coverage thresholds are raised per release; keep new code covered by tests even when the gate is
-  loose.
-
-## Source layout
-
-The structure below is introduced one directory at a time by the roadmap releases and is never
-created upfront. `src/cli`, `src/core`, `src/scanner` and `src/reporters` exist today, together with
-`test/unit` and `test/fixtures`; the remaining entries are still planned.
-
-```text
-src/
-  cli/          # command parsing, CLI output (current)
-  core/         # scanning + analysis orchestration (current)
-  scanner/      # filesystem discovery, ignore rules (current)
-  analyzers/    # unused, missing, dependency-group analysis (planned)
-  evidence/     # usage evidence and source locations (planned)
-  reporters/    # human, JSON, GitHub annotations (current)
-  config/       # configuration loading and merging (planned)
-  detectors/    # framework-specific detection (planned)
-  package-manager/  # package.json / lockfile support (planned)
-  utils/        # path, string and module-id normalization (planned)
-test/
-  unit/         # Vitest suites (current)
-  integration/  # end-to-end scans of whole fixtures (planned)
-  fixtures/     # synthetic repositories scanned by the tests (current)
+```sh
+node dist/cli/index.js --help
+node dist/cli/index.js --version
+node dist/cli/index.js ./path/to/project
 ```
 
-## Git conventions
+The [technical reference](docs/reference.md#update-notice-and-privacy) explains how to disable the optional CLI update check in POSIX and PowerShell environments.
 
-- Branch from `main`; keep branches short-lived.
-- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
-  `feat: ...`, `fix: ...`, `refactor: ...`, `test: ...`, `docs: ...`, `chore: ...`, `ci: ...`.
-  Use `!` and `BREAKING CHANGE:` for breaking changes.
-- Do not commit `dist/`, `coverage/`, `node_modules/` or anything under `instructions/` (already
-  covered by `.gitignore`). `pnpm-lock.yaml` **must** be committed.
-- The `instructions/` directory holds internal planning documents and is never published.
+## Validation
 
-## Pull requests
+| Command                   | Purpose                                                                                     |
+| ------------------------- | ------------------------------------------------------------------------------------------- |
+| `pnpm run format:check`   | Check Prettier formatting.                                                                  |
+| `pnpm run format`         | Format files; review the resulting diff.                                                    |
+| `pnpm run lint`           | Type-aware ESLint with warnings treated as errors.                                          |
+| `pnpm run typecheck`      | Check source, tests and tooling configuration.                                              |
+| `pnpm run test`           | Run Vitest once; pass a test path for focused work.                                         |
+| `pnpm run test:watch`     | Watch tests during development.                                                             |
+| `pnpm run test:coverage`  | Run tests with V8 coverage.                                                                 |
+| `pnpm run build`          | Emit the CLI and declarations into `dist/`.                                                 |
+| `pnpm run clean`          | Remove generated `dist/`.                                                                   |
+| `pnpm run verify:package` | Pack, inspect and install the local tarball in a temporary consumer, then exercise its CLI. |
 
-Fill in the pull request template and make sure `pnpm run check` passes locally. CI runs lint,
-typecheck, tests (Node.js matrix: lowest supported engine plus current majors, macOS and Windows)
-and the build. All matrix results are aggregated into a single `CI` check, which is the one branch
-protection on `main` requires.
+`pnpm run check` runs format checking, lint, typechecking and tests. Build, coverage and package smoke are separate commands. Before a change is considered complete, run `check`, `build` and `git diff --check`; run package smoke when CLI, notifier or packaging is affected. Review the full diff and Git status afterward.
 
-## Toolchain notes
+CI covers the exact minimum Node runtime, other supported Node versions and Linux/macOS/Windows. Package smoke runs separately. The aggregate branch-protection check is named `CI`; do not rename it or weaken the matrix to hide failures.
 
-- `typescript` is pinned to the 5.9 line on purpose: `typescript-eslint` supports `>=4.8.4 <6.1`, so
-  TypeScript 7 cannot be used until the linting stack supports it. Bump it together with
-  `typescript-eslint`.
-- `@types/node` tracks the lowest supported Node.js major (22), so code cannot accidentally rely on
-  APIs that are newer than `engines.node`.
-- pnpm 11 reads project settings from `pnpm-workspace.yaml` (its `package.json` `pnpm` field is no
-  longer read) and blocks install scripts unless a dependency is listed under `allowBuilds`.
-- ESLint ignores `test/fixtures/**` and `instructions/**`; Prettier ignores both plus
-  `pnpm-lock.yaml`.
+## Meaningful tests and invariants
 
-## Releases
+Tests live under `test/`, use `*.test.ts`, and explicitly import Vitest helpers. Integration fixtures belong under `test/fixtures/`; document representative fixture additions there. Fixtures can deliberately contain unusual or invalid source and are excluded from root lint/typechecking.
 
-The first public npm release is `v0.0.1`, which established the CLI and package foundation.
-The dependency scanner (unused and missing dependencies) is implemented in the repository and is
-prepared for release as `v0.1.0`.
+Every detection change needs positive coverage and a nearby negative control. Verify observable findings, output channels and exit codes rather than implementation details. For scanners, include decoy text and malformed-input cases. Never relax an existing expectation or skip a regression to make a change pass.
 
-Package version changes are made only as part of an explicit release-candidate step. Do not bump
-versions, create tags, or publish packages outside the release process.
+Normal scanning must remain static, offline, deterministic and read-only: never execute analyzed source, scripts, lifecycle hooks or config modules. Source evidence can create missing findings; script/configuration evidence can only suppress unused. Tests should use temporary projects, assert non-mutation, and clean up on success and failure.
 
-Before each npm publish:
+Notifier tests use injected clocks, cache paths and transports or local test servers, never the public registry or real user cache. An eligible CLI-self-update lookup is separate from core analysis; preserve its gating, time bounds and silent failures.
 
-- confirm the `LICENSE` copyright holder;
-- finalize `README.md` and `CHANGELOG.md`.
+## Code and repository conventions
 
-A release is prepared as a focused release PR that runs CI (`pnpm run check` and the build) and passes the packaged-artifact smoke test (`pnpm run verify:package`). A maintainer then publishes to npm manually; the npm registry and consumer are verified (read-only `npm view` checks) before an immutable version tag and GitHub Release are created.
+The implemented areas are `src/cli/` (including `notifier/`), `src/core/`, `src/scanner/`, `src/detectors/` and `src/reporters/`. Keep detection, analysis and formatting separate; do not create speculative future modules.
 
-Publishing automation (GitHub Actions / npm trusted publishing) and npm provenance
-(`publishConfig.provenance`) remain future improvements: releases are still published manually.
+Follow strict TypeScript and type-aware ESLint rules. Prefer `type`, type-only imports and explicit return types. Relative ESM imports use `.js`. Prettier owns formatting; use single quotes, semicolons and LF on every platform. Do not weaken compiler, lint or coverage rules.
 
-Versioning is conservative: removing a detection capability, adding false negatives, changing
-evidence semantics or changing default ignore behavior are breaking changes.
+Branch from current `main`. Keep commits focused and use Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:` or `ci:`). Do not commit generated `dist/`, coverage, `node_modules` or ignored internal planning files. Preserve unrelated local work. Do not commit secrets or perform publish actions without authorization.
+
+## Release discipline
+
+Use the [changelog](CHANGELOG.md) to distinguish historical releases from unreleased changes. Version bumps, publication and release notes are supervised release work, not incidental feature changes. Before publishing, confirm the license attribution, finalize public docs, validate the candidate tarball and review CI.
+
+Publishing automation and npm provenance are not configured. Do not create tags, publish to npm, push, merge or create a GitHub Release without explicit maintainer authorization. Changes that remove detection coverage, add false negatives or change evidence semantics require compatibility review.
