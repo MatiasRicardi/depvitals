@@ -15,6 +15,9 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import { analyzeProject } from '../src/core/analyzeProject.js';
+import { arrowAssertionCases } from './helpers/pr76ArrowAssertionCases.js';
+import { assertionBoundaryCases } from './helpers/pr76AssertionBoundaryCases.js';
+import { remainingParserCases } from './helpers/pr76RemainingCases.js';
 
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
 const BUILT_ENTRY = join(REPO_ROOT, 'dist', 'cli', 'index.js');
@@ -56,7 +59,13 @@ function runProject(
       writeFileSync(join(project, name), source);
     }
 
-    return runBuilt(project);
+    const result = runBuilt(project);
+    expect(readdirSync(project).sort()).toEqual(['package.json', ...Object.keys(files)].sort());
+    expect(readFileSync(join(project, 'package.json'), 'utf8')).toBe(JSON.stringify(manifest));
+    for (const [name, source] of Object.entries(files)) {
+      expect(readFileSync(join(project, name), 'utf8')).toBe(source);
+    }
+    return result;
   } finally {
     rmSync(project, { recursive: true, force: true });
   }
@@ -80,6 +89,287 @@ describe('Step 68.4 compiled CLI gate', () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toBe('DepVitals\n\nMissing dependencies (1)\n  real\n');
     expect(result.stderr).toBe('');
+  });
+
+  describe('Step 68.9 structural contexts through the compiled CLI', () => {
+    const cases = [
+      ...remainingParserCases,
+      {
+        name: 'assertion function types do not change the surrounding async grammar',
+        fileName: 'index.ts',
+        source: `async function outer() {
+          const value = 1 as Num<() => number> + await /require('fake')/;
+          require('real');
+        }`,
+      },
+      {
+        name: 'consecutive fields',
+        fileName: 'index.cjs',
+        source: `class C { a = () => 0
+          b
+          c
+          *run() { yield /require('fake')/; require('real'); }
+        }`,
+      },
+      {
+        name: 'block arrow initializer before async method',
+        fileName: 'index.cjs',
+        source: `class C { handle = () => {}
+          async load() { await /require('fake')/; require('real'); }
+        }`,
+      },
+      {
+        name: 'function initializer before generator',
+        fileName: 'index.cjs',
+        source: `class C { handle = function () {};
+          *run() { yield /require('fake')/; require('real'); }
+        }`,
+      },
+      {
+        name: 'class expression initializer before async method',
+        fileName: 'index.cjs',
+        source: `class C { handle = class {}
+          async load() { await /require('fake')/; require('real'); }
+        }`,
+      },
+      {
+        name: 'function-typed field',
+        fileName: 'index.ts',
+        source: `class C { callback!: (value: string) => void
+          *run() { yield /require('fake')/; require('real'); }
+        }`,
+      },
+      {
+        name: 'mixed expression and return annotation',
+        fileName: 'index.ts',
+        source: `const o = { value: cond ? f() : async (): Promise<{ ok: boolean }> => {
+          await /require('fake')/; require('real'); return { ok: true };
+        } };`,
+      },
+      {
+        name: 'template interpolation inside object types',
+        fileName: 'index.ts',
+        source:
+          'function f(x: { tag: `x${string}` }) {} class C { value!: { tag: `x${string}` }; } require("real");',
+      },
+      {
+        name: 'special method names and ordinary string methods',
+        fileName: 'index.cjs',
+        source: `async function outer() {
+          const o = { async return() { await /require('fake')/; require('real'); },
+            'run'(await) { return await / require('real') / 2; },
+            *function() { yield /require('fake')/; require('real'); } };
+          class C { 1(await) { return await / require('real') / 2; } }
+        }`,
+      },
+      {
+        name: 'nested generic arrow and method signatures',
+        fileName: 'index.ts',
+        source: `const f = async <T extends { value: number }>(x: T) => {
+          await /require('fake')/; require('real'); };
+          class C { async run<T = (x: { value: number }) => void>(x: T) {
+            await /require('fake')/; require('real'); } }`,
+      },
+      {
+        name: 'postfix division and field boundary',
+        fileName: 'index.cjs',
+        source: `let n = 1; const value = n++ / require('real') / 2;
+          class C { value = n--
+            async run() { await /require('fake')/; require('real'); } }`,
+      },
+      {
+        name: 'word operators continue async expression bodies',
+        fileName: 'index.cjs',
+        source: `const f = async () => value
+          instanceof Object ? await /require('fake')/ : require('real');
+          class C { value = async () => value /*\n*/ in Object
+            ? await /require('fake')/ : require('real'); }`,
+      },
+      {
+        name: 'for-of regex and restricted line terminators',
+        fileName: 'index.cjs',
+        source: `for (const x of /require('fake')/.source) { require('real'); }
+          function f() { return
+            {} /require('fake-too')/.test('');
+          }
+          while (flag) { break
+            /require('fake-break')/.test('');
+          }`,
+      },
+      {
+        name: 'TypeScript assertion and abstract constructor type boundaries',
+        fileName: 'index.ts',
+        source: `type Num<T> = number;
+          const value = 1 as Num<Array<string>> / require('real') / 2;
+          class C { value!: abstract
+            new () => object
+            async run() { await /require('fake')/; require('real'); }
+          }`,
+      },
+      {
+        name: 'parameter and field grammar restore outer async contexts',
+        fileName: 'index.cjs',
+        source: `async function outer() {
+          function inner(value = await / require('real') / 2) {}
+          class C { value = await / require('real') / 2; }
+          const f = flag ? () => 0 : await /require('fake')/;
+          const g = (callback = async () => { await /require('fake-too')/; }) => 0;
+          require('real');
+        }`,
+      },
+      {
+        name: 'class expressions divide but declarations permit regex',
+        fileName: 'index.cjs',
+        source: `const value = class {} / require('real') / 2;
+          class C { handle = class Named extends Base {}
+            / require('real') / 2; }
+          /require('fake')/.test(value);`,
+      },
+    ];
+
+    it.each(cases)('$name: clean with only real declared', ({ fileName, source }) => {
+      expect(
+        runProject(
+          { name: 'structural-clean', version: '0.0.0', dependencies: { real: '*' } },
+          { [fileName]: source },
+        ),
+      ).toEqual({
+        status: 0,
+        stdout: 'DepVitals\n\nNo dependency issues found.\n',
+        stderr: '',
+      });
+    });
+
+    it.each(cases)('$name: only real is missing', ({ fileName, source }) => {
+      expect(
+        runProject({ name: 'structural-missing', version: '0.0.0' }, { [fileName]: source }),
+      ).toEqual({
+        status: 1,
+        stdout: 'DepVitals\n\nMissing dependencies (1)\n  real\n',
+        stderr: '',
+      });
+    });
+
+    it.each(cases)('$name: the declared decoy stays unused', ({ fileName, source }) => {
+      expect(
+        runProject(
+          {
+            name: 'structural-unused',
+            version: '0.0.0',
+            dependencies: { real: '*', fake: '*' },
+          },
+          { [fileName]: source },
+        ),
+      ).toEqual({
+        status: 1,
+        stdout: 'DepVitals\n\nUnused dependencies (1)\n  fake\n',
+        stderr: '',
+      });
+    });
+
+    it.each(cases)(
+      '$name: a lexical error prevents a partial clean report',
+      ({ fileName, source }) => {
+        const result = runProject(
+          { name: 'structural-invalid', version: '0.0.0', dependencies: { real: '*' } },
+          { [fileName]: `${source}\n'unterminated` },
+        );
+        expect(result.status).toBe(1);
+        expect(result.stdout).toBe('');
+        expect(result.stderr).toContain(`Source file `);
+        expect(result.stderr).toContain(
+          `${fileName} could not be analyzed: Unterminated string literal`,
+        );
+        expect(result.stderr).not.toContain('No dependency issues found');
+      },
+    );
+
+    it('keeps an incomplete object-type template on the operational error channel', () => {
+      const result = runProject(
+        { name: 'invalid-type-template', version: '0.0.0', dependencies: { real: '*' } },
+        { 'index.ts': 'require("real"); function f(x: { tag: `x${string' },
+      );
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain(
+        'index.ts could not be analyzed: Unterminated template literal',
+      );
+    });
+
+    const moduleJsxCases = [
+      {
+        fileName: 'index.jsx',
+        source: `const view = <p />;
+          await /require('fake')/;
+          require('real');
+          export {};`,
+      },
+      {
+        fileName: 'index.tsx',
+        source: `const view = <p />;
+          await /require('fake')/;
+          require('real');
+          export {};`,
+      },
+    ];
+
+    it.each(moduleJsxCases)(
+      '$fileName honors package type module for top-level await',
+      ({ fileName, source }) => {
+        expect(
+          runProject(
+            {
+              name: 'module-jsx',
+              version: '0.0.0',
+              type: 'module',
+              dependencies: { real: '*' },
+            },
+            { [fileName]: source },
+          ),
+        ).toEqual({
+          status: 0,
+          stdout: 'DepVitals\n\nNo dependency issues found.\n',
+          stderr: '',
+        });
+      },
+    );
+
+    it.each(moduleJsxCases)(
+      '$fileName does not hide a missing real module dependency',
+      ({ fileName, source }) => {
+        expect(
+          runProject(
+            { name: 'module-jsx-missing', version: '0.0.0', type: 'module' },
+            { [fileName]: source },
+          ),
+        ).toEqual({
+          status: 1,
+          stdout: 'DepVitals\n\nMissing dependencies (1)\n  real\n',
+          stderr: '',
+        });
+      },
+    );
+
+    it.each(moduleJsxCases)(
+      '$fileName keeps the inert regex decoy unused',
+      ({ fileName, source }) => {
+        expect(
+          runProject(
+            {
+              name: 'module-jsx-unused',
+              version: '0.0.0',
+              type: 'module',
+              dependencies: { real: '*', fake: '*' },
+            },
+            { [fileName]: source },
+          ),
+        ).toEqual({
+          status: 1,
+          stdout: 'DepVitals\n\nUnused dependencies (1)\n  fake\n',
+          stderr: '',
+        });
+      },
+    );
   });
 
   it('does not report regex text from top-level await in an mjs module', () => {
@@ -909,4 +1199,51 @@ class C {
       readdirSync(project).map((name) => [name, readFileSync(join(project, name), 'utf8')]),
     ).toEqual(before);
   });
+});
+
+// Each report is compared in full: a dependency name in an unused section is not usage evidence.
+describe('PR #76 complete assertion boundaries through the compiled CLI', () => {
+  const cases = [...assertionBoundaryCases, ...arrowAssertionCases];
+  for (const manifestMode of ['missing', 'clean', 'unused'] as const) {
+    it.each(cases)(`$name with ${manifestMode} manifest`, async (scenario) => {
+      const hasTypes = scenario.expected.some(({ specifier }) => specifier === 'types');
+      const dependencies = {
+        ...(hasTypes ? { types: '*' } : {}),
+        ...(manifestMode !== 'missing' ? { real: '*' } : {}),
+        ...(manifestMode === 'unused' ? { fake: '*' } : {}),
+      };
+      const project = mkdtempSync(join(tmpdir(), 'depvitals-assertion-boundary-'));
+      const manifest = JSON.stringify({
+        name: 'assertion-boundaries',
+        version: '0.0.0',
+        dependencies,
+      });
+      const sourcePath = join(project, scenario.fileName);
+      try {
+        writeFileSync(join(project, 'package.json'), manifest);
+        writeFileSync(sourcePath, scenario.source);
+        expect(await analyzeProject(project)).toEqual({
+          projectRoot: project,
+          unusedDependencies: manifestMode === 'unused' ? ['fake'] : [],
+          unusedDevDependencies: [],
+          missingDependencies: manifestMode === 'missing' ? ['real'] : [],
+        });
+        expect(runBuilt(project)).toEqual({
+          status: manifestMode === 'clean' ? 0 : 1,
+          stdout:
+            manifestMode === 'missing'
+              ? 'DepVitals\n\nMissing dependencies (1)\n  real\n'
+              : manifestMode === 'unused'
+                ? 'DepVitals\n\nUnused dependencies (1)\n  fake\n'
+                : 'DepVitals\n\nNo dependency issues found.\n',
+          stderr: '',
+        });
+        expect(readdirSync(project).sort()).toEqual([scenario.fileName, 'package.json'].sort());
+        expect(readFileSync(sourcePath, 'utf8')).toBe(scenario.source);
+        expect(readFileSync(join(project, 'package.json'), 'utf8')).toBe(manifest);
+      } finally {
+        rmSync(project, { recursive: true, force: true });
+      }
+    });
+  }
 });

@@ -54,6 +54,7 @@ const FORBIDDEN_PREFIXES = [
   'instructions/',
   'coverage/',
   'node_modules/',
+  'scripts/',
 ];
 
 /**
@@ -71,14 +72,14 @@ function fail(message) {
  * On Windows npm and the installed CLI are `.cmd` shims, which need to be launched through a shell
  * with quoted paths. Everywhere else the command runs directly.
  */
-function run(command, args, cwd) {
+function run(command, args, cwd, env = process.env) {
   if (process.platform === 'win32') {
     const shellCommand = [command, ...args].map((value) => `"${value}"`).join(' ');
 
-    return spawnSync(shellCommand, { encoding: 'utf8', cwd, shell: true });
+    return spawnSync(shellCommand, { encoding: 'utf8', cwd, env, shell: true, timeout: 120_000 });
   }
 
-  return spawnSync(command, args, { encoding: 'utf8', cwd });
+  return spawnSync(command, args, { encoding: 'utf8', cwd, env, timeout: 120_000 });
 }
 
 let checksPassed = 0;
@@ -195,7 +196,27 @@ function makeTempDir(prefix) {
  * Run the installed CLI executable against the given arguments.
  */
 function runInstalledCli(binPath, consumerDir, args) {
-  return run(binPath, args, consumerDir);
+  return run(binPath, args, consumerDir, { ...process.env, DEPVITALS_NO_UPDATE_CHECK: '1' });
+}
+
+function checkProductionImports(directory) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      checkProductionImports(path);
+    } else if (entry.name.endsWith('.js')) {
+      const source = readFileSync(path, 'utf8');
+      const imports = [
+        ...source.matchAll(/^(?:import|export)\s+(?:.*?\s+from\s+)?['"]([^'"]+)['"]/gm),
+      ];
+      const external = imports.find((match) => !/^(?:node:|\.\.?\/)/.test(match[1]));
+      check(
+        `production imports are internal or Node builtins: ${entry.name}`,
+        !external,
+        external?.[1],
+      );
+    }
+  }
 }
 
 /**
@@ -315,6 +336,20 @@ function main() {
       'installed depvitals from the local tarball',
       existsSync(join(consumerDir, 'node_modules', 'depvitals', 'package.json')),
     );
+    const installedRoot = join(consumerDir, 'node_modules', 'depvitals');
+    const installedManifest = JSON.parse(readFileSync(join(installedRoot, 'package.json'), 'utf8'));
+    check(
+      'installed manifest has no runtime or optional dependencies',
+      installedManifest.dependencies === undefined &&
+        installedManifest.optionalDependencies === undefined,
+    );
+    check(
+      'consumer did not install development dependencies',
+      readdirSync(join(consumerDir, 'node_modules'))
+        .filter((name) => !name.startsWith('.'))
+        .every((name) => name === 'depvitals'),
+    );
+    checkProductionImports(join(installedRoot, 'dist'));
 
     // 4. Create two minimal, deterministic fixture projects inside the consumer temp dir. They
     //    stand in for real scanned projects and keep the smoke test independent of the DepVitals
@@ -358,8 +393,256 @@ function main() {
       ].join('\n'),
     );
 
-    // Snapshot the fixtures so the read-only scan guarantee can be asserted below.
-    const before = snapshotFixtures([cleanDir, findingsDir]);
+    const structuralDirs = [
+      [
+        'one-shot-for-of',
+        'index.cjs',
+        `const of = 6;
+for (const x of of / require('real') / 2 ? [] : []) {}`,
+      ],
+      [
+        'ordinary-assertion-named-comparisons',
+        'index.cjs',
+        `const as = 0, satisfies = 0, x = 1;
+as < x > /require('fake')/.source.length;
+satisfies < x > /require('fake')/.source.length;
+require('real');`,
+      ],
+      [
+        'typed-class-heritage',
+        'index.ts',
+        `class Base<T> {}
+interface I<T> {}
+class C extends Base<{ ok: boolean }> implements I<() => object> {
+  async run() { await /require('fake')/; require('real'); }
+}`,
+      ],
+      [
+        'qualified-type-assertions',
+        'index.ts',
+        `namespace N { export type Num<T> = number; }
+const a = 1 as N.Num<string> / require('real') / 2;
+const b = 1 satisfies N.Num<string> / require('real') / 2;`,
+      ],
+      [
+        'prefixed-type-operands',
+        'index.ts',
+        `type Num<T> = number;
+const a = 1 as Num<keyof { ok: boolean }> / require('real') / 2;
+const b = 1 satisfies Num<keyof { ok: boolean }> / require('real') / 2;
+async function outer() {
+  const c = 1 as Num<() => number> + await /require('fake')/;
+  require('real');
+}`,
+      ],
+      [
+        'html-closing-trivia',
+        'index.cjs',
+        `/* comment */ --> require('fake')
+const x = 1; /* comment
+*/ --> require('fake')
+require('real');`,
+      ],
+      [
+        'consecutive-fields',
+        'index.cjs',
+        `class C { a = () => 0
+          b
+          c
+          *run() { yield /require('fake')/; require('real'); }
+        }`,
+      ],
+      [
+        'function-typed-field',
+        'index.ts',
+        `class C { callback!: (value: string) => void
+          *run() { yield /require('fake')/; require('real'); }
+        }`,
+      ],
+      [
+        'multiplication-division',
+        'index.cjs',
+        `class C {
+          value = (2 * require('real')) / 4;
+          async run() { await /require('fake')/; require('real'); }
+        }`,
+      ],
+      [
+        'object-type-templates',
+        'index.ts',
+        'function f(x: { tag: `x${string}` }) {} class C { value!: { tag: `x${string}` }; } require("real");',
+      ],
+      [
+        'special-method-names',
+        'index.cjs',
+        `async function outer() {
+          const o = { async return() { await /require('fake')/; require('real'); },
+            'run'(await) { return await / require('real') / 2; },
+            *function() { yield /require('fake')/; require('real'); } };
+          class C { 1(await) { return await / require('real') / 2; } }
+        }`,
+      ],
+      [
+        'nested-generics',
+        'index.ts',
+        `const f = async <T extends { value: number }>(x: T) => {
+          await /require('fake')/; require('real'); };
+          class C { async run<T = (x: { value: number }) => void>(x: T) {
+            await /require('fake')/; require('real'); } }`,
+      ],
+      [
+        'postfix-operators',
+        'index.cjs',
+        `let n = 1; const v = n++ / require('real') / 2;
+          class C { value = n--
+            async run() { await /require('fake')/; require('real'); } }`,
+      ],
+      [
+        'word-operators',
+        'index.cjs',
+        `const f = async () => value
+          instanceof Object ? await /require('fake')/ : require('real');
+          class C { value = async () => value /*\n*/ in Object
+            ? await /require('fake')/ : require('real'); }`,
+      ],
+      [
+        'class-expression-division',
+        'index.cjs',
+        `const value = class {} / require('real') / 2;
+          class C { handle = class Named extends Base {}
+            / require('real') / 2; }
+          /require('fake')/.test(value);`,
+      ],
+      [
+        'for-of-and-asi',
+        'index.cjs',
+        `for (const x of /require('fake')/.source) { require('real'); }
+          function f() { return
+            {} /require('fake-too')/.test('');
+          }`,
+      ],
+      [
+        'typescript-expression-boundaries',
+        'index.ts',
+        `type Num<T> = number;
+          const value = 1 as Num<Array<string>> / require('real') / 2;
+          class C { value!: abstract
+            new () => object
+            async run() { await /require('fake')/; require('real'); }
+          }`,
+      ],
+      [
+        'module-jsx',
+        'index.jsx',
+        `const view = <p />;
+          await /require('fake')/;
+          require('real');
+          export {};`,
+        'module',
+      ],
+      [
+        'module-tsx',
+        'index.tsx',
+        `const view = <p />;
+          await /require('fake')/;
+          require('real');
+          export {};`,
+        'module',
+      ],
+    ].map(([name, fileName, source, type]) => {
+      const directory = join(consumerDir, name);
+      mkdirSync(directory);
+      writeFileSync(
+        join(directory, 'package.json'),
+        JSON.stringify({
+          name,
+          version: '0.0.0',
+          ...(type === 'module' ? { type } : {}),
+          dependencies: { real: '*' },
+        }),
+      );
+      writeFileSync(join(directory, fileName), source);
+      return directory;
+    });
+    const assertionDirs = [
+      [
+        'object-type-ending',
+        'index.ts',
+        "const n = 1 as number & {} / require('real') / 2;",
+        false,
+      ],
+      [
+        'composed-generics',
+        'index.ts',
+        "type Num<T> = number; const n = 1 satisfies Num<string> & Num<number> / require('real') / 2;",
+        false,
+      ],
+      [
+        'import-query',
+        'index.ts',
+        "declare module 'types' { export type Num<T> = number; } const n = 1 as import('types').Num<string> / require('real') / 2;",
+        true,
+      ],
+      [
+        'assertion-named-statement',
+        'index.cjs',
+        "const as = 0, x = 1;\nx\nas < x > /require('fake')/.source.length;\nrequire('real');",
+        false,
+      ],
+      [
+        'arrow-assertion-async-owner',
+        'index.ts',
+        "type Num<T> = number; async function f() { const g = () => 1 as Num<string>; await /require('fake')/; require('real'); }",
+        false,
+      ],
+      [
+        'arrow-assertion-ordinary-owner',
+        'index.ts',
+        "type Num<T> = number; function f(await) { const g = async () => 1 satisfies Num<string>; return await / require('real') / 2; }",
+        false,
+      ],
+    ].flatMap(([name, fileName, source, hasTypes]) =>
+      ['missing', 'clean', 'unused'].map((mode) => {
+        const directory = join(consumerDir, `assertion-${name}-${mode}`);
+        mkdirSync(directory);
+        writeFileSync(
+          join(directory, 'package.json'),
+          JSON.stringify({
+            name: `assertion-${name}-${mode}`,
+            version: '0.0.0',
+            dependencies: {
+              ...(hasTypes ? { types: '*' } : {}),
+              ...(mode !== 'missing' ? { real: '*' } : {}),
+              ...(mode === 'unused' ? { fake: '*' } : {}),
+            },
+          }),
+        );
+        writeFileSync(join(directory, fileName), source);
+        return { directory, mode };
+      }),
+    );
+    const invalidTemplateDir = join(consumerDir, 'incomplete-type-template');
+    mkdirSync(invalidTemplateDir);
+    writeFileSync(
+      join(invalidTemplateDir, 'package.json'),
+      JSON.stringify({
+        name: 'incomplete-type-template',
+        version: '0.0.0',
+        dependencies: { real: '*' },
+      }),
+    );
+    writeFileSync(
+      join(invalidTemplateDir, 'index.ts'),
+      'require("real"); function f(x: { tag: `x${string',
+    );
+    const fixtureDirs = [
+      cleanDir,
+      findingsDir,
+      ...structuralDirs,
+      ...assertionDirs.map(({ directory }) => directory),
+      invalidTemplateDir,
+    ];
+    const before = snapshotFixtures(fixtureDirs);
 
     // 5. Invoke the installed executable.
     const binPath = resolveInstalledBin(consumerDir);
@@ -409,6 +692,49 @@ function main() {
     );
     check('findings scan leaves stderr empty', findings.stderr === '');
 
+    for (const directory of structuralDirs) {
+      const result = runInstalledCli(binPath, consumerDir, [directory]);
+      check(`structural consumer exits 0: ${directory}`, result.status === 0, result.stderr);
+      check(
+        `structural consumer reports clean: ${directory}`,
+        result.stdout === 'DepVitals\n\nNo dependency issues found.\n',
+        result.stdout,
+      );
+      check(`structural consumer leaves stderr empty: ${directory}`, result.stderr === '');
+    }
+
+    for (const { directory, mode } of assertionDirs) {
+      const result = runInstalledCli(binPath, consumerDir, [directory]);
+      const expected =
+        mode === 'missing'
+          ? 'DepVitals\n\nMissing dependencies (1)\n  real\n'
+          : mode === 'unused'
+            ? 'DepVitals\n\nUnused dependencies (1)\n  fake\n'
+            : 'DepVitals\n\nNo dependency issues found.\n';
+      check(
+        `assertion consumer exit: ${directory}`,
+        result.status === (mode === 'clean' ? 0 : 1),
+        result.stderr,
+      );
+      check(
+        `assertion consumer exact categories: ${directory}`,
+        result.stdout === expected,
+        result.stdout,
+      );
+      check(`assertion consumer stderr: ${directory}`, result.stderr === '');
+    }
+
+    const invalidTemplate = runInstalledCli(binPath, consumerDir, [invalidTemplateDir]);
+    check('incomplete type template exits 1', invalidTemplate.status === 1);
+    check('incomplete type template leaves stdout empty', invalidTemplate.stdout === '');
+    check(
+      'incomplete type template reports an operational error',
+      invalidTemplate.stderr.includes(
+        'index.ts could not be analyzed: Unterminated template literal',
+      ),
+      invalidTemplate.stderr,
+    );
+
     // No-args scans the actual working directory.
     const noArgs = runInstalledCli(binPath, cleanDir, []);
     check('no-args scans cwd and exits 0', noArgs.status === 0);
@@ -436,7 +762,7 @@ function main() {
 
     // Capture the fixtures again after every scan, then compare the complete before-and-after
     // snapshots so added, deleted, and modified files are all detected.
-    const after = snapshotFixtures([cleanDir, findingsDir]);
+    const after = snapshotFixtures(fixtureDirs);
 
     // The scanner must not mutate the fixtures it reads.
     check('scan does not mutate the fixtures', snapshotsEqual(before, after));
