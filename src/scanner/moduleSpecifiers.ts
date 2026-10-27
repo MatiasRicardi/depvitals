@@ -840,14 +840,18 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         frame.depth -= 1;
       }
 
-      // Otherwise `}` is an ordinary brace: it ends an expression only when it closed an object
-      // literal. An unmatched `}` (an empty context) keeps the statement-block behaviour.
+      // Operand completion for class-field ASI is separate from the regex/division decision.
+      // A function/class body can finish an initializer without closing an object literal.
       const closed = braceContexts.pop();
       const closedMethod = closed?.role === 'function' && closed.context.isClassMember === true;
       closedClassMemberBoundary = closedMethod || closed?.role === 'static-block';
       closedObjectBrace =
         closed?.role === 'object' || (closed?.role === 'function' && closed.context.isExpression);
-      closedExpressionBrace = closedObjectBrace || closedMethod;
+      closedExpressionBrace =
+        closedObjectBrace ||
+        closedMethod ||
+        closed?.role === 'function' ||
+        closed?.role === 'class';
       if (closed?.role === 'function') {
         functionContextStack.pop();
       }

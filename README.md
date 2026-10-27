@@ -75,7 +75,7 @@ Detection uses a lightweight static lexical scanner rather than a full JavaScrip
 
 Function callbacks in default parameters preserve the enclosing function's async/generator context. Function expressions used as object property values or conditional alternatives also preserve real `require()` calls after division operators; regex text after declarations or statement blocks remains inert.
 
-Class members retain separate structural contexts, including consecutive newline-terminated fields and TypeScript function-typed fields before generator methods. Type annotations keep literal `import()` evidence without turning type arrows into runtime functions. Regex text in those methods remains inert, while real calls in initializers, computed keys, and method bodies still count.
+Class members retain separate structural contexts, including consecutive newline-terminated fields and TypeScript function-typed fields before generator methods. Block-bodied arrow, function, and class-expression initializers preserve the boundary before a following method, while operators that continue the initializer remain part of that expression. Type annotations keep literal `import()` evidence without turning type arrows into runtime functions. Regex text in those methods remains inert, while real calls in initializers, computed keys, and method bodies still count.
 
 ## Current limitations
 

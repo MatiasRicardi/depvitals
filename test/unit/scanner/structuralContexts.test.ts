@@ -175,6 +175,9 @@ for (const [name, initializer, inside] of [
   ['template', '`require("fake-template") ${require("initializer")}`', ['initializer']],
   ['ternary', `flag ? require('initializer') : 0`, ['initializer']],
   ['arrow', `() => require('initializer')`, ['initializer']],
+  ['block arrow', `() => { require('initializer'); }`, ['initializer']],
+  ['function expression', `function () { require('initializer'); }`, ['initializer']],
+  ['class expression', `class { method() { require('initializer'); } }`, ['initializer']],
 ] as const) {
   for (const [memberName, member] of [
     ['ordinary', `run(await) { ${ordinaryBody} }`],
@@ -187,6 +190,27 @@ for (const [name, initializer, inside] of [
       expected: ['before', ...inside, 'inside', 'after'],
     });
   }
+}
+
+for (const [name, initializer] of [
+  ['function expression', 'function () {}'],
+  ['class expression', 'class {}'],
+] as const) {
+  scenarios.push(
+    {
+      name: `${name}: explicit boundary before generator`,
+      source: wrapClass(`handle = ${initializer};
+        *run() { ${realBody} }`),
+      expected: ['before', 'inside', 'after'],
+    },
+    {
+      name: `${name}: newline multiplication continues initializer`,
+      source: wrapClass(`handle = ${initializer}
+        * require('operand') / 2
+        async load() { ${asyncBody} }`),
+      expected: ['before', 'operand', 'inside', 'after'],
+    },
+  );
 }
 
 for (const [name, member, computed] of [

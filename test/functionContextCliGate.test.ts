@@ -100,6 +100,27 @@ describe('Step 68.4 compiled CLI gate', () => {
         }`,
       },
       {
+        name: 'block arrow initializer before async method',
+        fileName: 'index.cjs',
+        source: `class C { handle = () => {}
+          async load() { await /require('fake')/; require('real'); }
+        }`,
+      },
+      {
+        name: 'function initializer before generator',
+        fileName: 'index.cjs',
+        source: `class C { handle = function () {};
+          *run() { yield /require('fake')/; require('real'); }
+        }`,
+      },
+      {
+        name: 'class expression initializer before async method',
+        fileName: 'index.cjs',
+        source: `class C { handle = class {}
+          async load() { await /require('fake')/; require('real'); }
+        }`,
+      },
+      {
         name: 'function-typed field',
         fileName: 'index.ts',
         source: `class C { callback!: (value: string) => void
