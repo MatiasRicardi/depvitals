@@ -1799,6 +1799,73 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(source)).toEqual(['real']);
     });
 
+    it('recognizes the boundary after a static initialization block', () => {
+      const source = `class C {
+  static {}
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('does not split a class field after an operator that needs an operand', () => {
+      const sources = ['new', 'typeof', 'void'].map(
+        (operator) => `class C {
+  value = cond ? ${operator}
+    F() : async () => {
+      await /require('fake')/;
+      require('real');
+    };
+}`,
+      );
+
+      for (const source of sources) {
+        expect(specifiers(source)).toEqual(['real']);
+      }
+    });
+
+    it.each([
+      ['a regex initializer', '/abc/'],
+      ['a template initializer', '`require("fake")`'],
+    ])('recognizes the boundary after %s', (_label, initializer) => {
+      const source = `class C {
+  value = ${initializer}
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('keeps code in a template interpolation while ending the field correctly', () => {
+      const source = `class C {
+  value = \`text \${require('template-real')}\`
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`;
+
+      expect(specifiers(source)).toEqual(['template-real', 'real']);
+    });
+
+    it('recognizes a generator after a field without an initializer', () => {
+      const source = `class C {
+  value
+  *run() {
+    yield /require('fake')/;
+    require('real');
+  }
+}`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
     it.each([
       ['an empty object', '{}'],
       ['a populated object', '{ x: 1 }'],

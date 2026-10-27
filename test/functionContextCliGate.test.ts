@@ -615,6 +615,93 @@ const service = { x: flag ? 1 : 2, async run(): Promise<void> { await /require('
     }
 }`,
       },
+      {
+        name: 'D18 a static initialization block separates the next async method',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  static {}
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D19 an apostrophe in a regex after a static block is inert',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  static {}
+  async run() {
+    await /don't/;
+    require('real');
+  }
+}`,
+      },
+      ...(['new', 'typeof', 'void'] as const).map((operator) => ({
+        name: `D20 a field initializer continues after the ${operator} operator`,
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value = cond ? ${operator}
+    F() : async () => {
+      await /require('fake')/;
+      require('real');
+    };
+}`,
+      })),
+      {
+        name: 'D21 a regex field initializer ends before an async method',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value = /abc/
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D22 a template field initializer ends before an async method',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value = \`require("fake")\`
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D23 a template interpolation remains executable source for extraction',
+        fileName: 'index.cjs',
+        dependencies: [
+          { name: 'real', used: true },
+          { name: 'template-real', used: true },
+        ],
+        source: `class C {
+  value = \`text \${require('template-real')}\`
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D24 a field without an initializer ends before a generator',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value
+  *run() {
+    yield /require('fake')/;
+    require('real');
+  }
+}`,
+      },
     ] as const;
 
     it.each(cases)('$name uses valid source syntax', ({ fileName, source }) => {

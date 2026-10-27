@@ -112,8 +112,8 @@ type Token =
       readonly memberSeparator?: boolean;
       readonly expressionEnd?: boolean;
     }
-  | { readonly kind: 'regex' }
-  | { readonly kind: 'template' };
+  | { readonly kind: 'regex'; readonly offset: number; readonly endOffset: number }
+  | { readonly kind: 'template'; readonly offset: number; readonly endOffset: number };
 
 type PrevKind = 'start' | 'identifier' | 'number' | 'string' | 'punct' | 'regex' | 'template';
 
@@ -239,6 +239,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
   let inText = false;
   // Offset of the opening backtick of the current template, for unterminated-template errors.
   let templateStart = 0;
+  const templateStarts: number[] = [];
 
   // Brace context. Each `{` pushes whether it opened an expression (an object literal or a
   // destructuring pattern) or a statement block / function body, and its matching `}` pops that
@@ -250,8 +251,10 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
   // Parallel to `braceContexts`: whether each open brace belongs to a function body. Pushed in
   // lockstep with `braceContexts` so the matching `}` can restore the nearest function context.
   const functionBodyBraces: boolean[] = [];
-  // Parallel to `functionBodyBraces`: class method bodies provide an implicit member boundary.
-  const classMemberBodyBraces: boolean[] = [];
+  // Parallel to `braceContexts`: method bodies and static blocks end class members.
+  const classMemberBoundaryBraces: boolean[] = [];
+  // Parallel to `braceContexts`: class method bodies end both a member and expression.
+  const classMemberExpressionBraces: boolean[] = [];
   // Parallel to `braceContexts`: whether each brace opened a class body. Object and class bodies
   // are the two containers in which keyword-named ordinary methods are unambiguous.
   const classBodyBraces: boolean[] = [];
@@ -330,7 +333,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     const ch = source[i];
     let typedArrowContext: FuncContext | undefined;
     let inTypedReturnType = typedReturnAnnotation !== undefined;
-    let closedClassMemberBody = false;
+    let closedClassMemberBoundary = false;
     let closedExpressionBrace = false;
 
     if (ch === undefined) {
@@ -386,6 +389,9 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       if (ch === '`') {
         // Closing backtick of the current (or nested) template literal.
         inText = false;
+        const start = templateStarts.pop() ?? templateStart;
+        tokens.push({ kind: 'template', offset: start, endOffset: i + 1 });
+        templateStart = templateStarts[templateStarts.length - 1] ?? start;
         prevKind = 'template';
         i++;
         continue;
@@ -572,6 +578,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     // type itself ends.
     if (ch === '`') {
       templateStart = i;
+      templateStarts.push(i);
       inText = true;
       prevKind = 'template';
 
@@ -752,9 +759,10 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       // Otherwise `}` is an ordinary brace: it ends an expression only when it closed an object
       // literal. An unmatched `}` (an empty context) keeps the statement-block behaviour.
       const wasFunctionBody = functionBodyBraces.pop() ?? false;
-      closedClassMemberBody = classMemberBodyBraces.pop() ?? false;
+      closedClassMemberBoundary = classMemberBoundaryBraces.pop() ?? false;
+      const closedClassMemberExpression = classMemberExpressionBraces.pop() ?? false;
       closedObjectBrace = braceContexts.pop() === true;
-      closedExpressionBrace = closedObjectBrace || closedClassMemberBody;
+      closedExpressionBrace = closedObjectBrace || closedClassMemberExpression;
       // Restore the async/generator context of a function body whose `{` was tracked alongside
       // `braceContexts`. The matching `}` is always the current one because braces nest properly.
       if (wasFunctionBody) {
@@ -774,7 +782,9 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
           closedObjectBrace,
         )
       ) {
+        const start = i;
         i = skipRegex(source, i);
+        tokens.push({ kind: 'regex', offset: start, endOffset: i });
         prevKind = 'regex';
         afterControlHead = false;
         pendingControlKeyword = undefined;
@@ -1017,6 +1027,11 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       }
 
       const isClassBody = !isObject && context === undefined && opensClassBody(tokens);
+      const isStaticBlock =
+        !isObject &&
+        !isClassBody &&
+        classBodyBraces[classBodyBraces.length - 1] === true &&
+        isIdentifier(tokens[tokens.length - 1], 'static');
 
       // A statement-block brace that consumes a pending function signature is a function body. A
       // function expression used as a value ends an expression (so a following `/` divides), while a
@@ -1041,7 +1056,8 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         functionContextStack.push(context);
       }
       functionBodyBraces.push(wasFunctionBody);
-      classMemberBodyBraces.push(context?.isClassMember === true);
+      classMemberBoundaryBraces.push(context?.isClassMember === true || isStaticBlock);
+      classMemberExpressionBraces.push(context?.isClassMember === true);
       braceContexts.push(isObject);
       classBodyBraces.push(isClassBody);
 
@@ -1160,7 +1176,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       value: ch,
       offset: i,
       endOffset: i + 1,
-      ...(closedClassMemberBody ? { memberSeparator: true } : {}),
+      ...(closedClassMemberBoundary ? { memberSeparator: true } : {}),
       ...(closedExpressionBrace ? { expressionEnd: true } : {}),
     });
     prevKind = 'punct';
@@ -1782,7 +1798,7 @@ function memberDeclarationHead(
     }
 
     // Class fields permit ASI before a following method. Restrict this to a direct class member
-    // boundary and an expression-ending token; a newline alone cannot separate an expression.
+    // boundary and either an expression-ending token or a bare field before a generator method.
     const previous = tokens[index];
     const memberName = tokens[nameIndex];
     const previousEndOffset =
@@ -1791,11 +1807,11 @@ function memberDeclarationHead(
       memberName !== undefined && 'offset' in memberName ? memberName.offset : undefined;
     if (
       insideClassBody &&
-      !generator &&
       previous !== undefined &&
       previousEndOffset !== undefined &&
       memberNameOffset !== undefined &&
-      isMemberExpressionEnd(previous) &&
+      ((!generator && isMemberExpressionEnd(previous)) ||
+        (generator && isUninitializedClassFieldHead(tokens, index))) &&
       hasLineTerminator(source, previousEndOffset, memberNameOffset)
     ) {
       return { async, generator };
@@ -1817,12 +1833,51 @@ function isPunct(token: Token | undefined, value: string): boolean {
 }
 
 function isMemberExpressionEnd(token: Token): boolean {
+  if (token.kind === 'identifier') {
+    return (
+      !REGEX_PRECEDING_KEYWORDS.has(token.value) && !['await', 'yield', 'of'].includes(token.value)
+    );
+  }
+
   return (
     EXPRESSION_ENDING.has(token.kind) ||
     isPunct(token, ')') ||
     isPunct(token, ']') ||
     (token.kind === 'punct' && token.value === '}' && token.expressionEnd === true)
   );
+}
+
+function isUninitializedClassFieldHead(tokens: readonly Token[], index: number): boolean {
+  const fieldName = tokens[index];
+
+  if (fieldName?.kind !== 'identifier' && fieldName?.kind !== 'string') {
+    return false;
+  }
+
+  let boundaryIndex = index - 1;
+
+  while (boundaryIndex >= 0) {
+    const token = tokens[boundaryIndex];
+
+    if (
+      token?.kind === 'identifier' &&
+      (MEMBER_MODIFIERS.has(token.value) ||
+        token.value === 'accessor' ||
+        token.value === 'declare' ||
+        token.value === 'readonly')
+    ) {
+      boundaryIndex--;
+      continue;
+    }
+
+    return (
+      token?.kind === 'punct' &&
+      (MEMBER_SEPARATORS.has(token.value) ||
+        (token.value === '}' && token.memberSeparator === true))
+    );
+  }
+
+  return false;
 }
 
 /**
