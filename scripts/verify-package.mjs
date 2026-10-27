@@ -395,6 +395,55 @@ function main() {
 
     const structuralDirs = [
       [
+        'one-shot-for-of',
+        'index.cjs',
+        `const of = 6;
+for (const x of of / require('real') / 2 ? [] : []) {}`,
+      ],
+      [
+        'ordinary-assertion-named-comparisons',
+        'index.cjs',
+        `const as = 0, satisfies = 0, x = 1;
+as < x > /require('fake')/.source.length;
+satisfies < x > /require('fake')/.source.length;
+require('real');`,
+      ],
+      [
+        'typed-class-heritage',
+        'index.ts',
+        `class Base<T> {}
+interface I<T> {}
+class C extends Base<{ ok: boolean }> implements I<() => object> {
+  async run() { await /require('fake')/; require('real'); }
+}`,
+      ],
+      [
+        'qualified-type-assertions',
+        'index.ts',
+        `namespace N { export type Num<T> = number; }
+const a = 1 as N.Num<string> / require('real') / 2;
+const b = 1 satisfies N.Num<string> / require('real') / 2;`,
+      ],
+      [
+        'prefixed-type-operands',
+        'index.ts',
+        `type Num<T> = number;
+const a = 1 as Num<keyof { ok: boolean }> / require('real') / 2;
+const b = 1 satisfies Num<keyof { ok: boolean }> / require('real') / 2;
+async function outer() {
+  const c = 1 as Num<() => number> + await /require('fake')/;
+  require('real');
+}`,
+      ],
+      [
+        'html-closing-trivia',
+        'index.cjs',
+        `/* comment */ --> require('fake')
+const x = 1; /* comment
+*/ --> require('fake')
+require('real');`,
+      ],
+      [
         'consecutive-fields',
         'index.cjs',
         `class C { a = () => 0

@@ -15,6 +15,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import { analyzeProject } from '../src/core/analyzeProject.js';
+import { remainingParserCases } from './helpers/pr76RemainingCases.js';
 
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
 const BUILT_ENTRY = join(REPO_ROOT, 'dist', 'cli', 'index.js');
@@ -90,6 +91,15 @@ describe('Step 68.4 compiled CLI gate', () => {
 
   describe('Step 68.9 structural contexts through the compiled CLI', () => {
     const cases = [
+      ...remainingParserCases,
+      {
+        name: 'assertion function types do not change the surrounding async grammar',
+        fileName: 'index.ts',
+        source: `async function outer() {
+          const value = 1 as Num<() => number> + await /require('fake')/;
+          require('real');
+        }`,
+      },
       {
         name: 'consecutive fields',
         fileName: 'index.cjs',

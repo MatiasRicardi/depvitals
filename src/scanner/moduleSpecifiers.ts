@@ -179,6 +179,7 @@ type ParameterContext = {
   readonly functionDepth: number;
   readonly depth: LexicalDepth;
   phase: 'binding' | 'type' | 'initializer';
+  forPhase?: 'binding' | 'iteration' | 'regular';
 };
 
 // A type in progress uses separate delimiter depths so its braces and arrows never become
@@ -198,6 +199,8 @@ type TypeAnnotation = TypeDepth &
     | { readonly role: 'return'; readonly signature: OwnedSignature }
     | { readonly role: 'field'; readonly owner: ClassContext; readonly member: ClassMember }
     | { readonly role: 'parameter'; readonly owner: ParameterContext }
+    | { readonly role: 'class-header'; readonly owner: PendingClassContext }
+    | { readonly role: 'assertion'; readonly owner: LexicalDepth }
   );
 
 type ClassMember = {
@@ -280,24 +283,16 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
   // only when the next significant token cannot continue the preceding expression.
   let lineTerminatorSinceLastToken = false;
   let tokenLineBreakBefore = false;
-  // Assertion generics own their nested type delimiters; no earlier statement needs rescanning.
-  const assertionTypeClosers: string[] = [];
-  let assertionTypeFrameDepth = 0;
+  let htmlCloseCommentAllowed = true;
   const emit = (token: Token): void => {
-    if (assertionTypeClosers.length === 0) {
-      assertionTypeFrameDepth = frames.length;
-    } else if (frames.length < assertionTypeFrameDepth) {
-      assertionTypeClosers.length = 0;
-    }
-    const endsAssertionType = advanceAssertionTypeArguments(assertionTypeClosers, token, tokens);
-    let significant = tokenLineBreakBefore ? { ...token, lineBreakBefore: true } : token;
-    if (endsAssertionType && significant.kind === 'punct') {
-      significant = { ...significant, expressionEnd: true };
-    }
+    const significant = tokenLineBreakBefore ? { ...token, lineBreakBefore: true } : token;
     if (memberAtToken !== undefined) {
       advanceMember(memberAtToken, significant, tokens[tokens.length - 1]);
     }
     tokens.push(significant);
+    if (token.kind !== 'punct' || token.syntheticBoundary !== true) {
+      htmlCloseCommentAllowed = false;
+    }
     tokenLineBreakBefore = false;
     lineTerminatorSinceLastToken = false;
   };
@@ -410,6 +405,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     let closedExpressionBrace = false;
     let opensClassMemberBoundary = false;
     let matchingOpen: number | undefined;
+    let closedAssertionType = false;
 
     if (ch === undefined) {
       i++;
@@ -603,8 +599,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
 
     if (
       !module &&
-      (source.startsWith('<!--', i) ||
-        (source.startsWith('-->', i) && isHtmlCommentAtLineStart(source, i)))
+      (source.startsWith('<!--', i) || (source.startsWith('-->', i) && htmlCloseCommentAllowed))
     ) {
       while (i < n && !isLineTerminator(source[i])) {
         i++;
@@ -616,6 +611,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       const trivia = readTrivia(source, i, n);
       i = trivia.end;
       lineTerminatorSinceLastToken ||= trivia.lineBreak;
+      htmlCloseCommentAllowed ||= trivia.lineBreak;
       continue;
     }
 
@@ -628,6 +624,17 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       isIdentifierStartAt(source, i) || isUnicodeEscapeStart(source, i)
         ? readIdentifier(source, i)
         : undefined;
+    if (
+      typeAnnotation?.role === 'assertion' &&
+      atTypeRoot(typeAnnotation) &&
+      ((!typeAnnotation.typeOperandExpected &&
+        (identifier !== undefined || ch === '{' || ch === '(')) ||
+        ['/', '+', '-', '*', '%', '!', ';'].includes(ch) ||
+        (ch === '=' && source[i + 1] !== '>'))
+    ) {
+      typeAnnotation = undefined;
+      inType = false;
+    }
     if (
       typeAnnotation?.role === 'return' &&
       tokenLineBreakBefore &&
@@ -713,6 +720,29 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       ch === '='
         ? classifyEquals(source, i, typeAnnotation !== undefined && atTypeRoot(typeAnnotation))
         : undefined;
+
+    if (ch === '<' && typeAnnotation === undefined) {
+      const classHeader = pendingClassContexts[pendingClassContexts.length - 1];
+      if (
+        classHeader !== undefined &&
+        atLexicalDepth(classHeader) &&
+        (tokens[tokens.length - 1]?.kind === 'identifier' ||
+          isPunct(tokens[tokens.length - 1], ')') ||
+          isPunct(tokens[tokens.length - 1], ']') ||
+          isPunct(tokens[tokens.length - 1], '>'))
+      ) {
+        typeAnnotation = {
+          role: 'class-header',
+          owner: classHeader,
+          parenDepth: 0,
+          bracketDepth: 0,
+          braceDepth: 0,
+          angleDepth: 0,
+          typeOperandExpected: true,
+        };
+        inType = true;
+      }
+    }
 
     // A backtick in code mode opens a (possibly nested) template literal. Inside an annotation
     // that is a template-literal type: its text stays inert and the annotation keeps running until the
@@ -885,6 +915,15 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         } else if (ch === ':' || ch === '?' || ch === '.' || ch === '|' || ch === '&') {
           annotation.typeOperandExpected = true;
         }
+        if (
+          (annotation.role === 'class-header' || annotation.role === 'assertion') &&
+          ch === '>' &&
+          !isTypeArrow &&
+          atTypeRoot(annotation)
+        ) {
+          closedAssertionType = annotation.role === 'assertion';
+          typeAnnotation = undefined;
+        }
       }
     }
 
@@ -995,6 +1034,14 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         typeAnnotation.typeOperandExpected = TYPE_OPERAND_KEYWORDS.has(value);
       }
       const previousIdentifier = prevIdentifier;
+      const startsAssertion =
+        (value === 'as' || value === 'satisfies') &&
+        !inType &&
+        !(prevKind === 'punct' && prevPunct === '.') &&
+        !(prevKind === 'punct' && prevPunct === '}' && !closedObjectBrace) &&
+        !afterControlHead &&
+        !prevIsExpressionKeyword &&
+        canStartTypeAssertion(tokens[tokens.length - 1]);
       if (value === 'async') {
         asyncFunctionIsExpression = functionIsExpressionPosition(
           prevKind,
@@ -1053,12 +1100,17 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         });
       }
       // A keyword after `.` is a property name (e.g. `x.return`), not an expression start.
-      const forOfSeparator =
-        value === 'of' &&
+      const forIterationSeparator =
+        (value === 'of' || value === 'in') &&
         !isMemberName &&
-        isForOfSeparator(tokens, parameterContexts, parenDepth, braceContexts.length);
+        consumeForIterationSeparator(tokens, parameterContexts, {
+          parenDepth,
+          bracketDepth,
+          braceDepth: braceContexts.length,
+          frameDepth: frames.length,
+        });
       let isExpressionKeyword =
-        (REGEX_PRECEDING_KEYWORDS.has(value) || forOfSeparator) && !isMemberName;
+        (REGEX_PRECEDING_KEYWORDS.has(value) || forIterationSeparator) && !isMemberName;
       // `await`/`yield` are keywords only inside an async / generator function body. A member name
       // (`obj.await`) is always a property access, never a keyword, so a following `/` divides.
       if (!isMemberName) {
@@ -1153,6 +1205,22 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         endOffset: i,
         ...(isMemberName ? { propertyName: true } : {}),
       });
+      if (startsAssertion) {
+        typeAnnotation = {
+          role: 'assertion',
+          owner: {
+            parenDepth,
+            bracketDepth,
+            braceDepth: braceContexts.length,
+            frameDepth: frames.length,
+          },
+          parenDepth: 0,
+          bracketDepth: 0,
+          braceDepth: 0,
+          angleDepth: 0,
+          typeOperandExpected: true,
+        };
+      }
       prevKind = 'identifier';
       afterControlHead = false;
       continue;
@@ -1400,6 +1468,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
           frameDepth: frames.length,
         },
         phase: 'binding',
+        ...(pendingControlKeyword === 'for' ? { forPhase: 'binding' } : {}),
       });
 
       if (
@@ -1506,6 +1575,9 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     // `function *`. It is recorded on the pending signature, consumed at the body `{`.
     const pending = pendingFunctionContexts[pendingFunctionContexts.length - 1];
     const parameter = parameterContexts[parameterContexts.length - 1];
+    if (ch === ';' && parameter?.forPhase !== undefined && atLexicalDepth(parameter.depth)) {
+      parameter.forPhase = 'regular';
+    }
     if (!inType && parameter !== undefined && atLexicalDepth(parameter.depth)) {
       if (ch === ',') {
         parameter.phase = 'binding';
@@ -1551,6 +1623,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         ? { memberSeparator: true }
         : {}),
       ...(closedExpressionBrace ? { expressionEnd: true } : {}),
+      ...(closedAssertionType ? { expressionEnd: true } : {}),
     });
     prevKind = 'punct';
     prevPunct = ch;
@@ -2602,103 +2675,59 @@ function nearestClassField(braces: readonly BraceContext[]): ClassMember | undef
   return undefined;
 }
 
-function isForOfSeparator(
+function consumeForIterationSeparator(
   tokens: readonly Token[],
   parameters: readonly ParameterContext[],
-  parenDepth: number,
-  braceDepth: number,
+  depth: LexicalDepth,
 ): boolean {
   const control = parameters[parameters.length - 1];
   if (
-    control?.controlKeyword !== 'for' ||
-    control.depth.parenDepth !== parenDepth ||
-    control.depth.braceDepth !== braceDepth ||
+    control?.forPhase !== 'binding' ||
+    control.depth.parenDepth !== depth.parenDepth ||
+    control.depth.bracketDepth !== depth.bracketDepth ||
+    control.depth.braceDepth !== depth.braceDepth ||
+    control.depth.frameDepth !== depth.frameDepth ||
     tokens.length <= control.openIndex
   ) {
     return false;
   }
 
   const previous = tokens[tokens.length - 1];
-  return (
+  const isSeparator =
     previous !== undefined &&
     isMemberExpressionEnd(previous) &&
     !isIdentifier(previous, 'const') &&
     !isIdentifier(previous, 'let') &&
-    !isIdentifier(previous, 'var')
-  );
+    !isIdentifier(previous, 'var');
+  if (isSeparator) {
+    control.forPhase = 'iteration';
+  }
+  return isSeparator;
 }
 
-function advanceAssertionTypeArguments(
-  closers: string[],
-  token: Token,
-  tokens: readonly Token[],
-): boolean {
-  if (token.kind === 'regex') {
-    closers.length = 0;
-  }
-  if (token.kind !== 'punct' || token.syntheticBoundary === true) {
-    return false;
-  }
-
-  if (closers.length === 0) {
-    if (token.value !== '<') {
-      return false;
-    }
-    const previous = tokens[tokens.length - 1];
-    const beforeName = tokens[tokens.length - 2];
-    if (!(
-      isIdentifier(previous, 'as') ||
-      isIdentifier(previous, 'satisfies') ||
-      (previous?.kind === 'identifier' &&
-        (isIdentifier(beforeName, 'as') || isIdentifier(beforeName, 'satisfies')))
-    )) {
-      return false;
-    }
-    closers.push('>');
-    return false;
-  }
-
-  // Both pieces of a type arrow belong to the function type, not to the generic delimiters.
-  if (
-    isArrowHead(token) ||
-    (token.value === '>' && isArrowHead(tokens[tokens.length - 1], token.offset))
-  ) {
-    return false;
-  }
-
-  const previous = tokens[tokens.length - 1];
-  if (
-    token.value === '{' &&
+function canStartTypeAssertion(previous: Token | undefined): boolean {
+  return (
     previous !== undefined &&
-    ((previous.kind === 'identifier' && !TYPE_OPERAND_KEYWORDS.has(previous.value)) ||
-      EXPRESSION_ENDING.has(previous.kind) ||
-      (previous.kind === 'punct' &&
-        [')', ']', '}', '>'].includes(previous.value) &&
-        !(previous.value === '>' && isArrowHead(tokens[tokens.length - 2], previous.offset))))
-  ) {
-    // A type object must start an operand; a brace after a complete operand is an external block.
-    closers.length = 0;
-    return false;
-  }
-
-  const close =
-    token.value === '<' ? '>' : token.value === '(' ? ')' : token.value === '[' ? ']' : undefined;
-  if (close !== undefined || token.value === '{') {
-    closers.push(close ?? '}');
-  } else if (['>', ')', ']', '}'].includes(token.value)) {
-    if (closers.pop() !== token.value) {
-      closers.length = 0;
-      return false;
-    }
-    return token.value === '>' && closers.length === 0;
-  } else if (
-    (token.value === ';' && closers[closers.length - 1] !== '}') ||
-    (token.operator === 'assignment' && closers.length === 1)
-  ) {
-    // Object-type member separators are internal; external statements/initializers end the owner.
-    closers.length = 0;
-  }
-  return false;
+    isMemberExpressionEnd(previous) &&
+    !(
+      previous.kind === 'identifier' &&
+      previous.propertyName !== true &&
+      [
+        'const',
+        'let',
+        'var',
+        'function',
+        'class',
+        'type',
+        'interface',
+        'namespace',
+        'import',
+        'export',
+        'extends',
+        'implements',
+      ].includes(previous.value)
+    )
+  );
 }
 
 function isMethodName(token: Token | undefined): boolean {
@@ -2789,14 +2818,6 @@ function lineTerminatorEndsExpressionFunctionBody(
         (previous?.kind === 'punct' && previous.expressionEnd === true)));
 
   return previousEndsExpression && (nextIsUpdate || !expressionContinues(next, nextIdentifier));
-}
-
-function isHtmlCommentAtLineStart(source: string, index: number): boolean {
-  let start = index - 1;
-  while (start >= 0 && !isLineTerminator(source[start]) && isWhitespace(source[start])) {
-    start--;
-  }
-  return start < 0 || isLineTerminator(source[start]);
 }
 
 function expressionContinues(next: string, identifier: string | undefined): boolean {
