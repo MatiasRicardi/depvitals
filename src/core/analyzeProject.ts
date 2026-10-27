@@ -279,7 +279,13 @@ async function readAndExtract(
       return false;
     }
 
-    return (lower.endsWith('.js') || lower.endsWith('.ts')) && packageType === 'module';
+    return (
+      (lower.endsWith('.js') ||
+        lower.endsWith('.jsx') ||
+        lower.endsWith('.ts') ||
+        lower.endsWith('.tsx')) &&
+      packageType === 'module'
+    );
   }
 
   try {

@@ -96,7 +96,6 @@ type Token = {
   | {
       readonly kind: 'identifier';
       readonly value: string;
-      readonly classExpression?: boolean;
       readonly propertyName?: boolean;
       readonly offset: number;
       readonly endOffset: number;
@@ -115,6 +114,7 @@ type Token = {
       readonly endOffset: number;
       readonly memberSeparator?: boolean;
       readonly expressionEnd?: boolean;
+      readonly syntheticBoundary?: boolean;
       readonly operator?: 'assignment' | 'arrow' | 'other';
       readonly operatorEndOffset?: number;
       readonly matchingOpen?: number;
@@ -155,6 +155,9 @@ type ExpressionFuncContext = FuncContext & {
   readonly braceDepth: number;
   readonly frameDepth: number;
   readonly functionDepth: number;
+  readonly conditionalDepth: number;
+  readonly parameterOwner?: ParameterContext;
+  readonly classMemberOwner?: ClassMember;
 };
 
 // The signature a `:` starts a return annotation for. `isFunctionKeyword` marks the ones that already
@@ -172,6 +175,8 @@ type ParameterContext = {
   readonly openIndex: number;
   readonly signature: OwnedSignature | undefined;
   readonly control: boolean;
+  readonly controlKeyword: string | undefined;
+  readonly functionDepth: number;
   readonly depth: LexicalDepth;
   phase: 'binding' | 'type' | 'initializer';
 };
@@ -197,11 +202,16 @@ type TypeAnnotation = TypeDepth &
 
 type ClassMember = {
   readonly start: number;
+  readonly functionDepth: number;
   phase: 'head' | 'decorator' | 'field' | 'type' | 'initializer' | 'parameters';
 };
 
 type ClassContext = LexicalDepth & {
   member: ClassMember | undefined;
+};
+
+type PendingClassContext = LexicalDepth & {
+  readonly isExpression: boolean;
 };
 
 // A brace owns its closing action. In particular an initializer's object/function cannot close
@@ -305,6 +315,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
   // A default callback may open and finish while an outer signature is still reading parameters.
   // Only a signature with closed parameters at its original depth can own the next body brace.
   const pendingFunctionContexts: PendingFuncContext[] = [];
+  const pendingClassContexts: PendingClassContext[] = [];
   const conditionalContexts: LexicalDepth[] = [];
   let colonIsExpression = false;
   const expressionFunctionContexts: ExpressionFuncContext[] = [];
@@ -369,7 +380,13 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
   // boundary keeps the token stream from gluing two of them into an import/require sequence that
   // does not exist in source (for example `<p>{import}{('pkg')}</p>`).
   const pushBoundary = (offset: number): void => {
-    emit({ kind: 'punct', value: ';', offset, endOffset: offset + 1 });
+    emit({
+      kind: 'punct',
+      value: ';',
+      offset,
+      endOffset: offset + 1,
+      syntheticBoundary: true,
+    });
   };
 
   while (i < n) {
@@ -409,7 +426,6 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       !inText &&
       frames[frames.length - 1]?.kind !== 'jsx-text' &&
       frames[frames.length - 1]?.kind !== 'jsx-tag' &&
-      !closingParenBelongsToArrowParameters(source, i, n) &&
       expressionFunctionBodyEnded(
         ch,
         parenDepth,
@@ -417,6 +433,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         braceContexts.length,
         frames.length,
         functionContextStack.length,
+        conditionalContexts.length,
         expressionFunctionContext,
       )
     ) {
@@ -512,7 +529,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         }
 
         // Nested element `<name ...`.
-        if (after !== undefined && isIdentifierStart(after)) {
+        if (isIdentifierStartAt(source, i + 1)) {
           const tag = readJsxTagName(source, i + 1, n);
           frames.push({ kind: 'jsx-tag', name: tag.name, offset: i, nameEnd: tag.end });
           i = tag.end;
@@ -572,6 +589,17 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       continue;
     }
 
+    if (
+      !module &&
+      isHtmlCommentAtLineStart(source, i) &&
+      (source.startsWith('<!--', i) || source.startsWith('-->', i))
+    ) {
+      while (i < n && !isLineTerminator(source[i])) {
+        i++;
+      }
+      continue;
+    }
+
     if (isWhitespace(ch) || (ch === '/' && (source[i + 1] === '/' || source[i + 1] === '*'))) {
       const trivia = readTrivia(source, i, n);
       i = trivia.end;
@@ -584,7 +612,10 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     closedParameterSignature = undefined;
     memberAtToken = undefined;
     const classState = currentClass();
-    const identifier = isIdentifierStart(ch) ? readIdentifier(source, i) : undefined;
+    const identifier =
+      isIdentifierStartAt(source, i) || isUnicodeEscapeStart(source, i)
+        ? readIdentifier(source, i)
+        : undefined;
     if (
       typeAnnotation?.role === 'return' &&
       tokenLineBreakBefore &&
@@ -630,7 +661,11 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
           inType = false;
         }
       } else {
-        classState.member ??= { start: tokens.length, phase: 'head' };
+        classState.member ??= {
+          start: tokens.length,
+          functionDepth: functionContextStack.length,
+          phase: 'head',
+        };
         memberAtToken = classState.member;
       }
     }
@@ -647,6 +682,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
           prevPunct,
           tokens[tokens.length - 1],
           identifier?.value,
+          (ch === '+' || ch === '-') && source[i + 1] === ch,
           parenDepth,
           bracketDepth,
           braceContexts.length,
@@ -711,7 +747,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         continue;
       }
 
-      if (after !== undefined && isIdentifierStart(after) && !jsxTagIsGeneric(source, i + 1, n)) {
+      if (isIdentifierStartAt(source, i + 1) && !jsxTagIsGeneric(source, i + 1, n)) {
         const tag = readJsxTagName(source, i + 1, n);
         frames.push({ kind: 'jsx-tag', name: tag.name, offset: i, nameEnd: tag.end });
         pushBoundary(i);
@@ -894,7 +930,10 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         isRegexStart(
           prevKind,
           prevPunct,
-          prevIsExpressionKeyword,
+          prevIsExpressionKeyword ||
+            (tokenLineBreakBefore &&
+              (isIdentifier(tokens[tokens.length - 1], 'break') ||
+                isIdentifier(tokens[tokens.length - 1], 'continue'))),
           afterControlHead,
           closedObjectBrace,
           tokens[tokens.length - 1],
@@ -960,22 +999,85 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       }
       prevIdentifier = value;
       const isMemberName = prevKind === 'punct' && prevPunct === '.';
+      const classMemberName =
+        value === 'class' &&
+        (insideObjectLiteral() || insideClassBody()) &&
+        memberDeclarationHead(
+          tokens,
+          tokens.length,
+          insideClassBody(),
+          currentClass()?.member?.start,
+        ) !== undefined;
+      const nextSignificant = skipTrivia(source, i, n);
+      const classPropertyName =
+        value === 'class' &&
+        (insideObjectLiteral() || insideClassBody()) &&
+        [':', '=', '(', ',', '}'].includes(source[nextSignificant] ?? '');
+      if (
+        value === 'class' &&
+        !isMemberName &&
+        !classMemberName &&
+        !classPropertyName &&
+        typeAnnotation === undefined
+      ) {
+        const isExportDefault =
+          isIdentifier(tokens[tokens.length - 1], 'default') &&
+          isIdentifier(tokens[tokens.length - 2], 'export');
+        pendingClassContexts.push({
+          parenDepth,
+          bracketDepth,
+          braceDepth: braceContexts.length,
+          frameDepth: frames.length,
+          isExpression:
+            !isExportDefault &&
+            (previousIdentifier === 'extends' ||
+              functionIsExpressionPosition(
+                prevKind,
+                prevPunct,
+                previousIdentifier,
+                colonIsExpression,
+              ) ||
+              (isPunct(tokens[tokens.length - 1], '>') && isArrowHead(tokens[tokens.length - 2]))),
+        });
+      }
       // A keyword after `.` is a property name (e.g. `x.return`), not an expression start.
-      let isExpressionKeyword = REGEX_PRECEDING_KEYWORDS.has(value) && !isMemberName;
+      const forOfSeparator =
+        value === 'of' &&
+        !isMemberName &&
+        isForOfSeparator(tokens, parameterContexts, parenDepth, braceContexts.length);
+      let isExpressionKeyword =
+        (REGEX_PRECEDING_KEYWORDS.has(value) || forOfSeparator) && !isMemberName;
       // `await`/`yield` are keywords only inside an async / generator function body. A member name
       // (`obj.await`) is always a property access, never a keyword, so a following `/` divides.
       if (!isMemberName) {
         const expressionContext = expressionFunctionContexts[expressionFunctionContexts.length - 1];
         const bodyContext = functionContextStack[functionContextStack.length - 1];
-        const functionContext =
+        const parameterOwner = nearestFunctionParameter(parameterContexts);
+        const classMemberOwner = nearestClassField(braceContexts);
+        const parameterGrammarSuspended =
+          parameterOwner !== undefined &&
+          functionContextStack.length <= parameterOwner.functionDepth &&
+          expressionContext?.parameterOwner !== parameterOwner;
+        const fieldGrammarSuspended =
+          classMemberOwner !== undefined &&
+          functionContextStack.length <= classMemberOwner.functionDepth &&
+          expressionContext?.classMemberOwner !== classMemberOwner;
+        const expressionContextIsCurrent =
           expressionContext !== undefined &&
           functionContextStack.length <= expressionContext.functionDepth
             ? expressionContext
-            : bodyContext;
-
+            : undefined;
+        const functionContext =
+          parameterGrammarSuspended || fieldGrammarSuspended
+            ? undefined
+            : (expressionContextIsCurrent ?? bodyContext);
         if (
           value === 'await' &&
-          (functionContext?.async === true || (functionContext === undefined && module))
+          (functionContext?.async === true ||
+            (functionContext === undefined &&
+              module &&
+              !parameterGrammarSuspended &&
+              !fieldGrammarSuspended))
         ) {
           isExpressionKeyword = true;
         } else if (value === 'yield' && functionContext?.generator === true) {
@@ -1014,7 +1116,11 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
           generator: false,
           isExpression: isAsync
             ? asyncFunctionIsExpression
-            : functionIsExpressionPosition(
+            : !(
+                isIdentifier(tokens[tokens.length - 1], 'default') &&
+                isIdentifier(tokens[tokens.length - 2], 'export')
+              ) &&
+              functionIsExpressionPosition(
                 prevKind,
                 prevPunct,
                 previousIdentifier,
@@ -1034,18 +1140,6 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         offset: start,
         endOffset: i,
         ...(isMemberName ? { propertyName: true } : {}),
-        ...(value === 'class'
-          ? {
-              classExpression:
-                functionIsExpressionPosition(
-                  prevKind,
-                  prevPunct,
-                  previousIdentifier,
-                  colonIsExpression,
-                ) ||
-                (isPunct(tokens[tokens.length - 1], '>') && isArrowHead(tokens[tokens.length - 2])),
-            }
-          : {}),
       });
       prevKind = 'identifier';
       afterControlHead = false;
@@ -1059,7 +1153,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       while (i < n) {
         const part = source[i];
 
-        if (part === undefined || !(isIdentifierPart(part) || part === '.')) {
+        if (part === undefined || !(isIdentifierPartAt(source, i) || part === '.')) {
           break;
         }
 
@@ -1167,6 +1261,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         prevIsExpressionKeyword,
         frame?.kind === 'template-expr' || frame?.kind === 'jsx-expr',
         colonIsExpression,
+        tokenLineBreakBefore,
       );
       const pending = pendingFunctionContexts[pendingFunctionContexts.length - 1];
       let context: FuncContext | undefined;
@@ -1179,7 +1274,14 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       }
 
       const classExpression =
-        !isObject && context === undefined ? classBodyExpression(tokens) : undefined;
+        !isObject && context === undefined
+          ? takeClassBodyContext(pendingClassContexts, {
+              parenDepth,
+              bracketDepth,
+              braceDepth: braceContexts.length,
+              frameDepth: frames.length,
+            })
+          : undefined;
       const isClassBody = classExpression !== undefined;
       opensClassMemberBoundary = isClassBody;
       const isStaticBlock =
@@ -1219,7 +1321,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       } else if (isClassBody) {
         braceContexts.push({
           role: 'class',
-          isExpression: classExpression,
+          isExpression: classExpression.isExpression,
           state: {
             parenDepth,
             bracketDepth,
@@ -1243,14 +1345,25 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       // A `(` after a control keyword opens a control head; only its matching `)` may then be
       // followed by a regex literal, so the nesting depth of every `(` has to be tracked.
       const pending = pendingFunctionContexts[pendingFunctionContexts.length - 1];
-      const signature = parameterSignatureContext(
-        tokens,
-        pending !== undefined && atLexicalDepth(pending) ? pending : undefined,
-        insideObjectLiteral() || insideClassBody(),
-        insideClassBody(),
-        tokenLineBreakBefore,
-        currentClass()?.member?.start,
-      );
+      const previousToken = tokens[tokens.length - 1];
+      const arrowBodyParenthesis =
+        previousToken?.kind === 'punct' &&
+        previousToken.value === '>' &&
+        isArrowHead(tokens[tokens.length - 2], previousToken.offset);
+      const signatureCandidate = arrowBodyParenthesis
+        ? undefined
+        : parameterSignatureContext(
+            tokens,
+            pending !== undefined && atLexicalDepth(pending) ? pending : undefined,
+            insideObjectLiteral() || insideClassBody(),
+            insideClassBody(),
+            tokenLineBreakBefore,
+            currentClass()?.member?.start,
+          );
+      const signature =
+        signatureCandidate?.isArrowSignature === true && !arrowFollowsParametersSafely(source, i, n)
+          ? undefined
+          : signatureCandidate;
       parameterContexts.push({
         openIndex: tokens.length,
         signature:
@@ -1266,6 +1379,8 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
                 },
               },
         control: pendingControlKeyword !== undefined,
+        controlKeyword: pendingControlKeyword,
+        functionDepth: functionContextStack.length,
         depth: {
           parenDepth: parenDepth + 1,
           bracketDepth,
@@ -1357,6 +1472,8 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
             });
           }
         } else {
+          const parameterOwner = nearestFunctionParameter(parameterContexts);
+          const classMemberOwner = nearestClassField(braceContexts);
           expressionFunctionContexts.push({
             ...context,
             isExpression: true,
@@ -1365,6 +1482,9 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
             braceDepth: braceContexts.length,
             frameDepth: frames.length,
             functionDepth: functionContextStack.length,
+            conditionalDepth: conditionalContexts.length,
+            ...(parameterOwner === undefined ? {} : { parameterOwner }),
+            ...(classMemberOwner === undefined ? {} : { classMemberOwner }),
           });
         }
       }
@@ -1400,11 +1520,20 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       pendingFunctionContexts.pop();
     }
 
+    const previousToken = tokens[tokens.length - 1];
     emit({
       kind: 'punct',
       value: ch,
       offset: i,
       endOffset: i + 1,
+      ...(ch === '!' &&
+      source[i + 1] !== '=' &&
+      previousToken !== undefined &&
+      isMemberExpressionEnd(previousToken) &&
+      !prevIsExpressionKeyword
+        ? { expressionEnd: true }
+        : {}),
+      ...(ch === '>' && isTypeAssertionClose(tokens) ? { expressionEnd: true } : {}),
       ...equalsOperator,
       ...(matchingOpen !== undefined ? { matchingOpen } : {}),
       ...(closedClassMemberBoundary || opensClassMemberBoundary || (ch === ';' && insideClassBody())
@@ -1449,17 +1578,13 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
 // element. `<T>` alone in expression position remains ambiguous and is treated as JSX.
 function jsxTagIsGeneric(source: string, i: number, n: number): boolean {
   try {
-    if (!isIdentifierStart(source[i])) {
+    if (!isIdentifierStartAt(source, i)) {
       return false;
     }
 
-    let k = i;
-
-    while (k < n && isIdentifierPart(source[k])) {
-      k++;
-    }
-
-    const name = source.slice(i, k);
+    const identifier = readIdentifier(source, i);
+    let k = identifier.end;
+    const name = identifier.value;
     k = skipTrivia(source, k, n);
     const next = source[k];
 
@@ -1476,15 +1601,14 @@ function jsxTagIsGeneric(source: string, i: number, n: number): boolean {
     }
 
     let end = k;
-    while (end < n && isIdentifierPart(source[end])) {
+    while (end < n && isIdentifierPartAt(source, end)) {
       end++;
     }
 
-    if (source.slice(k, end) === 'extends' || source.slice(k, end) === 'implements') {
-      // `extends`/`implements` is a generic constraint only when it introduces a constraint type that
-      // closes the type-parameter list (for example `<T extends object>`). As a JSX attribute it is
-      // followed by `=`, a quote, the tag close `>` or a self-close `/`, so it must stay JSX markup
-      // instead of being read as a generic signature.
+    if (source.slice(k, end) === 'extends') {
+      // `extends` is a generic constraint only when it introduces a constraint type that closes
+      // the type-parameter list. `implements` is not a TypeScript type-parameter constraint and
+      // remains a JSX boolean attribute.
       const j = skipTrivia(source, end, n);
       const after = source[j];
 
@@ -1501,7 +1625,7 @@ function jsxTagIsGeneric(source: string, i: number, n: number): boolean {
     }
 
     // `const T, ...`: a TypeScript const type parameter, whose real name follows the modifier.
-    if (name === 'const' && k < n && isIdentifierStart(source[k])) {
+    if (name === 'const' && k < n && isIdentifierStartAt(source, k)) {
       return jsxTagIsGeneric(source, k, n);
     }
 
@@ -1575,16 +1699,14 @@ function arrowFollowsParameters(source: string, open: number, n: number): boolea
       if (depth === 0) {
         const j = skipTrivia(source, k + 1, n);
 
-        return source[j] === '=' && source[j + 1] === '>';
+        return (
+          (source[j] === '=' && source[j + 1] === '>') ||
+          (source[j] === ':' && arrowFollowsReturnType(source, j + 1, n))
+        );
       }
-    } else if (isIdentifierStart(ch)) {
-      let end = k + 1;
-
-      while (end < n && isIdentifierPart(source[end])) {
-        end++;
-      }
-
-      k = end - 1;
+    } else if (isIdentifierStartAt(source, k)) {
+      const identifier = readIdentifier(source, k);
+      k = identifier.end - 1;
       prevKind = 'identifier';
       prevPunct = undefined;
     } else {
@@ -1596,6 +1718,91 @@ function arrowFollowsParameters(source: string, open: number, n: number): boolea
   }
 
   return false;
+}
+
+function arrowFollowsReturnType(source: string, start: number, n: number): boolean {
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
+  let angleDepth = 0;
+  let index = start;
+
+  while (index < n) {
+    index = skipTrivia(source, index, n);
+    const ch = source[index];
+    if (ch === undefined) {
+      return false;
+    }
+
+    if (ch === "'" || ch === '"') {
+      index = readString(source, index).next;
+      continue;
+    }
+    if (ch === '`') {
+      index = skipTemplateLiteral(source, index);
+      continue;
+    }
+    if (ch === '=' && source[index + 1] === '>') {
+      if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0 && angleDepth === 0) {
+        return true;
+      }
+      index += 2;
+      continue;
+    }
+
+    if (ch === '(') {
+      parenDepth++;
+    } else if (ch === ')') {
+      if (parenDepth === 0) {
+        return false;
+      }
+      parenDepth--;
+    } else if (ch === '[') {
+      bracketDepth++;
+    } else if (ch === ']') {
+      if (bracketDepth === 0) {
+        return false;
+      }
+      bracketDepth--;
+    } else if (ch === '{') {
+      braceDepth++;
+    } else if (ch === '}') {
+      if (braceDepth === 0) {
+        return false;
+      }
+      braceDepth--;
+    } else if (ch === '<') {
+      angleDepth++;
+    } else if (ch === '>') {
+      if (angleDepth === 0) {
+        return false;
+      }
+      angleDepth--;
+    } else if (
+      parenDepth === 0 &&
+      bracketDepth === 0 &&
+      braceDepth === 0 &&
+      angleDepth === 0 &&
+      (ch === ';' || ch === ',')
+    ) {
+      return false;
+    }
+
+    index++;
+  }
+
+  return false;
+}
+
+function arrowFollowsParametersSafely(source: string, open: number, n: number): boolean {
+  try {
+    return arrowFollowsParameters(source, open, n);
+  } catch (error) {
+    if (error instanceof ModuleSpecifierError) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 // Skip a template literal starting at its opening backtick (offset `start`). Returns the index just
@@ -1698,7 +1905,7 @@ function readJsxTypeArguments(source: string, open: number, n: number, tokens: T
       );
     }
 
-    if (isIdentifierStart(ch)) {
+    if (isIdentifierStartAt(source, i)) {
       const start = i;
       const identifier = readIdentifier(source, i);
       i = identifier.end;
@@ -1790,6 +1997,7 @@ function readTrivia(source: string, start: number, n: number): { end: number; li
  * not a function body (`T extends { ok: boolean } ? A : B`).
  */
 const TYPE_OPERAND_KEYWORDS: ReadonlySet<string> = new Set([
+  'abstract',
   'as',
   'asserts',
   'await',
@@ -1883,7 +2091,11 @@ function signatureNameIndex(tokens: readonly Token[], openIndex: number): number
       if (closers.length === 0) {
         return index - 1;
       }
-    } else if (token.value === ';' && closers[closers.length - 1] === '>') {
+    } else if (
+      token.value === ';' &&
+      token.syntheticBoundary !== true &&
+      closers[closers.length - 1] === '>'
+    ) {
       break;
     }
     index--;
@@ -2074,11 +2286,41 @@ function classifyEquals(
 }
 
 function readIdentifier(source: string, start: number): { value: string; end: number } {
-  let end = start + 1;
-  while (end < source.length && isIdentifierPart(source[end])) {
-    end++;
+  let end = start;
+  let value = '';
+  let first = true;
+
+  while (end < source.length) {
+    const escaped = isUnicodeEscapeStart(source, end);
+    const segment = escaped ? readUnicodeEscape(source, end) : readCodePoint(source, end);
+    if (segment === undefined) {
+      break;
+    }
+
+    const allowed = first
+      ? isIdentifierStartCharacter(segment.character)
+      : isIdentifierPartCharacter(segment.character);
+    if (!allowed) {
+      if (escaped) {
+        throw new ModuleSpecifierError(
+          'Invalid Unicode escape in identifier',
+          'invalid-source',
+          end,
+        );
+      }
+      break;
+    }
+
+    value += segment.character;
+    end = segment.end;
+    first = false;
   }
-  return { value: source.slice(start, end), end };
+
+  if (first) {
+    throw new ModuleSpecifierError('Invalid identifier', 'invalid-source', start);
+  }
+
+  return { value, end };
 }
 
 function isArrowHead(token: Token | undefined, greaterOffset?: number): boolean {
@@ -2248,7 +2490,7 @@ function inferArrowContext(tokens: readonly Token[], arrowIndex: number): FuncCo
   const async =
     markerToken?.kind === 'identifier' &&
     markerToken.value === 'async' &&
-    !lineBreakBetween(tokens, markerIndex, parametersIndex);
+    asyncModifierIsContinuous(tokens, markerIndex, parametersIndex);
 
   return {
     async,
@@ -2291,23 +2533,20 @@ function parameterSignatureContext(
   }
   const marker = tokens[nameIndex - 1];
   // A generic signature has no name of its own before `(` when it is anonymous (`async <T,>(v: T) => {}`).
-  const genericParameters = nameIndex !== openIndex - 1;
   const startsArrowParameters =
     openIndex === 0 ||
-    ((isIdentifier(name, 'async') || genericParameters) &&
+    (isIdentifier(name, 'async') &&
       (openIndex === 1 ||
         (marker?.kind === 'punct' && ['=', '(', '[', ',', ':'].includes(marker.value)) ||
         isIdentifier(marker, 'return'))) ||
-    (name?.kind === 'punct' && ['=', '(', '[', ',', ':'].includes(name.value)) ||
-    isIdentifier(name, 'return') ||
-    (isPunct(name, '>') && isPunct(marker, '='));
+    (name?.kind === 'punct' && ['=', '(', '[', ',', ':'].includes(name.value));
 
   if (startsArrowParameters) {
     const asyncToken = name?.kind === 'identifier' && name.value === 'async' ? name : undefined;
     const async =
       asyncToken !== undefined &&
       !lineBreakBefore &&
-      !lineBreakBetween(tokens, nameIndex, openIndex - 1);
+      asyncModifierIsContinuous(tokens, nameIndex, openIndex - 1);
 
     return {
       context: { async, generator: false, isExpression: false },
@@ -2319,6 +2558,90 @@ function parameterSignatureContext(
   // Without a `function` keyword the parameter list must start a real member declaration, so the
   // `:` of a conditional expression or of an unrelated expression never claims a return annotation.
   return undefined;
+}
+
+function asyncModifierIsContinuous(
+  tokens: readonly Token[],
+  modifierIndex: number,
+  parameterIndex: number,
+): boolean {
+  const genericOpen = isPunct(tokens[modifierIndex + 1], '<') ? modifierIndex + 1 : undefined;
+  return !lineBreakBetween(tokens, modifierIndex, genericOpen ?? parameterIndex);
+}
+
+function nearestFunctionParameter(
+  parameters: readonly ParameterContext[],
+): ParameterContext | undefined {
+  for (let index = parameters.length - 1; index >= 0; index--) {
+    const parameter = parameters[index];
+    if (parameter?.signature !== undefined) {
+      return parameter;
+    }
+  }
+  return undefined;
+}
+
+function nearestClassField(braces: readonly BraceContext[]): ClassMember | undefined {
+  for (let index = braces.length - 1; index >= 0; index--) {
+    const brace = braces[index];
+    if (brace?.role === 'class' && brace.state.member?.phase === 'initializer') {
+      return brace.state.member;
+    }
+  }
+  return undefined;
+}
+
+function isForOfSeparator(
+  tokens: readonly Token[],
+  parameters: readonly ParameterContext[],
+  parenDepth: number,
+  braceDepth: number,
+): boolean {
+  const control = parameters[parameters.length - 1];
+  if (
+    control?.controlKeyword !== 'for' ||
+    control.depth.parenDepth !== parenDepth ||
+    control.depth.braceDepth !== braceDepth ||
+    tokens.length <= control.openIndex
+  ) {
+    return false;
+  }
+
+  const previous = tokens[tokens.length - 1];
+  return (
+    previous !== undefined &&
+    isMemberExpressionEnd(previous) &&
+    !isIdentifier(previous, 'const') &&
+    !isIdentifier(previous, 'let') &&
+    !isIdentifier(previous, 'var')
+  );
+}
+
+function isTypeAssertionClose(tokens: readonly Token[]): boolean {
+  let angleDepth = 1;
+  for (let index = tokens.length - 1; index >= 0; index--) {
+    const token = tokens[index];
+    if (isPunct(token, '>')) {
+      angleDepth++;
+    } else if (isPunct(token, '<')) {
+      angleDepth--;
+      if (angleDepth === 0) {
+        return (
+          isIdentifier(tokens[index - 1], 'as') ||
+          isIdentifier(tokens[index - 1], 'satisfies') ||
+          (tokens[index - 1]?.kind === 'identifier' &&
+            (isIdentifier(tokens[index - 2], 'as') || isIdentifier(tokens[index - 2], 'satisfies')))
+        );
+      }
+    } else if (
+      angleDepth === 1 &&
+      token?.kind === 'punct' &&
+      [';', '=', ',', '?', ':'].includes(token.value)
+    ) {
+      return false;
+    }
+  }
+  return false;
 }
 
 function isMethodName(token: Token | undefined): boolean {
@@ -2337,6 +2660,7 @@ function expressionFunctionBodyEnded(
   braceDepth: number,
   frameDepth: number,
   functionDepth: number,
+  conditionalDepth: number,
   context: ExpressionFuncContext,
 ): boolean {
   if (
@@ -2345,6 +2669,17 @@ function expressionFunctionBodyEnded(
     frameDepth !== context.frameDepth
   ) {
     return false;
+  }
+
+  if (
+    ch === ':' &&
+    context.conditionalDepth > 0 &&
+    conditionalDepth === context.conditionalDepth &&
+    parenDepth === context.parenDepth &&
+    bracketDepth === context.bracketDepth &&
+    braceDepth === context.braceDepth
+  ) {
+    return true;
   }
 
   if (ch === ';' || ch === ',') {
@@ -2366,23 +2701,13 @@ function expressionFunctionBodyEnded(
   return false;
 }
 
-/** A `)` followed by `=>` belongs to a nested arrow signature, not the outer arrow's boundary. */
-function closingParenBelongsToArrowParameters(source: string, close: number, n: number): boolean {
-  if (source[close] !== ')') {
-    return false;
-  }
-
-  const next = skipTrivia(source, close + 1, n);
-
-  return source[next] === '=' && source[next + 1] === '>';
-}
-
 function lineTerminatorEndsExpressionFunctionBody(
   next: string,
   prevKind: PrevKind,
   prevPunct: string | undefined,
   previous: Token | undefined,
   nextIdentifier: string | undefined,
+  nextIsUpdate: boolean,
   parenDepth: number,
   bracketDepth: number,
   braceDepth: number,
@@ -2406,7 +2731,15 @@ function lineTerminatorEndsExpressionFunctionBody(
       ([')', ']', '}'].includes(prevPunct ?? '') ||
         (previous?.kind === 'punct' && previous.expressionEnd === true)));
 
-  return previousEndsExpression && !expressionContinues(next, nextIdentifier);
+  return previousEndsExpression && (nextIsUpdate || !expressionContinues(next, nextIdentifier));
+}
+
+function isHtmlCommentAtLineStart(source: string, index: number): boolean {
+  let start = index - 1;
+  while (start >= 0 && !isLineTerminator(source[start]) && isWhitespace(source[start])) {
+    start--;
+  }
+  return start < 0 || isLineTerminator(source[start]);
 }
 
 function expressionContinues(next: string, identifier: string | undefined): boolean {
@@ -2480,42 +2813,23 @@ function matchingOpenParen(tokens: readonly Token[], closeIndex: number): number
   return -1;
 }
 
-/** Recover a class header without crossing its boundary or inspecting nested heritage operands. */
-function classBodyExpression(tokens: readonly Token[]): boolean | undefined {
-  for (let index = tokens.length - 1; index >= 0; index--) {
-    const token = tokens[index];
-
-    if (token?.kind === 'identifier' && token.value === 'class') {
-      const afterClass = tokens[index + 1];
-
-      return afterClass?.kind !== 'punct' || afterClass.value !== '('
-        ? token.classExpression === true &&
-            !(
-              isIdentifier(tokens[index - 1], 'default') &&
-              isIdentifier(tokens[index - 2], 'export')
-            )
-        : undefined;
-    }
-
-    if (isPunct(token, ')') || isPunct(token, ']')) {
-      const open = isPunct(token, ')')
-        ? matchingOpenParen(tokens, index)
-        : matchingOpenBracket(tokens, index);
-      if (open < 0) {
-        return undefined;
-      }
-      index = open;
-      continue;
-    }
-
+/** Claim the most recent class header at this exact depth; nested heritage classes claim first. */
+function takeClassBodyContext(
+  contexts: PendingClassContext[],
+  depth: LexicalDepth,
+): PendingClassContext | undefined {
+  for (let index = contexts.length - 1; index >= 0; index--) {
+    const context = contexts[index];
     if (
-      token?.kind === 'punct' &&
-      (token.value === ';' || token.value === '{' || token.value === '}')
+      context?.parenDepth === depth.parenDepth &&
+      context.bracketDepth === depth.bracketDepth &&
+      context.braceDepth === depth.braceDepth &&
+      context.frameDepth === depth.frameDepth
     ) {
-      return undefined;
+      contexts.splice(index, 1);
+      return context;
     }
   }
-
   return undefined;
 }
 
@@ -2529,11 +2843,14 @@ function readJsxTagName(source: string, i: number, n: number): { name: string; e
   while (i < n) {
     const ch = source[i];
 
-    if (ch === undefined || !(isIdentifierPart(ch) || ch === '.' || ch === '-' || ch === ':')) {
+    if (
+      ch === undefined ||
+      !(isIdentifierPartAt(source, i) || ch === '.' || ch === '-' || ch === ':')
+    ) {
       break;
     }
 
-    i++;
+    i += codePointLength(source, i);
   }
 
   return { name: source.slice(start, i), end: i };
@@ -2705,6 +3022,7 @@ function opensObjectLiteral(
   prevIsExpressionKeyword: boolean,
   inTemplateExpression: boolean,
   colonIsExpression: boolean,
+  lineBreakBefore: boolean,
 ): boolean {
   if (prevKind === 'punct') {
     // Inside an object literal a `:` separates a property from its value (`{ scale: {} }`, where a
@@ -2720,7 +3038,11 @@ function opensObjectLiteral(
   if (prevKind === 'identifier') {
     // `return {` is an expression, `else {`/`do {` are blocks and every other identifier
     // (`function f`, `class C`) sits in statement position.
-    return prevIsExpressionKeyword && !BLOCK_AFTER_KEYWORD.has(prevIdentifier ?? '');
+    return (
+      prevIsExpressionKeyword &&
+      !BLOCK_AFTER_KEYWORD.has(prevIdentifier ?? '') &&
+      !(prevIdentifier === 'return' && lineBreakBefore)
+    );
   }
 
   // Right after `${` an expression is expected, so a `{` opens an object literal.
@@ -2743,6 +3065,9 @@ function isRegexStart(
   closedObjectBrace: boolean,
   previous?: Token,
 ): boolean {
+  if (previous?.kind === 'punct' && previous.value !== '}' && previous.expressionEnd === true) {
+    return false;
+  }
   if (previous?.kind === 'punct' && (previous.value === '++' || previous.value === '--')) {
     return previous.expressionEnd !== true;
   }
@@ -2825,6 +3150,10 @@ function interpret(tokens: readonly Token[]): ModuleSpecifierOccurrence[] {
 function isMemberName(tokens: readonly Token[], i: number): boolean {
   const prev = tokens[i - 1];
 
+  if (prev?.kind === 'punct' && prev.value === '#') {
+    return true;
+  }
+
   if (prev?.kind !== 'punct' || prev.value !== '.') {
     return false;
   }
@@ -2903,6 +3232,19 @@ function scanImportSource(
   kind: ModuleSpecifierKind,
 ): number {
   const n = tokens.length;
+  if (kind === 'export-from') {
+    const sourceIndex = exportSourceIndex(tokens, i);
+    if (sourceIndex === undefined) {
+      return i + 1;
+    }
+    const source = tokens[sourceIndex];
+    if (source?.kind === 'string') {
+      occurrences.push({ specifier: source.value, kind });
+      return sourceIndex + 1;
+    }
+    return i + 1;
+  }
+
   let j = i + 1;
   // How many `{ ... }` named clauses of the current statement are open. `import`/`export` are legal
   // binding names inside such a clause (e.g. `import { export as v } from 'pkg'`), so they may only
@@ -2946,6 +3288,40 @@ function scanImportSource(
 
   // No source found; keep scanning from the next token.
   return i + 1;
+}
+
+function exportSourceIndex(tokens: readonly Token[], exportIndex: number): number | undefined {
+  let index = exportIndex + 1;
+  if (isIdentifier(tokens[index], 'type')) {
+    index++;
+  }
+
+  if (isPunct(tokens[index], '*')) {
+    index++;
+    if (isIdentifier(tokens[index], 'as')) {
+      index += 2;
+    }
+  } else if (isPunct(tokens[index], '{')) {
+    let depth = 1;
+    index++;
+    while (index < tokens.length && depth > 0) {
+      if (isPunct(tokens[index], '{')) {
+        depth++;
+      } else if (isPunct(tokens[index], '}')) {
+        depth--;
+      }
+      index++;
+    }
+    if (depth !== 0) {
+      return undefined;
+    }
+  } else {
+    return undefined;
+  }
+
+  return isIdentifier(tokens[index], 'from') && tokens[index + 1]?.kind === 'string'
+    ? index + 1
+    : undefined;
 }
 
 /**
@@ -3291,12 +3667,82 @@ function isLineTerminator(ch: string | undefined): boolean {
   return ch === '\n' || ch === '\r' || ch === '\u2028' || ch === '\u2029';
 }
 
-function isIdentifierStart(ch: string | undefined): boolean {
-  return ch !== undefined && /[A-Za-z_$]/.test(ch);
+const IDENTIFIER_START = /^[$_\p{ID_Start}]$/u;
+const IDENTIFIER_PART = /^[$_\u200C\u200D\p{ID_Continue}]$/u;
+
+function isIdentifierStartAt(source: string, index: number): boolean {
+  const codePoint = readCodePoint(source, index);
+  return codePoint !== undefined && isIdentifierStartCharacter(codePoint.character);
 }
 
-function isIdentifierPart(ch: string | undefined): boolean {
-  return ch !== undefined && /[A-Za-z0-9_$]/.test(ch);
+function isIdentifierPartAt(source: string, index: number): boolean {
+  const codePoint = readCodePoint(source, index);
+  return codePoint !== undefined && isIdentifierPartCharacter(codePoint.character);
+}
+
+function isIdentifierStartCharacter(character: string): boolean {
+  return IDENTIFIER_START.test(character);
+}
+
+function isIdentifierPartCharacter(character: string): boolean {
+  return IDENTIFIER_PART.test(character);
+}
+
+function codePointLength(source: string, index: number): number {
+  return (source.codePointAt(index) ?? 0) > 0xffff ? 2 : 1;
+}
+
+function readCodePoint(
+  source: string,
+  index: number,
+): { character: string; end: number } | undefined {
+  const point = source.codePointAt(index);
+  if (point === undefined) {
+    return undefined;
+  }
+  const end = index + (point > 0xffff ? 2 : 1);
+  return { character: String.fromCodePoint(point), end };
+}
+
+function isUnicodeEscapeStart(source: string, index: number): boolean {
+  return source[index] === '\\' && source[index + 1] === 'u';
+}
+
+function readUnicodeEscape(source: string, start: number): { character: string; end: number } {
+  let end = start + 2;
+  let digits: string;
+
+  if (source[end] === '{') {
+    const digitsStart = ++end;
+    while (end < source.length && /[0-9A-Fa-f]/.test(source[end] ?? '')) {
+      end++;
+    }
+    if (end === digitsStart || source[end] !== '}' || end - digitsStart > 6) {
+      throw new ModuleSpecifierError(
+        'Invalid Unicode escape in identifier',
+        'invalid-source',
+        start,
+      );
+    }
+    digits = source.slice(digitsStart, end);
+    end++;
+  } else {
+    digits = source.slice(end, end + 4);
+    if (digits.length !== 4 || !/^[0-9A-Fa-f]{4}$/.test(digits)) {
+      throw new ModuleSpecifierError(
+        'Invalid Unicode escape in identifier',
+        'invalid-source',
+        start,
+      );
+    }
+    end += 4;
+  }
+
+  const value = Number.parseInt(digits, 16);
+  if (value > 0x10ffff) {
+    throw new ModuleSpecifierError('Invalid Unicode escape in identifier', 'invalid-source', start);
+  }
+  return { character: String.fromCodePoint(value), end };
 }
 
 function isNumberStart(ch: string): boolean {

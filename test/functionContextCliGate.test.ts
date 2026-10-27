@@ -174,6 +174,38 @@ describe('Step 68.4 compiled CLI gate', () => {
             ? await /require('fake')/ : require('real'); }`,
       },
       {
+        name: 'for-of regex and restricted line terminators',
+        fileName: 'index.cjs',
+        source: `for (const x of /require('fake')/.source) { require('real'); }
+          function f() { return
+            {} /require('fake-too')/.test('');
+          }
+          while (flag) { break
+            /require('fake-break')/.test('');
+          }`,
+      },
+      {
+        name: 'TypeScript assertion and abstract constructor type boundaries',
+        fileName: 'index.ts',
+        source: `type Num<T> = number;
+          const value = 1 as Num<Array<string>> / require('real') / 2;
+          class C { value!: abstract
+            new () => object
+            async run() { await /require('fake')/; require('real'); }
+          }`,
+      },
+      {
+        name: 'parameter and field grammar restore outer async contexts',
+        fileName: 'index.cjs',
+        source: `async function outer() {
+          function inner(value = await / require('real') / 2) {}
+          class C { value = await / require('real') / 2; }
+          const f = flag ? () => 0 : await /require('fake')/;
+          const g = (callback = async () => { await /require('fake-too')/; }) => 0;
+          require('real');
+        }`,
+      },
+      {
         name: 'class expressions divide but declarations permit regex',
         fileName: 'index.cjs',
         source: `const value = class {} / require('real') / 2;
@@ -251,6 +283,81 @@ describe('Step 68.4 compiled CLI gate', () => {
         'index.ts could not be analyzed: Unterminated template literal',
       );
     });
+
+    const moduleJsxCases = [
+      {
+        fileName: 'index.jsx',
+        source: `const view = <p />;
+          await /require('fake')/;
+          require('real');
+          export {};`,
+      },
+      {
+        fileName: 'index.tsx',
+        source: `const view = <p />;
+          await /require('fake')/;
+          require('real');
+          export {};`,
+      },
+    ];
+
+    it.each(moduleJsxCases)(
+      '$fileName honors package type module for top-level await',
+      ({ fileName, source }) => {
+        expect(
+          runProject(
+            {
+              name: 'module-jsx',
+              version: '0.0.0',
+              type: 'module',
+              dependencies: { real: '*' },
+            },
+            { [fileName]: source },
+          ),
+        ).toEqual({
+          status: 0,
+          stdout: 'DepVitals\n\nNo dependency issues found.\n',
+          stderr: '',
+        });
+      },
+    );
+
+    it.each(moduleJsxCases)(
+      '$fileName does not hide a missing real module dependency',
+      ({ fileName, source }) => {
+        expect(
+          runProject(
+            { name: 'module-jsx-missing', version: '0.0.0', type: 'module' },
+            { [fileName]: source },
+          ),
+        ).toEqual({
+          status: 1,
+          stdout: 'DepVitals\n\nMissing dependencies (1)\n  real\n',
+          stderr: '',
+        });
+      },
+    );
+
+    it.each(moduleJsxCases)(
+      '$fileName keeps the inert regex decoy unused',
+      ({ fileName, source }) => {
+        expect(
+          runProject(
+            {
+              name: 'module-jsx-unused',
+              version: '0.0.0',
+              type: 'module',
+              dependencies: { real: '*', fake: '*' },
+            },
+            { [fileName]: source },
+          ),
+        ).toEqual({
+          status: 1,
+          stdout: 'DepVitals\n\nUnused dependencies (1)\n  fake\n',
+          stderr: '',
+        });
+      },
+    );
   });
 
   it('does not report regex text from top-level await in an mjs module', () => {

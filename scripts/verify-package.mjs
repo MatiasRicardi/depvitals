@@ -464,12 +464,53 @@ function main() {
             / require('real') / 2; }
           /require('fake')/.test(value);`,
       ],
-    ].map(([name, fileName, source]) => {
+      [
+        'for-of-and-asi',
+        'index.cjs',
+        `for (const x of /require('fake')/.source) { require('real'); }
+          function f() { return
+            {} /require('fake-too')/.test('');
+          }`,
+      ],
+      [
+        'typescript-expression-boundaries',
+        'index.ts',
+        `type Num<T> = number;
+          const value = 1 as Num<Array<string>> / require('real') / 2;
+          class C { value!: abstract
+            new () => object
+            async run() { await /require('fake')/; require('real'); }
+          }`,
+      ],
+      [
+        'module-jsx',
+        'index.jsx',
+        `const view = <p />;
+          await /require('fake')/;
+          require('real');
+          export {};`,
+        'module',
+      ],
+      [
+        'module-tsx',
+        'index.tsx',
+        `const view = <p />;
+          await /require('fake')/;
+          require('real');
+          export {};`,
+        'module',
+      ],
+    ].map(([name, fileName, source, type]) => {
       const directory = join(consumerDir, name);
       mkdirSync(directory);
       writeFileSync(
         join(directory, 'package.json'),
-        JSON.stringify({ name, version: '0.0.0', dependencies: { real: '*' } }),
+        JSON.stringify({
+          name,
+          version: '0.0.0',
+          ...(type === 'module' ? { type } : {}),
+          dependencies: { real: '*' },
+        }),
       );
       writeFileSync(join(directory, fileName), source);
       return directory;
