@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import { analyzeProject } from '../src/core/analyzeProject.js';
@@ -226,6 +227,668 @@ describe('Steps 68.6 and 68.7 function contexts through analyzer and compiled CL
     } finally {
       rmSync(project, { recursive: true, force: true });
     }
+  });
+
+  describe('Step 68.8 frame and typed-return boundaries through analyzer and CLI', () => {
+    const cases = [
+      // Each frame case keeps a real usage next to the decoy, so a scanner that stops scanning
+      // inside the frame cannot pass by accident.
+      {
+        name: 'A1 template text does not terminate an async arrow',
+        fileName: 'index.cjs',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const f = async () => \`,\` + require('real') + (await /require('fake')/);`,
+      },
+      {
+        name: 'A2 ordinary arrow finds a require after template text',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `async function outer() { const f = () => \`,\` + await / require("real") / 2; }`,
+      },
+      {
+        name: 'A3 closing an interpolation does not terminate an async arrow',
+        fileName: 'index.cjs',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: "const f = async () => `${0}` + require('real') + (await /require('fake')/);",
+      },
+      {
+        name: 'A4 JSX containers do not terminate an async arrow',
+        fileName: 'index.tsx',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const f = async () => (
+          <p>
+            {0}
+            {require('real')}
+            {await /require('fake')/}
+          </p>
+        );`,
+      },
+      {
+        name: 'B1 typed async function does not leak into its body',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `async function check(): Promise<{ ok: boolean }> { const ok = await /require('fake')/; require('real'); return { ok }; }`,
+      },
+      {
+        name: 'B3 typed async arrow does not leak into its body',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const check = async (): Promise<{ ok: boolean }> => { await /require('fake')/; return { ok: true }; }; require("real");`,
+      },
+      {
+        name: 'B3 typed async method does not leak into its body',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `class C { async check(): Promise<{ ok: boolean }> { await /require('fake')/; return { ok: true }; } } require("real");`,
+      },
+      {
+        name: 'B4 typed function expression preserves division',
+        fileName: 'index.ts',
+        dependencies: [{ name: 'real', used: true }],
+        source: `const n = async function (): Promise<{ ok: boolean }> { return { ok: true }; } / require("real") / 2;`,
+      },
+      {
+        name: 'typed callback return keeps the real body boundary',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `async function check(): () => void { await /require('fake')/; } require("real");`,
+      },
+      {
+        name: 'C1 intersection return type keeps the real body',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `async function check(): Promise<void> & { ok: boolean } { await /require('fake')/; require("real"); }`,
+      },
+      {
+        name: 'C2 template literal return type keeps the real body',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source:
+          "async function check(): `a${number}b` { await /require('fake')/; require('real'); }",
+      },
+      {
+        name: 'C3 a signature ending in a semicolon does not swallow the next async arrow',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `declare function checkAgain(): Promise<void>;
+const check = async (): Promise<void> => { await /require('fake')/; require("real"); };`,
+      },
+      {
+        name: 'C4 a signature ending in a semicolon does not swallow a JSX element',
+        fileName: 'index.tsx',
+        dependencies: [{ name: 'real', used: true }],
+        source: `declare function check(): Promise<void>;
+const view = <p>hi</p>;
+require('real');`,
+      },
+      {
+        name: 'C5 function type return on an arrow keeps the real body',
+        fileName: 'index.ts',
+        dependencies: [{ name: 'real', used: true }],
+        source: `const make = (): (() => void) => { require("real"); return () => 0; };`,
+      },
+      {
+        name: 'C6 generic async arrow keeps its async body',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const check = async <T,>(value: T): Promise<T> => { await /require('fake')/; require("real"); return value; };`,
+      },
+      {
+        name: 'C7 generic async method keeps its async body',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `class C {
+  async check<T>(): Promise<T> {
+    await /require('fake')/;
+    require("real");
+    throw new Error('unreachable');
+  }
+}`,
+      },
+      {
+        name: 'C8 a ternary call before an async method keeps its async body',
+        fileName: 'index.ts',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const flag = false;
+const service = { x: flag ? 1 : 2, async run(): Promise<void> { await /require('fake')/; require("real"); } };`,
+      },
+      // The `:` of a conditional expression never starts a return annotation, so the async arrow
+      // keeps its body and the decoy regex stays inert.
+      {
+        name: 'D1 a `new` ternary branch keeps the async arrow body',
+        fileName: 'index.cjs',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const o = {
+  x: cond ? new F() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+      },
+      {
+        name: 'D2 a `typeof` ternary branch keeps the async arrow body',
+        fileName: 'index.cjs',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const o = {
+  x: cond ? typeof f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+      },
+      {
+        name: 'D3 a `void` ternary branch keeps the async arrow body',
+        fileName: 'index.cjs',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const o = {
+  x: cond ? void f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+      },
+      {
+        name: 'D4 a multiplication ternary branch keeps the async arrow body',
+        fileName: 'index.cjs',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const o = {
+  x: cond ? 2 * f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+      },
+      {
+        name: 'D5 an `await` ternary branch keeps the async arrow body',
+        fileName: 'index.cjs',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `async function outer() {
+  const o = {
+    x: cond ? await f() : async () => {
+      await /require('fake')/;
+      require('real');
+    }
+  };
+}`,
+      },
+      {
+        name: 'D6 a class field ternary keeps the async arrow body',
+        fileName: 'index.cjs',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `class C {
+  field = cond ? new F() : async () => {
+    await /require('fake')/;
+    require('real');
+  };
+}`,
+      },
+      {
+        name: 'D7 a computed property key ternary keeps the async arrow body',
+        fileName: 'index.cjs',
+        dependencies: [
+          { name: 'fake', used: false },
+          { name: 'real', used: true },
+        ],
+        source: `const o = {
+  [cond ? new F() : async () => {
+    await /require('fake')/;
+    require('real');
+  }]: 1
+};`,
+      },
+      {
+        name: 'D8 an empty object before multiplication does not mark a generator',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `const o = {
+  x: cond ? {} * f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+      },
+      {
+        name: 'D9 a populated object before multiplication does not mark a generator',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `const o = {
+  x: cond ? { x: 1 } * f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`,
+      },
+      {
+        name: 'D10 a class field ternary keeps the async arrow body',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value = cond ? {} * f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D11 a computed property key ternary keeps the async arrow body',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `const o = {
+  [cond ? {} * f() : async () => {
+    await /require('fake')/;
+    require('real');
+  }]: 1
+};`,
+      },
+      ...(
+        [
+          ['number', '1'],
+          ['string', "'text'"],
+          ['array', '[]'],
+          ['call', 'getValue()'],
+        ] as const
+      ).map(([label, initializer]) => ({
+        name: `D12 an async class method follows a newline-terminated ${label} field`,
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value = ${initializer}
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      })),
+      {
+        name: 'D13 an async class method with return annotation follows a field',
+        fileName: 'index.ts',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value = 1
+  async run(): Promise<void> {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D14 an explicit semicolon still separates a class field and method',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value = 1;
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D15 an apostrophe in a regex does not cause an operational error',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value = 1
+  async run() {
+    await /don't/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D16 a legitimate generator method retains its generator context',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `const o = {
+  *run() {
+    yield /require('fake')/;
+    require('real');
+  }
+};`,
+      },
+      {
+        name: 'D17 a line-continued multiplication is not a class generator boundary',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value = cond ? {}
+    * f() : async () => {
+      await /require('fake')/;
+      require('real');
+    }
+}`,
+      },
+      {
+        name: 'D18 a static initialization block separates the next async method',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  static {}
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D19 an apostrophe in a regex after a static block is inert',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  static {}
+  async run() {
+    await /don't/;
+    require('real');
+  }
+}`,
+      },
+      ...(['new', 'typeof', 'void'] as const).map((operator) => ({
+        name: `D20 a field initializer continues after the ${operator} operator`,
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value = cond ? ${operator}
+    F() : async () => {
+      await /require('fake')/;
+      require('real');
+    };
+}`,
+      })),
+      {
+        name: 'D21 a regex field initializer ends before an async method',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value = /abc/
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D22 a template field initializer ends before an async method',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value = \`require("fake")\`
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D23 a template interpolation remains executable source for extraction',
+        fileName: 'index.cjs',
+        dependencies: [
+          { name: 'real', used: true },
+          { name: 'template-real', used: true },
+        ],
+        source: `class C {
+  value = \`text \${require('template-real')}\`
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D24 a field without an initializer ends before a generator',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  value
+  *run() {
+    yield /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D25 an of initializer value ends before an async method',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `const of = 1;
+class C {
+  value = of
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D26 an uninitialized field named of ends before an async method',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  of
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      ...(
+        [
+          ['definite-assignment typed', 'value!: number', 'index.ts'],
+          ['typed', 'value: number', 'index.ts'],
+          ['private', '#value', 'index.cjs'],
+          ['computed', '[key]', 'index.cjs'],
+        ] as const
+      ).map(([label, field, fileName]) => ({
+        name: `D27 a generator follows an uninitialized ${label} field`,
+        fileName,
+        dependencies: [{ name: 'real', used: true }],
+        source: `const key = 'value';
+class C {
+  ${field}
+  *run() {
+    yield /require('fake')/;
+    require('real');
+  }
+}`,
+      })),
+      ...(['get', 'set', 'async'] as const).map((initializer) => ({
+        name: `D28 ${initializer} as a field initializer stays a value`,
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `const ${initializer} = () => 0;
+class C {
+  value = ${initializer}
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      })),
+    ] as const;
+
+    it.each(cases)('$name uses valid source syntax', ({ fileName, source }) => {
+      if (fileName.endsWith('.cjs')) {
+        const result = spawnSync(process.execPath, ['--check', '--input-type=commonjs'], {
+          input: source,
+          encoding: 'utf8',
+          timeout: 10_000,
+        });
+
+        expect(result.error).toBeUndefined();
+        expect(result.status, result.stderr).toBe(0);
+        return;
+      }
+
+      const result = ts.transpileModule(source, {
+        fileName,
+        compilerOptions: { jsx: ts.JsxEmit.Preserve },
+        reportDiagnostics: true,
+      });
+
+      expect(
+        result.diagnostics?.map((diagnostic) =>
+          ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
+        ),
+      ).toEqual([]);
+    });
+
+    for (const declared of [false, true]) {
+      it.each(cases)(
+        '$name through analyzer and compiled CLI, declared=$declared',
+        async (scenario) => {
+          const project = mkdtempSync(join(tmpdir(), 'depvitals-step68-8-'));
+          const manifest = JSON.stringify({
+            name: 'frame-and-return-boundaries',
+            version: '0.0.0',
+            ...(declared
+              ? {
+                  dependencies: Object.fromEntries(
+                    scenario.dependencies.map(({ name }) => [name, '*']),
+                  ),
+                }
+              : {}),
+          });
+          const sourcePath = join(project, scenario.fileName);
+
+          try {
+            writeFileSync(join(project, 'package.json'), manifest);
+            writeFileSync(sourcePath, scenario.source);
+
+            const missing = scenario.dependencies
+              .filter(({ used }) => used && !declared)
+              .map(({ name }) => name);
+            const unused = scenario.dependencies
+              .filter(({ used }) => !used && declared)
+              .map(({ name }) => name);
+            const expectedAnalysis = {
+              projectRoot: project,
+              unusedDependencies: unused,
+              unusedDevDependencies: [],
+              missingDependencies: missing,
+            };
+            const sections = ['DepVitals', ''];
+
+            if (missing.length > 0) {
+              sections.push(
+                `Missing dependencies (${String(missing.length)})`,
+                ...missing.map((name) => `  ${name}`),
+              );
+            }
+
+            if (unused.length > 0) {
+              if (missing.length > 0) {
+                sections.push('');
+              }
+              sections.push(
+                `Unused dependencies (${String(unused.length)})`,
+                ...unused.map((name) => `  ${name}`),
+              );
+            }
+
+            const expectedCli = {
+              status: missing.length + unused.length > 0 ? 1 : 0,
+              stdout:
+                missing.length + unused.length > 0
+                  ? `${sections.join('\n')}\n`
+                  : 'DepVitals\n\nNo dependency issues found.\n',
+              stderr: '',
+            };
+
+            expect(await analyzeProject(project)).toEqual(expectedAnalysis);
+            expect(await analyzeProject(project)).toEqual(expectedAnalysis);
+            expect(runBuilt(project)).toEqual(expectedCli);
+            expect(readdirSync(project).sort()).toEqual([scenario.fileName, 'package.json'].sort());
+            expect(readFileSync(join(project, 'package.json'), 'utf8')).toBe(manifest);
+            expect(readFileSync(sourcePath, 'utf8')).toBe(scenario.source);
+          } finally {
+            rmSync(project, { recursive: true, force: true });
+          }
+        },
+      );
+    }
+
+    it('reports only the real usage of a ternary async arrow', () => {
+      const source = `const o = {
+  x: cond ? new F() : async () => {
+    await /require('fake')/;
+    require('real');
+  }
+};`;
+      const declared = runProject(
+        { name: 'ternary-async-arrow', version: '0.0.0', dependencies: { real: '*' } },
+        { 'index.cjs': source },
+      );
+
+      expect(declared).toEqual({
+        status: 0,
+        stdout: 'DepVitals\n\nNo dependency issues found.\n',
+        stderr: '',
+      });
+
+      expect(
+        runProject({ name: 'ternary-async-arrow', version: '0.0.0' }, { 'index.cjs': source }),
+      ).toEqual({
+        status: 1,
+        stdout: 'DepVitals\n\nMissing dependencies (1)\n  real\n',
+        stderr: '',
+      });
+    });
   });
 
   it('keeps incomplete source as an operational error without partial output', async () => {
