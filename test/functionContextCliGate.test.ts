@@ -56,7 +56,13 @@ function runProject(
       writeFileSync(join(project, name), source);
     }
 
-    return runBuilt(project);
+    const result = runBuilt(project);
+    expect(readdirSync(project).sort()).toEqual(['package.json', ...Object.keys(files)].sort());
+    expect(readFileSync(join(project, 'package.json'), 'utf8')).toBe(JSON.stringify(manifest));
+    for (const [name, source] of Object.entries(files)) {
+      expect(readFileSync(join(project, name), 'utf8')).toBe(source);
+    }
+    return result;
   } finally {
     rmSync(project, { recursive: true, force: true });
   }
@@ -80,6 +86,91 @@ describe('Step 68.4 compiled CLI gate', () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toBe('DepVitals\n\nMissing dependencies (1)\n  real\n');
     expect(result.stderr).toBe('');
+  });
+
+  describe('Step 68.9 structural contexts through the compiled CLI', () => {
+    const cases = [
+      {
+        name: 'consecutive fields',
+        fileName: 'index.cjs',
+        source: `class C { a = () => 0
+          b
+          c
+          *run() { yield /require('fake')/; require('real'); }
+        }`,
+      },
+      {
+        name: 'function-typed field',
+        fileName: 'index.ts',
+        source: `class C { callback!: (value: string) => void
+          *run() { yield /require('fake')/; require('real'); }
+        }`,
+      },
+      {
+        name: 'mixed expression and return annotation',
+        fileName: 'index.ts',
+        source: `const o = { value: cond ? f() : async (): Promise<{ ok: boolean }> => {
+          await /require('fake')/; require('real'); return { ok: true };
+        } };`,
+      },
+    ];
+
+    it.each(cases)('$name: clean with only real declared', ({ fileName, source }) => {
+      expect(
+        runProject(
+          { name: 'structural-clean', version: '0.0.0', dependencies: { real: '*' } },
+          { [fileName]: source },
+        ),
+      ).toEqual({
+        status: 0,
+        stdout: 'DepVitals\n\nNo dependency issues found.\n',
+        stderr: '',
+      });
+    });
+
+    it.each(cases)('$name: only real is missing', ({ fileName, source }) => {
+      expect(
+        runProject({ name: 'structural-missing', version: '0.0.0' }, { [fileName]: source }),
+      ).toEqual({
+        status: 1,
+        stdout: 'DepVitals\n\nMissing dependencies (1)\n  real\n',
+        stderr: '',
+      });
+    });
+
+    it.each(cases)('$name: the declared decoy stays unused', ({ fileName, source }) => {
+      expect(
+        runProject(
+          {
+            name: 'structural-unused',
+            version: '0.0.0',
+            dependencies: { real: '*', fake: '*' },
+          },
+          { [fileName]: source },
+        ),
+      ).toEqual({
+        status: 1,
+        stdout: 'DepVitals\n\nUnused dependencies (1)\n  fake\n',
+        stderr: '',
+      });
+    });
+
+    it.each(cases)(
+      '$name: a lexical error prevents a partial clean report',
+      ({ fileName, source }) => {
+        const result = runProject(
+          { name: 'structural-invalid', version: '0.0.0', dependencies: { real: '*' } },
+          { [fileName]: `${source}\n'unterminated` },
+        );
+        expect(result.status).toBe(1);
+        expect(result.stdout).toBe('');
+        expect(result.stderr).toContain(`Source file `);
+        expect(result.stderr).toContain(
+          `${fileName} could not be analyzed: Unterminated string literal`,
+        );
+        expect(result.stderr).not.toContain('No dependency issues found');
+      },
+    );
   });
 
   it('does not report regex text from top-level await in an mjs module', () => {

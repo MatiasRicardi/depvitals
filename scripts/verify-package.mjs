@@ -54,6 +54,7 @@ const FORBIDDEN_PREFIXES = [
   'instructions/',
   'coverage/',
   'node_modules/',
+  'scripts/',
 ];
 
 /**
@@ -71,14 +72,14 @@ function fail(message) {
  * On Windows npm and the installed CLI are `.cmd` shims, which need to be launched through a shell
  * with quoted paths. Everywhere else the command runs directly.
  */
-function run(command, args, cwd) {
+function run(command, args, cwd, env = process.env) {
   if (process.platform === 'win32') {
     const shellCommand = [command, ...args].map((value) => `"${value}"`).join(' ');
 
-    return spawnSync(shellCommand, { encoding: 'utf8', cwd, shell: true });
+    return spawnSync(shellCommand, { encoding: 'utf8', cwd, env, shell: true, timeout: 120_000 });
   }
 
-  return spawnSync(command, args, { encoding: 'utf8', cwd });
+  return spawnSync(command, args, { encoding: 'utf8', cwd, env, timeout: 120_000 });
 }
 
 let checksPassed = 0;
@@ -195,7 +196,27 @@ function makeTempDir(prefix) {
  * Run the installed CLI executable against the given arguments.
  */
 function runInstalledCli(binPath, consumerDir, args) {
-  return run(binPath, args, consumerDir);
+  return run(binPath, args, consumerDir, { ...process.env, DEPVITALS_NO_UPDATE_CHECK: '1' });
+}
+
+function checkProductionImports(directory) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      checkProductionImports(path);
+    } else if (entry.name.endsWith('.js')) {
+      const source = readFileSync(path, 'utf8');
+      const imports = [
+        ...source.matchAll(/^(?:import|export)\s+(?:.*?\s+from\s+)?['"]([^'"]+)['"]/gm),
+      ];
+      const external = imports.find((match) => !/^(?:node:|\.\.?\/)/.test(match[1]));
+      check(
+        `production imports are internal or Node builtins: ${entry.name}`,
+        !external,
+        external?.[1],
+      );
+    }
+  }
 }
 
 /**
@@ -315,6 +336,20 @@ function main() {
       'installed depvitals from the local tarball',
       existsSync(join(consumerDir, 'node_modules', 'depvitals', 'package.json')),
     );
+    const installedRoot = join(consumerDir, 'node_modules', 'depvitals');
+    const installedManifest = JSON.parse(readFileSync(join(installedRoot, 'package.json'), 'utf8'));
+    check(
+      'installed manifest has no runtime or optional dependencies',
+      installedManifest.dependencies === undefined &&
+        installedManifest.optionalDependencies === undefined,
+    );
+    check(
+      'consumer did not install development dependencies',
+      readdirSync(join(consumerDir, 'node_modules'))
+        .filter((name) => !name.startsWith('.'))
+        .every((name) => name === 'depvitals'),
+    );
+    checkProductionImports(join(installedRoot, 'dist'));
 
     // 4. Create two minimal, deterministic fixture projects inside the consumer temp dir. They
     //    stand in for real scanned projects and keep the smoke test independent of the DepVitals
@@ -358,8 +393,43 @@ function main() {
       ].join('\n'),
     );
 
-    // Snapshot the fixtures so the read-only scan guarantee can be asserted below.
-    const before = snapshotFixtures([cleanDir, findingsDir]);
+    const structuralDirs = [
+      [
+        'consecutive-fields',
+        'index.cjs',
+        `class C { a = () => 0
+          b
+          c
+          *run() { yield /require('fake')/; require('real'); }
+        }`,
+      ],
+      [
+        'function-typed-field',
+        'index.ts',
+        `class C { callback!: (value: string) => void
+          *run() { yield /require('fake')/; require('real'); }
+        }`,
+      ],
+      [
+        'multiplication-division',
+        'index.cjs',
+        `class C {
+          value = (2 * require('real')) / 4;
+          async run() { await /require('fake')/; require('real'); }
+        }`,
+      ],
+    ].map(([name, fileName, source]) => {
+      const directory = join(consumerDir, name);
+      mkdirSync(directory);
+      writeFileSync(
+        join(directory, 'package.json'),
+        JSON.stringify({ name, version: '0.0.0', dependencies: { real: '*' } }),
+      );
+      writeFileSync(join(directory, fileName), source);
+      return directory;
+    });
+    const fixtureDirs = [cleanDir, findingsDir, ...structuralDirs];
+    const before = snapshotFixtures(fixtureDirs);
 
     // 5. Invoke the installed executable.
     const binPath = resolveInstalledBin(consumerDir);
@@ -409,6 +479,17 @@ function main() {
     );
     check('findings scan leaves stderr empty', findings.stderr === '');
 
+    for (const directory of structuralDirs) {
+      const result = runInstalledCli(binPath, consumerDir, [directory]);
+      check(`structural consumer exits 0: ${directory}`, result.status === 0, result.stderr);
+      check(
+        `structural consumer reports clean: ${directory}`,
+        result.stdout === 'DepVitals\n\nNo dependency issues found.\n',
+        result.stdout,
+      );
+      check(`structural consumer leaves stderr empty: ${directory}`, result.stderr === '');
+    }
+
     // No-args scans the actual working directory.
     const noArgs = runInstalledCli(binPath, cleanDir, []);
     check('no-args scans cwd and exits 0', noArgs.status === 0);
@@ -436,7 +517,7 @@ function main() {
 
     // Capture the fixtures again after every scan, then compare the complete before-and-after
     // snapshots so added, deleted, and modified files are all detected.
-    const after = snapshotFixtures([cleanDir, findingsDir]);
+    const after = snapshotFixtures(fixtureDirs);
 
     // The scanner must not mutate the fixtures it reads.
     check('scan does not mutate the fixtures', snapshotsEqual(before, after));

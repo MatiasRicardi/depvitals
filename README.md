@@ -75,6 +75,8 @@ Detection uses a lightweight static lexical scanner rather than a full JavaScrip
 
 Function callbacks in default parameters preserve the enclosing function's async/generator context. Function expressions used as object property values or conditional alternatives also preserve real `require()` calls after division operators; regex text after declarations or statement blocks remains inert.
 
+Class members retain separate structural contexts, including consecutive newline-terminated fields and TypeScript function-typed fields before generator methods. Type annotations keep literal `import()` evidence without turning type arrows into runtime functions. Regex text in those methods remains inert, while real calls in initializers, computed keys, and method bodies still count.
+
 ## Current limitations
 
 - **Single-project analysis:** only one `package.json` is analyzed. Workspaces, monorepos, and parent-manifest lookup are not supported.
