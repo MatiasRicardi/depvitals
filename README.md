@@ -77,6 +77,8 @@ Function callbacks in default parameters preserve the enclosing function's async
 
 Class members retain separate structural contexts, including consecutive newline-terminated fields and TypeScript function-typed fields before generator methods. Block-bodied arrow, function, and class-expression initializers preserve the boundary before a following method, while operators that continue the initializer remain part of that expression. Type annotations keep literal `import()` evidence without turning type arrows into runtime functions. Regex text in those methods remains inert, while real calls in initializers, computed keys, and method bodies still count.
 
+Object-type template interpolations retain their own delimiter boundaries, including nested templates and mapped keys. Method contexts support identifier, string, numeric, and computed names, with balanced nested generic signatures. Postfix updates and the word operators `in` and `instanceof` preserve expression boundaries; a slash after a class expression divides, while a slash after a class declaration can still start a regex.
+
 ## Current limitations
 
 - **Single-project analysis:** only one `package.json` is analyzed. Workspaces, monorepos, and parent-manifest lookup are not supported.

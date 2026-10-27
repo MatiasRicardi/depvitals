@@ -134,6 +134,53 @@ describe('Step 68.4 compiled CLI gate', () => {
           await /require('fake')/; require('real'); return { ok: true };
         } };`,
       },
+      {
+        name: 'template interpolation inside object types',
+        fileName: 'index.ts',
+        source:
+          'function f(x: { tag: `x${string}` }) {} class C { value!: { tag: `x${string}` }; } require("real");',
+      },
+      {
+        name: 'special method names and ordinary string methods',
+        fileName: 'index.cjs',
+        source: `async function outer() {
+          const o = { async return() { await /require('fake')/; require('real'); },
+            'run'(await) { return await / require('real') / 2; },
+            *function() { yield /require('fake')/; require('real'); } };
+          class C { 1(await) { return await / require('real') / 2; } }
+        }`,
+      },
+      {
+        name: 'nested generic arrow and method signatures',
+        fileName: 'index.ts',
+        source: `const f = async <T extends { value: number }>(x: T) => {
+          await /require('fake')/; require('real'); };
+          class C { async run<T = (x: { value: number }) => void>(x: T) {
+            await /require('fake')/; require('real'); } }`,
+      },
+      {
+        name: 'postfix division and field boundary',
+        fileName: 'index.cjs',
+        source: `let n = 1; const value = n++ / require('real') / 2;
+          class C { value = n--
+            async run() { await /require('fake')/; require('real'); } }`,
+      },
+      {
+        name: 'word operators continue async expression bodies',
+        fileName: 'index.cjs',
+        source: `const f = async () => value
+          instanceof Object ? await /require('fake')/ : require('real');
+          class C { value = async () => value /*\n*/ in Object
+            ? await /require('fake')/ : require('real'); }`,
+      },
+      {
+        name: 'class expressions divide but declarations permit regex',
+        fileName: 'index.cjs',
+        source: `const value = class {} / require('real') / 2;
+          class C { handle = class Named extends Base {}
+            / require('real') / 2; }
+          /require('fake')/.test(value);`,
+      },
     ];
 
     it.each(cases)('$name: clean with only real declared', ({ fileName, source }) => {
@@ -192,6 +239,18 @@ describe('Step 68.4 compiled CLI gate', () => {
         expect(result.stderr).not.toContain('No dependency issues found');
       },
     );
+
+    it('keeps an incomplete object-type template on the operational error channel', () => {
+      const result = runProject(
+        { name: 'invalid-type-template', version: '0.0.0', dependencies: { real: '*' } },
+        { 'index.ts': 'require("real"); function f(x: { tag: `x${string' },
+      );
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain(
+        'index.ts could not be analyzed: Unterminated template literal',
+      );
+    });
   });
 
   it('does not report regex text from top-level await in an mjs module', () => {

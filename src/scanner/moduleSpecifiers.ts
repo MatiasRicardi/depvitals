@@ -96,6 +96,8 @@ type Token = {
   | {
       readonly kind: 'identifier';
       readonly value: string;
+      readonly classExpression?: boolean;
+      readonly propertyName?: boolean;
       readonly offset: number;
       readonly endOffset: number;
     }
@@ -206,7 +208,7 @@ type ClassContext = LexicalDepth & {
 // the enclosing class member, and only a function body restores the nearest function grammar.
 type BraceContext =
   | { readonly role: 'object' | 'block' }
-  | { readonly role: 'class'; readonly state: ClassContext }
+  | { readonly role: 'class'; readonly state: ClassContext; readonly isExpression: boolean }
   | { readonly role: 'static-block'; readonly owner: ClassContext }
   | { readonly role: 'function'; readonly context: FuncContext; readonly owner?: ClassContext };
 
@@ -220,7 +222,12 @@ type BraceContext =
 //
 // `offset` is where the frame was opened, so an unterminated frame can report a useful position.
 type Frame =
-  | { readonly kind: 'template-expr'; depth: number; readonly offset: number }
+  | {
+      readonly kind: 'template-expr';
+      depth: number;
+      readonly offset: number;
+      readonly typeOwner?: { readonly annotation: TypeAnnotation; readonly depth: TypeDepth };
+    }
   | { readonly kind: 'jsx-expr'; depth: number; readonly offset: number }
   | {
       readonly kind: 'jsx-tag';
@@ -439,7 +446,14 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       if (ch === '$' && source[i + 1] === '{') {
         // Start of a `${...}` expression: lex the JavaScript inside like ordinary source. The frame
         // starts at brace depth 0, so the next unmatched `}` closes the interpolation.
-        frames.push({ kind: 'template-expr', depth: 0, offset: i });
+        frames.push({
+          kind: 'template-expr',
+          depth: 0,
+          offset: i,
+          ...(typeAnnotation !== undefined
+            ? { typeOwner: { annotation: typeAnnotation, depth: { ...typeAnnotation } } }
+            : {}),
+        });
         inText = false;
         resetExpressionState();
         i += 2;
@@ -603,7 +617,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         tokenLineBreakBefore &&
         classState.member !== undefined &&
         typeAnnotation?.typeOperandExpected !== true &&
-        classFieldCanEnd(classState.member, tokens[tokens.length - 1], ch)
+        classFieldCanEnd(classState.member, tokens[tokens.length - 1], ch, identifier?.value)
       ) {
         classState.member = undefined;
         typeAnnotation = undefined;
@@ -631,6 +645,8 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
           ch,
           prevKind,
           prevPunct,
+          tokens[tokens.length - 1],
+          identifier?.value,
           parenDepth,
           bracketDepth,
           braceContexts.length,
@@ -683,6 +699,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         prevIsExpressionKeyword,
         afterControlHead,
         closedObjectBrace,
+        tokens[tokens.length - 1],
       )
     ) {
       const after = source[i + 1];
@@ -707,14 +724,19 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     // Only that owner's boundary or initializer/body can end the annotation.
     if (typeAnnotation !== undefined) {
       const annotation = typeAnnotation;
-      const atRoot = atTypeRoot(annotation);
+      const typeFrame =
+        frame?.kind === 'template-expr' && frame.typeOwner?.annotation === annotation
+          ? frame.typeOwner
+          : undefined;
+      const atRoot = typeFrame === undefined && atTypeRoot(annotation);
       const isTypeArrow = ch === '>' && isArrowHead(tokens[tokens.length - 1], i);
 
-      // The `}` of a `${...}` or JSX `{...}` expression belongs to its frame, not to the type, as long
-      // as the annotation owns no braces of its own.
+      // Interpolations own depths relative to the surrounding type, which may itself be an object.
       if (
         ch === '}' &&
-        annotation.braceDepth === 0 &&
+        (typeFrame !== undefined
+          ? sameTypeDepth(annotation, typeFrame.depth)
+          : annotation.braceDepth === 0) &&
         (frame?.kind === 'template-expr' || frame?.kind === 'jsx-expr') &&
         frame.depth === 0
       ) {
@@ -723,6 +745,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         i++;
 
         if (frame.kind === 'template-expr') {
+          annotation.typeOperandExpected = false;
           inText = true;
           resetExpressionState();
         } else {
@@ -846,7 +869,9 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       const closedMethod = closed?.role === 'function' && closed.context.isClassMember === true;
       closedClassMemberBoundary = closedMethod || closed?.role === 'static-block';
       closedObjectBrace =
-        closed?.role === 'object' || (closed?.role === 'function' && closed.context.isExpression);
+        closed?.role === 'object' ||
+        (closed?.role === 'function' && closed.context.isExpression) ||
+        (closed?.role === 'class' && closed.isExpression);
       closedExpressionBrace =
         closedObjectBrace ||
         closedMethod ||
@@ -872,6 +897,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
           prevIsExpressionKeyword,
           afterControlHead,
           closedObjectBrace,
+          tokens[tokens.length - 1],
         )
       ) {
         const start = i;
@@ -968,7 +994,16 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       // an expression (`const f = function(){}`) or a declaration (`function f(){}`), and whether it
       // is async (`async function`, i.e. preceded by `async`) or a generator (`function*`, resolved
       // when a following `*` is seen). The context is consumed at the body `{`.
-      if (value === 'function' && !isMemberName && typeAnnotation === undefined) {
+      const methodName =
+        value === 'function' &&
+        (insideObjectLiteral() || insideClassBody()) &&
+        memberDeclarationHead(
+          tokens,
+          tokens.length,
+          insideClassBody(),
+          currentClass()?.member?.start,
+        ) !== undefined;
+      if (value === 'function' && !isMemberName && !methodName && typeAnnotation === undefined) {
         // `async function` is only async without a line terminator between the two words: a line
         // break ends the `async` statement, so the declaration that follows is an ordinary one.
         const isAsync =
@@ -993,7 +1028,25 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
           phase: 'awaiting-parameters',
         });
       }
-      emit({ kind: 'identifier', value, offset: start, endOffset: i });
+      emit({
+        kind: 'identifier',
+        value,
+        offset: start,
+        endOffset: i,
+        ...(isMemberName ? { propertyName: true } : {}),
+        ...(value === 'class'
+          ? {
+              classExpression:
+                functionIsExpressionPosition(
+                  prevKind,
+                  prevPunct,
+                  previousIdentifier,
+                  colonIsExpression,
+                ) ||
+                (isPunct(tokens[tokens.length - 1], '>') && isArrowHead(tokens[tokens.length - 2])),
+            }
+          : {}),
+      });
       prevKind = 'identifier';
       afterControlHead = false;
       continue;
@@ -1125,7 +1178,9 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         isObject = false;
       }
 
-      const isClassBody = !isObject && context === undefined && opensClassBody(tokens);
+      const classExpression =
+        !isObject && context === undefined ? classBodyExpression(tokens) : undefined;
+      const isClassBody = classExpression !== undefined;
       opensClassMemberBoundary = isClassBody;
       const isStaticBlock =
         !isObject &&
@@ -1164,6 +1219,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       } else if (isClassBody) {
         braceContexts.push({
           role: 'class',
+          isExpression: classExpression,
           state: {
             parenDepth,
             bracketDepth,
@@ -1219,7 +1275,11 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         phase: 'binding',
       });
 
-      if (pending?.phase === 'awaiting-parameters' && atLexicalDepth(pending)) {
+      if (
+        pending?.phase === 'awaiting-parameters' &&
+        atLexicalDepth(pending) &&
+        signature?.isFunctionKeyword === true
+      ) {
         pending.parameterDepth = parenDepth + 1;
         pending.phase = 'parameters';
       }
@@ -1255,6 +1315,26 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       if (bracketDepth > 0) {
         bracketDepth--;
       }
+    }
+
+    if (!inType && (ch === '+' || ch === '-') && source[i + 1] === ch) {
+      const previous = tokens[tokens.length - 1];
+      const postfix =
+        !tokenLineBreakBefore &&
+        previous !== undefined &&
+        isMemberExpressionEnd(previous) &&
+        !prevIsExpressionKeyword;
+      emit({
+        kind: 'punct',
+        value: ch + ch,
+        offset: i,
+        endOffset: i + 2,
+        expressionEnd: postfix,
+      });
+      prevKind = 'punct';
+      prevPunct = ch + ch;
+      i += 2;
+      continue;
     }
 
     // An arrow's expression body has no brace where its function context can be consumed. Record
@@ -1775,8 +1855,7 @@ function signatureNameIndex(tokens: readonly Token[], openIndex: number): number
     return index;
   }
 
-  let angleDepth = 0;
-
+  const closers: string[] = [];
   while (index >= 0) {
     const token = tokens[index];
 
@@ -1784,50 +1863,29 @@ function signatureNameIndex(tokens: readonly Token[], openIndex: number): number
       break;
     }
 
-    // Identifier, string and number tokens continue the type-parameter list.
     if (token.kind !== 'punct') {
       index--;
       continue;
     }
 
-    if (token.value === '>') {
-      // The `>` of an arrow in a default value (`<T = () => void>`) closes nothing.
-      if (isPunct(tokens[index - 1], '=')) {
-        index -= 2;
-        continue;
-      }
-
-      angleDepth++;
-      index--;
+    if (token.value === '>' && isArrowHead(tokens[index - 1], token.offset)) {
+      index -= 2;
       continue;
     }
-
-    if (token.value === '<') {
-      angleDepth--;
-
-      if (angleDepth === 0) {
+    if (['>', ')', ']', '}'].includes(token.value)) {
+      closers.push(token.value);
+    } else if (['<', '(', '[', '{'].includes(token.value)) {
+      const expected =
+        token.value === '<' ? '>' : token.value === '(' ? ')' : token.value === '[' ? ']' : '}';
+      if (closers.pop() !== expected) {
+        break;
+      }
+      if (closers.length === 0) {
         return index - 1;
       }
-
-      index--;
-      continue;
-    }
-
-    // A type-parameter list separates its parameters and uses `[]`, `|`, `&`, `.` and `?` inside
-    // constraints and defaults. Any other punctuation means the `>` did not close a list.
-    if (
-      token.value !== ',' &&
-      token.value !== '[' &&
-      token.value !== ']' &&
-      token.value !== '.' &&
-      token.value !== '?' &&
-      token.value !== '|' &&
-      token.value !== '&' &&
-      token.value !== '='
-    ) {
+    } else if (token.value === ';' && closers[closers.length - 1] === '>') {
       break;
     }
-
     index--;
   }
 
@@ -2042,14 +2100,17 @@ function lineBreakBetween(tokens: readonly Token[], start: number, end: number):
 
 function isMemberExpressionEnd(token: Token): boolean {
   if (token.kind === 'identifier') {
-    return !REGEX_PRECEDING_KEYWORDS.has(token.value) && !['await', 'yield'].includes(token.value);
+    return (
+      token.propertyName === true ||
+      (!REGEX_PRECEDING_KEYWORDS.has(token.value) && !['await', 'yield'].includes(token.value))
+    );
   }
 
   return (
     EXPRESSION_ENDING.has(token.kind) ||
     isPunct(token, ')') ||
     isPunct(token, ']') ||
-    (token.kind === 'punct' && token.value === '}' && token.expressionEnd === true)
+    (token.kind === 'punct' && token.expressionEnd === true)
   );
 }
 
@@ -2090,7 +2151,12 @@ function advanceMember(member: ClassMember, token: Token, previous: Token | unde
   }
 }
 
-function classFieldCanEnd(member: ClassMember, previous: Token | undefined, next: string): boolean {
+function classFieldCanEnd(
+  member: ClassMember,
+  previous: Token | undefined,
+  next: string,
+  nextIdentifier: string | undefined,
+): boolean {
   if (previous === undefined || member.phase === 'parameters' || member.phase === 'decorator') {
     return false;
   }
@@ -2106,7 +2172,7 @@ function classFieldCanEnd(member: ClassMember, previous: Token | undefined, next
     return false;
   }
   if (member.phase === 'initializer') {
-    return !EXPRESSION_CONTINUATION_CHARACTERS.has(next);
+    return !expressionContinues(next, nextIdentifier);
   }
   // An uninitialized field cannot continue by multiplication. Type operators and suffixes can.
   return !UNINITIALIZED_FIELD_CONTINUATIONS.has(next);
@@ -2132,6 +2198,15 @@ function atTypeRoot(type: TypeDepth): boolean {
     type.bracketDepth === 0 &&
     type.braceDepth === 0 &&
     type.angleDepth === 0
+  );
+}
+
+function sameTypeDepth(left: TypeDepth, right: TypeDepth): boolean {
+  return (
+    left.parenDepth === right.parenDepth &&
+    left.bracketDepth === right.bracketDepth &&
+    left.braceDepth === right.braceDepth &&
+    left.angleDepth === right.angleDepth
   );
 }
 
@@ -2190,13 +2265,30 @@ function parameterSignatureContext(
   lineBreakBefore: boolean,
   memberStart?: number,
 ): TypedReturnSignature | undefined {
-  if (pending?.phase === 'awaiting-parameters') {
-    return { context: pending, isFunctionKeyword: true, isArrowSignature: false };
-  }
-
   const openIndex = tokens.length;
   const nameIndex = signatureNameIndex(tokens, openIndex);
   const name = tokens[nameIndex];
+  const head =
+    insideMethodContainer && isMethodName(name)
+      ? memberDeclarationHead(tokens, nameIndex, insideClassBody, memberStart)
+      : undefined;
+  if (head !== undefined) {
+    return {
+      context: {
+        ...head,
+        isExpression: false,
+        isClassMember: insideClassBody,
+      },
+      isFunctionKeyword: false,
+      isArrowSignature: false,
+    };
+  }
+  if (
+    pending?.phase === 'awaiting-parameters' &&
+    (name?.kind === 'identifier' || isPunct(name, '*'))
+  ) {
+    return { context: pending, isFunctionKeyword: true, isArrowSignature: false };
+  }
   const marker = tokens[nameIndex - 1];
   // A generic signature has no name of its own before `(` when it is anonymous (`async <T,>(v: T) => {}`).
   const genericParameters = nameIndex !== openIndex - 1;
@@ -2226,40 +2318,16 @@ function parameterSignatureContext(
 
   // Without a `function` keyword the parameter list must start a real member declaration, so the
   // `:` of a conditional expression or of an unrelated expression never claims a return annotation.
-  const head = memberDeclarationHead(tokens, nameIndex, insideClassBody, memberStart);
+  return undefined;
+}
 
-  if (head === undefined) {
-    return undefined;
-  }
-
-  if (head.async || head.generator) {
-    return {
-      context: {
-        async: head.async,
-        generator: head.generator,
-        isExpression: false,
-        isClassMember: insideClassBody,
-      },
-      isFunctionKeyword: false,
-      isArrowSignature: false,
-    };
-  }
-
-  // An ordinary name only annotates a member of an object literal, class body or interface.
-  if (!insideMethodContainer || !(name?.kind === 'identifier' || isPunct(name, ']'))) {
-    return undefined;
-  }
-
-  return {
-    context: {
-      async: false,
-      generator: false,
-      isExpression: false,
-      isClassMember: insideClassBody,
-    },
-    isFunctionKeyword: false,
-    isArrowSignature: false,
-  };
+function isMethodName(token: Token | undefined): boolean {
+  return (
+    token?.kind === 'identifier' ||
+    token?.kind === 'string' ||
+    token?.kind === 'number' ||
+    isPunct(token, ']')
+  );
 }
 
 function expressionFunctionBodyEnded(
@@ -2313,6 +2381,8 @@ function lineTerminatorEndsExpressionFunctionBody(
   next: string,
   prevKind: PrevKind,
   prevPunct: string | undefined,
+  previous: Token | undefined,
+  nextIdentifier: string | undefined,
   parenDepth: number,
   bracketDepth: number,
   braceDepth: number,
@@ -2332,9 +2402,19 @@ function lineTerminatorEndsExpressionFunctionBody(
 
   const previousEndsExpression =
     EXPRESSION_ENDING.has(prevKind) ||
-    (prevKind === 'punct' && [')', ']', '}'].includes(prevPunct ?? ''));
+    (prevKind === 'punct' &&
+      ([')', ']', '}'].includes(prevPunct ?? '') ||
+        (previous?.kind === 'punct' && previous.expressionEnd === true)));
 
-  return previousEndsExpression && !EXPRESSION_CONTINUATION_CHARACTERS.has(next);
+  return previousEndsExpression && !expressionContinues(next, nextIdentifier);
+}
+
+function expressionContinues(next: string, identifier: string | undefined): boolean {
+  return (
+    EXPRESSION_CONTINUATION_CHARACTERS.has(next) ||
+    identifier === 'in' ||
+    identifier === 'instanceof'
+  );
 }
 
 /** Whether a token is the given identifier. */
@@ -2400,26 +2480,43 @@ function matchingOpenParen(tokens: readonly Token[], closeIndex: number): number
   return -1;
 }
 
-/** Whether the next `{` opens the class whose `class` keyword is in the current token segment. */
-function opensClassBody(tokens: readonly Token[]): boolean {
+/** Recover a class header without crossing its boundary or inspecting nested heritage operands. */
+function classBodyExpression(tokens: readonly Token[]): boolean | undefined {
   for (let index = tokens.length - 1; index >= 0; index--) {
     const token = tokens[index];
 
-    if (isIdentifier(token, 'class')) {
+    if (token?.kind === 'identifier' && token.value === 'class') {
       const afterClass = tokens[index + 1];
 
-      return afterClass?.kind !== 'punct' || afterClass.value !== '(';
+      return afterClass?.kind !== 'punct' || afterClass.value !== '('
+        ? token.classExpression === true &&
+            !(
+              isIdentifier(tokens[index - 1], 'default') &&
+              isIdentifier(tokens[index - 2], 'export')
+            )
+        : undefined;
+    }
+
+    if (isPunct(token, ')') || isPunct(token, ']')) {
+      const open = isPunct(token, ')')
+        ? matchingOpenParen(tokens, index)
+        : matchingOpenBracket(tokens, index);
+      if (open < 0) {
+        return undefined;
+      }
+      index = open;
+      continue;
     }
 
     if (
       token?.kind === 'punct' &&
       (token.value === ';' || token.value === '{' || token.value === '}')
     ) {
-      return false;
+      return undefined;
     }
   }
 
-  return false;
+  return undefined;
 }
 
 /**
@@ -2644,7 +2741,11 @@ function isRegexStart(
   prevIsExpressionKeyword: boolean,
   afterControlHead: boolean,
   closedObjectBrace: boolean,
+  previous?: Token,
 ): boolean {
+  if (previous?.kind === 'punct' && (previous.value === '++' || previous.value === '--')) {
+    return previous.expressionEnd !== true;
+  }
   if (prevKind === 'identifier' && prevIsExpressionKeyword) {
     return true;
   }

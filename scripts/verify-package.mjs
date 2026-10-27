@@ -418,6 +418,52 @@ function main() {
           async run() { await /require('fake')/; require('real'); }
         }`,
       ],
+      [
+        'object-type-templates',
+        'index.ts',
+        'function f(x: { tag: `x${string}` }) {} class C { value!: { tag: `x${string}` }; } require("real");',
+      ],
+      [
+        'special-method-names',
+        'index.cjs',
+        `async function outer() {
+          const o = { async return() { await /require('fake')/; require('real'); },
+            'run'(await) { return await / require('real') / 2; },
+            *function() { yield /require('fake')/; require('real'); } };
+          class C { 1(await) { return await / require('real') / 2; } }
+        }`,
+      ],
+      [
+        'nested-generics',
+        'index.ts',
+        `const f = async <T extends { value: number }>(x: T) => {
+          await /require('fake')/; require('real'); };
+          class C { async run<T = (x: { value: number }) => void>(x: T) {
+            await /require('fake')/; require('real'); } }`,
+      ],
+      [
+        'postfix-operators',
+        'index.cjs',
+        `let n = 1; const v = n++ / require('real') / 2;
+          class C { value = n--
+            async run() { await /require('fake')/; require('real'); } }`,
+      ],
+      [
+        'word-operators',
+        'index.cjs',
+        `const f = async () => value
+          instanceof Object ? await /require('fake')/ : require('real');
+          class C { value = async () => value /*\n*/ in Object
+            ? await /require('fake')/ : require('real'); }`,
+      ],
+      [
+        'class-expression-division',
+        'index.cjs',
+        `const value = class {} / require('real') / 2;
+          class C { handle = class Named extends Base {}
+            / require('real') / 2; }
+          /require('fake')/.test(value);`,
+      ],
     ].map(([name, fileName, source]) => {
       const directory = join(consumerDir, name);
       mkdirSync(directory);
@@ -428,7 +474,21 @@ function main() {
       writeFileSync(join(directory, fileName), source);
       return directory;
     });
-    const fixtureDirs = [cleanDir, findingsDir, ...structuralDirs];
+    const invalidTemplateDir = join(consumerDir, 'incomplete-type-template');
+    mkdirSync(invalidTemplateDir);
+    writeFileSync(
+      join(invalidTemplateDir, 'package.json'),
+      JSON.stringify({
+        name: 'incomplete-type-template',
+        version: '0.0.0',
+        dependencies: { real: '*' },
+      }),
+    );
+    writeFileSync(
+      join(invalidTemplateDir, 'index.ts'),
+      'require("real"); function f(x: { tag: `x${string',
+    );
+    const fixtureDirs = [cleanDir, findingsDir, ...structuralDirs, invalidTemplateDir];
     const before = snapshotFixtures(fixtureDirs);
 
     // 5. Invoke the installed executable.
@@ -489,6 +549,17 @@ function main() {
       );
       check(`structural consumer leaves stderr empty: ${directory}`, result.stderr === '');
     }
+
+    const invalidTemplate = runInstalledCli(binPath, consumerDir, [invalidTemplateDir]);
+    check('incomplete type template exits 1', invalidTemplate.status === 1);
+    check('incomplete type template leaves stdout empty', invalidTemplate.stdout === '');
+    check(
+      'incomplete type template reports an operational error',
+      invalidTemplate.stderr.includes(
+        'index.ts could not be analyzed: Unterminated template literal',
+      ),
+      invalidTemplate.stderr,
+    );
 
     // No-args scans the actual working directory.
     const noArgs = runInstalledCli(binPath, cleanDir, []);
