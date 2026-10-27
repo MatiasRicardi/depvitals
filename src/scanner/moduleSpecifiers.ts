@@ -431,30 +431,6 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       conditional = conditionalContexts[conditionalContexts.length - 1];
     }
 
-    let expressionFunctionContext =
-      expressionFunctionContexts[expressionFunctionContexts.length - 1];
-
-    while (
-      expressionFunctionContext !== undefined &&
-      typeAnnotation === undefined &&
-      !inText &&
-      frames[frames.length - 1]?.kind !== 'jsx-text' &&
-      frames[frames.length - 1]?.kind !== 'jsx-tag' &&
-      expressionFunctionBodyEnded(
-        ch,
-        parenDepth,
-        bracketDepth,
-        braceContexts.length,
-        frames.length,
-        functionContextStack.length,
-        conditionalContexts.length,
-        expressionFunctionContext,
-      )
-    ) {
-      expressionFunctionContexts.pop();
-      expressionFunctionContext = expressionFunctionContexts[expressionFunctionContexts.length - 1];
-    }
-
     // Template literal text: skip everything until `${`, a nested `` ` ``, or the closing `` ` ``.
     // A backtick toggles out of text mode; the matching toggle happens below in code mode.
     if (inText) {
@@ -654,6 +630,31 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       typeAnnotation = undefined;
       inType = false;
     }
+    // An assertion must release its type context before the same runtime delimiter can retire
+    // an enclosing arrow. Consume the delimiter only after restoring the nearest function grammar.
+    let expressionFunctionContext =
+      expressionFunctionContexts[expressionFunctionContexts.length - 1];
+
+    while (
+      expressionFunctionContext !== undefined &&
+      typeAnnotation === undefined &&
+      frames[frames.length - 1]?.kind !== 'jsx-text' &&
+      frames[frames.length - 1]?.kind !== 'jsx-tag' &&
+      expressionFunctionBodyEnded(
+        ch,
+        parenDepth,
+        bracketDepth,
+        braceContexts.length,
+        frames.length,
+        functionContextStack.length,
+        conditionalContexts.length,
+        expressionFunctionContext,
+      )
+    ) {
+      expressionFunctionContexts.pop();
+      expressionFunctionContext = expressionFunctionContexts[expressionFunctionContexts.length - 1];
+    }
+
     if (
       typeAnnotation?.role === 'return' &&
       tokenLineBreakBefore &&
@@ -2915,6 +2916,7 @@ function lineTerminatorEndsExpressionFunctionBody(
   }
 
   const previousEndsExpression =
+    previous?.assertionEnd === true ||
     EXPRESSION_ENDING.has(prevKind) ||
     (prevKind === 'punct' &&
       ([')', ']', '}'].includes(prevPunct ?? '') ||

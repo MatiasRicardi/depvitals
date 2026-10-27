@@ -589,6 +589,18 @@ require('real');`,
         "const as = 0, x = 1;\nx\nas < x > /require('fake')/.source.length;\nrequire('real');",
         false,
       ],
+      [
+        'arrow-assertion-async-owner',
+        'index.ts',
+        "type Num<T> = number; async function f() { const g = () => 1 as Num<string>; await /require('fake')/; require('real'); }",
+        false,
+      ],
+      [
+        'arrow-assertion-ordinary-owner',
+        'index.ts',
+        "type Num<T> = number; function f(await) { const g = async () => 1 satisfies Num<string>; return await / require('real') / 2; }",
+        false,
+      ],
     ].flatMap(([name, fileName, source, hasTypes]) =>
       ['missing', 'clean', 'unused'].map((mode) => {
         const directory = join(consumerDir, `assertion-${name}-${mode}`);
