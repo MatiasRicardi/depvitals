@@ -459,8 +459,79 @@ const controls: readonly Control[] = [
       require('real');`,
   },
   {
-    name: 'HTML comments are script-only and line-anchored',
+    name: 'opening HTML comments allow leading whitespace in scripts',
     source: `  <!-- require('fake')
+      require('real');`,
+  },
+  {
+    name: 'opening HTML comments can follow an expression in scripts',
+    source: `let x;
+      x = 1 <!-- require('fake')
+      require('real');`,
+  },
+  {
+    name: 'opening HTML comments can follow a statement or block in scripts',
+    source: `const x = 1; <!-- require('fake-statement')
+      if (x) {} <!-- require('fake-block')
+      require('real');`,
+  },
+  {
+    name: 'inline opening HTML comments can end at EOF',
+    source: `require('real'); let x = 1 <!-- require('fake')`,
+  },
+  {
+    name: 'closing HTML comments allow whitespace only before their line position',
+    source: `let x = 2;
+      --> require('fake')
+      x --> require('real');
+      require('real');`,
+    expected: [...expected, ...expected],
+  },
+  {
+    name: 'inline decrement and comparison are not HTML comments in modules',
+    module: true,
+    source: `let x = 2;
+      x --> require('real');
+      export {};`,
+  },
+  {
+    name: 'function type arrows do not count as nested generic closers in assertions',
+    typescript: true,
+    source: `const a = value as Box<() => number> / require('real') / 2;
+      const b = value satisfies Box<(x: number) => Array<string>> / require('real') / 2;`,
+    expected: [...expected, ...expected],
+  },
+  {
+    name: 'assertion type arguments own nested object and function type delimiters',
+    typescript: true,
+    source: `const a = value as Box<{}> / require('real') / 2;
+      const b = value satisfies Box<{ value: Array<{ name: string }>; flag: boolean }> / require('real') / 2;
+      const c = value as Box<(x: { n: number }) => { result: string }> / require('real') / 2;
+      const d = value as Box<[string, { n: number }]> / require('real') / 2;`,
+    expected: [...expected, ...expected, ...expected, ...expected],
+  },
+  {
+    name: 'arrow and comparison statements do not contaminate later expression contexts',
+    source: `const f = () => x > y;
+      const g = () => x > y ? x : y;
+      function h() { return x > y; }
+      if (x > y) { const g = () => x > y; }
+      /require('fake')/.test('');
+      require('real');`,
+  },
+  {
+    name: 'comparison candidates inside a template cannot outlive their frame',
+    source: `const as = 0;
+      const text = \`\${as < n}\`
+      x > /require('fake')/.source.length;
+      require('real');`,
+  },
+  {
+    name: 'a standalone block ends a generic-looking comparison candidate without a semicolon',
+    source: `const as = 0;
+      const value = as < n
+      {}
+      x > /require('fake')/.source.length;
       require('real');`,
   },
   {
@@ -623,6 +694,46 @@ describe('PR #76 twenty parser families', () => {
       expect(() => extractModuleSpecifiers(source)).toThrow('Invalid Unicode escape in identifier');
     },
   );
+
+  it.each(['<!--', '-->'])('does not enable %s comments in the tolerant module lexer', (marker) => {
+    const source = `${marker} require('fake')
+        require('real');`;
+    expect(extractModuleSpecifiers(source, { module: true })).toEqual([
+      { specifier: 'fake', kind: 'require' },
+      ...expected,
+    ]);
+  });
+
+  it.each(['\n', '\r', '\r\n', '\u2028', '\u2029'])(
+    'ends inline opening HTML comments at line terminator %j',
+    (lineTerminator) => {
+      const source = `let x = 1 <!-- require('fake')${lineTerminator}require('real');`;
+      expect(extractModuleSpecifiers(source)).toEqual(expected);
+    },
+  );
+
+  it('does not rescan preceding arrow and comparison statements', () => {
+    const source = 'var f = () => x > y;\n'.repeat(16_000) + "require('real');";
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `import { readFileSync } from 'node:fs';
+           import { extractModuleSpecifiers } from './dist/scanner/moduleSpecifiers.js';
+           process.stdout.write(JSON.stringify(extractModuleSpecifiers(readFileSync(0, 'utf8'))));`,
+      ],
+      {
+        cwd: new URL('../../../', import.meta.url),
+        input: source,
+        encoding: 'utf8',
+        timeout: 15_000,
+      },
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual(expected);
+  }, 20_000);
 
   it('checks the syntax of every control without executing JavaScript bodies', () => {
     for (const control of controls) {

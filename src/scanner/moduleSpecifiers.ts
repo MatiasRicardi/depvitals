@@ -280,8 +280,20 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
   // only when the next significant token cannot continue the preceding expression.
   let lineTerminatorSinceLastToken = false;
   let tokenLineBreakBefore = false;
+  // Assertion generics own their nested type delimiters; no earlier statement needs rescanning.
+  const assertionTypeClosers: string[] = [];
+  let assertionTypeFrameDepth = 0;
   const emit = (token: Token): void => {
-    const significant = tokenLineBreakBefore ? { ...token, lineBreakBefore: true } : token;
+    if (assertionTypeClosers.length === 0) {
+      assertionTypeFrameDepth = frames.length;
+    } else if (frames.length < assertionTypeFrameDepth) {
+      assertionTypeClosers.length = 0;
+    }
+    const endsAssertionType = advanceAssertionTypeArguments(assertionTypeClosers, token, tokens);
+    let significant = tokenLineBreakBefore ? { ...token, lineBreakBefore: true } : token;
+    if (endsAssertionType && significant.kind === 'punct') {
+      significant = { ...significant, expressionEnd: true };
+    }
     if (memberAtToken !== undefined) {
       advanceMember(memberAtToken, significant, tokens[tokens.length - 1]);
     }
@@ -591,8 +603,8 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
 
     if (
       !module &&
-      isHtmlCommentAtLineStart(source, i) &&
-      (source.startsWith('<!--', i) || source.startsWith('-->', i))
+      (source.startsWith('<!--', i) ||
+        (source.startsWith('-->', i) && isHtmlCommentAtLineStart(source, i)))
     ) {
       while (i < n && !isLineTerminator(source[i])) {
         i++;
@@ -1533,7 +1545,6 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       !prevIsExpressionKeyword
         ? { expressionEnd: true }
         : {}),
-      ...(ch === '>' && isTypeAssertionClose(tokens) ? { expressionEnd: true } : {}),
       ...equalsOperator,
       ...(matchingOpen !== undefined ? { matchingOpen } : {}),
       ...(closedClassMemberBoundary || opensClassMemberBoundary || (ch === ';' && insideClassBody())
@@ -2617,29 +2628,75 @@ function isForOfSeparator(
   );
 }
 
-function isTypeAssertionClose(tokens: readonly Token[]): boolean {
-  let angleDepth = 1;
-  for (let index = tokens.length - 1; index >= 0; index--) {
-    const token = tokens[index];
-    if (isPunct(token, '>')) {
-      angleDepth++;
-    } else if (isPunct(token, '<')) {
-      angleDepth--;
-      if (angleDepth === 0) {
-        return (
-          isIdentifier(tokens[index - 1], 'as') ||
-          isIdentifier(tokens[index - 1], 'satisfies') ||
-          (tokens[index - 1]?.kind === 'identifier' &&
-            (isIdentifier(tokens[index - 2], 'as') || isIdentifier(tokens[index - 2], 'satisfies')))
-        );
-      }
-    } else if (
-      angleDepth === 1 &&
-      token?.kind === 'punct' &&
-      [';', '=', ',', '?', ':'].includes(token.value)
-    ) {
+function advanceAssertionTypeArguments(
+  closers: string[],
+  token: Token,
+  tokens: readonly Token[],
+): boolean {
+  if (token.kind === 'regex') {
+    closers.length = 0;
+  }
+  if (token.kind !== 'punct' || token.syntheticBoundary === true) {
+    return false;
+  }
+
+  if (closers.length === 0) {
+    if (token.value !== '<') {
       return false;
     }
+    const previous = tokens[tokens.length - 1];
+    const beforeName = tokens[tokens.length - 2];
+    if (!(
+      isIdentifier(previous, 'as') ||
+      isIdentifier(previous, 'satisfies') ||
+      (previous?.kind === 'identifier' &&
+        (isIdentifier(beforeName, 'as') || isIdentifier(beforeName, 'satisfies')))
+    )) {
+      return false;
+    }
+    closers.push('>');
+    return false;
+  }
+
+  // Both pieces of a type arrow belong to the function type, not to the generic delimiters.
+  if (
+    isArrowHead(token) ||
+    (token.value === '>' && isArrowHead(tokens[tokens.length - 1], token.offset))
+  ) {
+    return false;
+  }
+
+  const previous = tokens[tokens.length - 1];
+  if (
+    token.value === '{' &&
+    previous !== undefined &&
+    ((previous.kind === 'identifier' && !TYPE_OPERAND_KEYWORDS.has(previous.value)) ||
+      EXPRESSION_ENDING.has(previous.kind) ||
+      (previous.kind === 'punct' &&
+        [')', ']', '}', '>'].includes(previous.value) &&
+        !(previous.value === '>' && isArrowHead(tokens[tokens.length - 2], previous.offset))))
+  ) {
+    // A type object must start an operand; a brace after a complete operand is an external block.
+    closers.length = 0;
+    return false;
+  }
+
+  const close =
+    token.value === '<' ? '>' : token.value === '(' ? ')' : token.value === '[' ? ']' : undefined;
+  if (close !== undefined || token.value === '{') {
+    closers.push(close ?? '}');
+  } else if (['>', ')', ']', '}'].includes(token.value)) {
+    if (closers.pop() !== token.value) {
+      closers.length = 0;
+      return false;
+    }
+    return token.value === '>' && closers.length === 0;
+  } else if (
+    (token.value === ';' && closers[closers.length - 1] !== '}') ||
+    (token.operator === 'assignment' && closers.length === 1)
+  ) {
+    // Object-type member separators are internal; external statements/initializers end the owner.
+    closers.length = 0;
   }
   return false;
 }
