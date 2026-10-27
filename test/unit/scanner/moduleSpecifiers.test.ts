@@ -1866,6 +1866,65 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(source)).toEqual(['real']);
     });
 
+    it('treats of as an initializer value before an async method', () => {
+      const source = `const of = 1;
+class C {
+  value = of
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('recognizes an uninitialized field named of before an async method', () => {
+      const source = `class C {
+  of
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it.each([
+      ['a definite-assignment typed field', 'value!: number'],
+      ['a typed field', 'value: number'],
+      ['a private field', '#value'],
+      ['a computed field', '[key]'],
+    ])('recognizes a generator after %s without an initializer', (_label, field) => {
+      const source = `const key = 'value';
+class C {
+  ${field}
+  *run() {
+    yield /require('fake')/;
+    require('real');
+  }
+}`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it.each(['get', 'set', 'async'])(
+      'does not consume %s when it is the preceding field initializer',
+      (initializer) => {
+        const source = `const ${initializer} = () => 0;
+class C {
+  value = ${initializer}
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`;
+
+        expect(specifiers(source)).toEqual(['real']);
+      },
+    );
+
     it.each([
       ['an empty object', '{}'],
       ['a populated object', '{ x: 1 }'],

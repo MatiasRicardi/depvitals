@@ -702,6 +702,64 @@ const service = { x: flag ? 1 : 2, async run(): Promise<void> { await /require('
   }
 }`,
       },
+      {
+        name: 'D25 an of initializer value ends before an async method',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `const of = 1;
+class C {
+  value = of
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      {
+        name: 'D26 an uninitialized field named of ends before an async method',
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `class C {
+  of
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      },
+      ...(
+        [
+          ['definite-assignment typed', 'value!: number', 'index.ts'],
+          ['typed', 'value: number', 'index.ts'],
+          ['private', '#value', 'index.cjs'],
+          ['computed', '[key]', 'index.cjs'],
+        ] as const
+      ).map(([label, field, fileName]) => ({
+        name: `D27 a generator follows an uninitialized ${label} field`,
+        fileName,
+        dependencies: [{ name: 'real', used: true }],
+        source: `const key = 'value';
+class C {
+  ${field}
+  *run() {
+    yield /require('fake')/;
+    require('real');
+  }
+}`,
+      })),
+      ...(['get', 'set', 'async'] as const).map((initializer) => ({
+        name: `D28 ${initializer} as a field initializer stays a value`,
+        fileName: 'index.cjs',
+        dependencies: [{ name: 'real', used: true }],
+        source: `const ${initializer} = () => 0;
+class C {
+  value = ${initializer}
+  async run() {
+    await /require('fake')/;
+    require('real');
+  }
+}`,
+      })),
     ] as const;
 
     it.each(cases)('$name uses valid source syntax', ({ fileName, source }) => {

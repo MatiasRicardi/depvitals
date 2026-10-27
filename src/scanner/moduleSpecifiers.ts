@@ -335,6 +335,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     let inTypedReturnType = typedReturnAnnotation !== undefined;
     let closedClassMemberBoundary = false;
     let closedExpressionBrace = false;
+    let opensClassMemberBoundary = false;
 
     if (ch === undefined) {
       i++;
@@ -1027,6 +1028,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       }
 
       const isClassBody = !isObject && context === undefined && opensClassBody(tokens);
+      opensClassMemberBoundary = isClassBody;
       const isStaticBlock =
         !isObject &&
         !isClassBody &&
@@ -1176,7 +1178,11 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       value: ch,
       offset: i,
       endOffset: i + 1,
-      ...(closedClassMemberBoundary ? { memberSeparator: true } : {}),
+      ...(closedClassMemberBoundary ||
+      opensClassMemberBoundary ||
+      (ch === ';' && classBodyBraces[classBodyBraces.length - 1] === true)
+        ? { memberSeparator: true }
+        : {}),
       ...(closedExpressionBrace ? { expressionEnd: true } : {}),
     });
     prevKind = 'punct';
@@ -1760,10 +1766,22 @@ function memberDeclarationHead(
 
   let async = false;
   let generator = false;
+  let firstModifierOffset: number | undefined;
 
   for (;;) {
     while (index >= 0) {
       const token = tokens[index];
+
+      if (
+        insideClassBody &&
+        firstModifierOffset !== undefined &&
+        token !== undefined &&
+        'endOffset' in token &&
+        isMemberExpressionEnd(token) &&
+        hasLineTerminator(source, token.endOffset, firstModifierOffset)
+      ) {
+        break;
+      }
 
       if (isPunct(token, '*')) {
         generator = true;
@@ -1772,19 +1790,41 @@ function memberDeclarationHead(
       }
 
       if (token?.kind === 'identifier') {
-        if (token.value === 'async') {
+        const nextToken = tokens[index + 1];
+        const startsMethodModifier =
+          nextToken !== undefined &&
+          'offset' in nextToken &&
+          !hasLineTerminator(source, token.endOffset, nextToken.offset);
+        if (token.value === 'async' && startsMethodModifier && firstModifierOffset === undefined) {
           async = true;
+          firstModifierOffset = token.offset;
           index--;
           continue;
         }
 
-        if (MEMBER_MODIFIERS.has(token.value)) {
+        if (
+          MEMBER_MODIFIERS.has(token.value) &&
+          (firstModifierOffset !== undefined || startsMethodModifier)
+        ) {
+          firstModifierOffset ??= token.offset;
           index--;
           continue;
         }
       }
 
       break;
+    }
+
+    const previous = tokens[index];
+    if (
+      insideClassBody &&
+      firstModifierOffset !== undefined &&
+      previous !== undefined &&
+      'endOffset' in previous &&
+      isMemberExpressionEnd(previous) &&
+      hasLineTerminator(source, previous.endOffset, firstModifierOffset)
+    ) {
+      return { async, generator };
     }
 
     const start = tokens[index];
@@ -1799,7 +1839,6 @@ function memberDeclarationHead(
 
     // Class fields permit ASI before a following method. Restrict this to a direct class member
     // boundary and either an expression-ending token or a bare field before a generator method.
-    const previous = tokens[index];
     const memberName = tokens[nameIndex];
     const previousEndOffset =
       previous !== undefined && 'endOffset' in previous ? previous.endOffset : undefined;
@@ -1834,9 +1873,7 @@ function isPunct(token: Token | undefined, value: string): boolean {
 
 function isMemberExpressionEnd(token: Token): boolean {
   if (token.kind === 'identifier') {
-    return (
-      !REGEX_PRECEDING_KEYWORDS.has(token.value) && !['await', 'yield', 'of'].includes(token.value)
-    );
+    return !REGEX_PRECEDING_KEYWORDS.has(token.value) && !['await', 'yield'].includes(token.value);
   }
 
   return (
@@ -1848,33 +1885,132 @@ function isMemberExpressionEnd(token: Token): boolean {
 }
 
 function isUninitializedClassFieldHead(tokens: readonly Token[], index: number): boolean {
-  const fieldName = tokens[index];
-
-  if (fieldName?.kind !== 'identifier' && fieldName?.kind !== 'string') {
-    return false;
-  }
-
   let boundaryIndex = index - 1;
 
   while (boundaryIndex >= 0) {
-    const token = tokens[boundaryIndex];
+    const boundary = tokens[boundaryIndex];
+    if (boundary?.kind === 'punct' && boundary.memberSeparator === true) {
+      return isUninitializedFieldDeclaration(tokens, boundaryIndex + 1, index + 1);
+    }
 
+    boundaryIndex--;
+  }
+
+  return false;
+}
+
+function isUninitializedFieldDeclaration(
+  tokens: readonly Token[],
+  startIndex: number,
+  endIndex: number,
+): boolean {
+  let index = startIndex;
+
+  while (index < endIndex) {
+    const modifier = tokens[index];
     if (
-      token?.kind === 'identifier' &&
-      (MEMBER_MODIFIERS.has(token.value) ||
-        token.value === 'accessor' ||
-        token.value === 'declare' ||
-        token.value === 'readonly')
+      modifier?.kind === 'identifier' &&
+      [
+        'abstract',
+        'declare',
+        'override',
+        'private',
+        'protected',
+        'public',
+        'readonly',
+        'static',
+      ].includes(modifier.value)
     ) {
-      boundaryIndex--;
+      index++;
       continue;
     }
 
-    return (
-      token?.kind === 'punct' &&
-      (MEMBER_SEPARATORS.has(token.value) ||
-        (token.value === '}' && token.memberSeparator === true))
-    );
+    break;
+  }
+
+  const first = tokens[index];
+  if (isPunct(first, '#')) {
+    index++;
+    if (tokens[index]?.kind !== 'identifier') {
+      return false;
+    }
+    index++;
+  } else if (isPunct(first, '[')) {
+    let depth = 1;
+    index++;
+    while (index < endIndex && depth > 0) {
+      const token = tokens[index];
+      if (isPunct(token, '[')) {
+        depth++;
+      } else if (isPunct(token, ']')) {
+        depth--;
+      }
+      index++;
+    }
+    if (depth !== 0) {
+      return false;
+    }
+  } else if (first?.kind === 'identifier' || first?.kind === 'string' || first?.kind === 'number') {
+    index++;
+  } else {
+    return false;
+  }
+
+  if (isPunct(tokens[index], '!') || isPunct(tokens[index], '?')) {
+    index++;
+  }
+
+  if (index === endIndex) {
+    return true;
+  }
+
+  if (!isPunct(tokens[index], ':')) {
+    return false;
+  }
+
+  index++;
+  if (index === endIndex) {
+    return false;
+  }
+
+  return !containsTopLevelPunct(tokens, index, endIndex, '=');
+}
+
+function containsTopLevelPunct(
+  tokens: readonly Token[],
+  startIndex: number,
+  endIndex: number,
+  punct: string,
+): boolean {
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
+  let angleDepth = 0;
+
+  for (let index = startIndex; index < endIndex; index++) {
+    const token = tokens[index];
+    if (token?.kind !== 'punct') {
+      continue;
+    }
+
+    if (
+      token.value === punct &&
+      parenDepth === 0 &&
+      bracketDepth === 0 &&
+      braceDepth === 0 &&
+      angleDepth === 0
+    ) {
+      return true;
+    }
+
+    if (token.value === '(') parenDepth++;
+    else if (token.value === ')') parenDepth--;
+    else if (token.value === '[') bracketDepth++;
+    else if (token.value === ']') bracketDepth--;
+    else if (token.value === '{') braceDepth++;
+    else if (token.value === '}') braceDepth--;
+    else if (token.value === '<') angleDepth++;
+    else if (token.value === '>' && angleDepth > 0) angleDepth--;
   }
 
   return false;
