@@ -1,6 +1,6 @@
 {
   "name": "depvitals",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Find unused and undeclared npm dependencies in JavaScript and TypeScript projects with a zero-config CLI and no runtime dependencies.",
   "keywords": [
     "nodejs",

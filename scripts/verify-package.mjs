@@ -7,7 +7,7 @@
  * installed `depvitals` executable against two minimal, deterministic fixture projects so the smoke
  * test exercises the real dependency scanner end to end.
  *
- * Node.js standard library only. No runtime or dev dependency is added.
+ * Node.js builtins and the project's built scanner only. No dependency is added.
  *
  * Flow:
  *   create temp dir
@@ -34,6 +34,8 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import { spawnSync } from 'node:child_process';
+
+import { findExternalProductionImports } from './productionImports.mjs';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const ROOT = resolve(SCRIPT_PATH, '..', '..');
@@ -199,22 +201,15 @@ function runInstalledCli(binPath, consumerDir, args) {
   return run(binPath, args, consumerDir, { ...process.env, DEPVITALS_NO_UPDATE_CHECK: '1' });
 }
 
-function checkProductionImports(directory) {
+async function checkProductionImports(directory) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) {
-      checkProductionImports(path);
+      await checkProductionImports(path);
     } else if (entry.name.endsWith('.js')) {
       const source = readFileSync(path, 'utf8');
-      const imports = [
-        ...source.matchAll(/^(?:import|export)\s+(?:.*?\s+from\s+)?['"]([^'"]+)['"]/gm),
-      ];
-      const external = imports.find((match) => !/^(?:node:|\.\.?\/)/.test(match[1]));
-      check(
-        `production imports are internal or Node builtins: ${entry.name}`,
-        !external,
-        external?.[1],
-      );
+      const [external] = await findExternalProductionImports(source);
+      check(`production imports are internal or Node builtins: ${entry.name}`, !external, external);
     }
   }
 }
@@ -260,7 +255,7 @@ function snapshotsEqual(before, after) {
   return true;
 }
 
-function main() {
+async function main() {
   const rootVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
 
   console.log('DepVitals package consumer smoke test');
@@ -349,7 +344,7 @@ function main() {
         .filter((name) => !name.startsWith('.'))
         .every((name) => name === 'depvitals'),
     );
-    checkProductionImports(join(installedRoot, 'dist'));
+    await checkProductionImports(join(installedRoot, 'dist'));
 
     // 4. Create two minimal, deterministic fixture projects inside the consumer temp dir. They
     //    stand in for real scanned projects and keep the smoke test independent of the DepVitals
@@ -780,7 +775,7 @@ require('real');`,
 }
 
 try {
-  main();
+  await main();
 } catch (error) {
   // Any unexpected throw still cleans up via main()'s finally and reports failure.
   console.error(error.message);
