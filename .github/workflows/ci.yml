@@ -76,15 +76,15 @@ jobs:
         run: pnpm run test
 
       - name: Upload coverage to Codecov
-        if: ${{ matrix.coverage && github.event_name != 'pull_request' }}
+        if: ${{ matrix.coverage && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: ./coverage/lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
+          fail_ci_if_error: true
 
       - name: Upload coverage
-        if: ${{ matrix.coverage }}
+        if: ${{ !cancelled() && matrix.coverage }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: coverage-node-${{ matrix.node-version }}
