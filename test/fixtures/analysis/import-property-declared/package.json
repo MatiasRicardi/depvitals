@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "fake-object": "1",
+    "fake-destructuring": "1",
+    "fake-class": "1"
+  }
+}

@@ -223,3 +223,5 @@ import, or generated code is executed or resolved:
 The tests assert exact CLI output, repeat scans, snapshot fixture contents, and run the compiled CLI
 with update checks disabled. Unit matrices additionally cover function types, comments/strings with
 delimiters, nested fragments, JSX-like keyword prefixes, token boundaries and incomplete expressions.
+
+The `analysis/import-property-declared` and `analysis/import-property-undeclared` fixtures cover object, destructuring and class property names called `import`. Their later string statements are inert; only the exterior require supplies evidence. These fixtures are statically scanned, never executed.

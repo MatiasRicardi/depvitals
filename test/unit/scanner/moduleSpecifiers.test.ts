@@ -22,6 +22,62 @@ function jsxSpecifiers(source: string): string[] {
 }
 
 describe('extractModuleSpecifiers', () => {
+  describe('static import property boundaries (F01/F02)', () => {
+    it.each([
+      'const o = { import: 1 };',
+      'const { import: value } = obj;',
+      'class C { import = 1; }',
+    ])('does not borrow a later source after %s', (prefix) => {
+      expect(specifiers(`${prefix} const from = 1; from\n'fake'; require('real');`)).toEqual([
+        'real',
+      ]);
+    });
+
+    it.each([
+      "import value; from 'fake';",
+      "import value = other; from 'fake';",
+      "import { value }; from 'fake';",
+      "import { value: other }; from 'fake';",
+      "import value const from = 'fake';",
+    ])('bounds an unsupported clause: %s', (source) => {
+      expect(specifiers(`${source} require('real');`)).toEqual(['real']);
+    });
+
+    it('preserves multiline named, namespace, type and contextual bindings', () => {
+      expect(
+        specifiers(`
+        import value, { import as i, export as e, require as r, type T } from 'named';
+        import /* trivia */ * as ns from 'namespace';
+        import type Default, { T } from 'types';
+        import type from 'default-type';
+        import type, { T } from 'combined-type-name';
+        import { 'strange-name' as local } from 'string-name';
+        import value, * as another from 'combined';
+        import {\n value,\n } /* trivia */ from\n 'multiline';
+      `),
+      ).toEqual([
+        'named',
+        'namespace',
+        'types',
+        'default-type',
+        'combined-type-name',
+        'string-name',
+        'combined',
+        'multiline',
+      ]);
+    });
+
+    it('keeps repeated import properties equivalent to renamed properties', () => {
+      for (const count of [100, 500, 2000]) {
+        for (const property of ['import', 'other']) {
+          expect(specifiers(`({${property}:1});`.repeat(count) + "require('real');")).toEqual([
+            'real',
+          ]);
+        }
+      }
+    });
+  });
+
   describe('positive cases', () => {
     it('extracts default and named imports', () => {
       const source = `

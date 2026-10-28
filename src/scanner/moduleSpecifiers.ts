@@ -3390,7 +3390,7 @@ function handleImport(
     return i + 1;
   }
 
-  // Static `import ... from 'pkg'`: scan forward for `from` followed by a string.
+  // Static `import ... from 'pkg'`: consume only the supported clause.
   return scanImportSource(tokens, i, occurrences, 'import');
 }
 
@@ -3405,75 +3405,102 @@ function handleExport(
   return scanImportSource(tokens, i, occurrences, 'export-from');
 }
 
-/**
- * Scan forward from `i` looking for the `from` keyword followed by a string, recording it with
- * `kind`. Stops early at a nested `import`/`export`/`require` so a following construct is handled on
- * its own, except for `import`/`export` used as binding names inside the `{ ... }` clause of the
- * current statement (e.g. `import { export as v } from 'pkg'`).
- */
+/** Read only the supported clause; unrelated statements cannot supply its source. */
 function scanImportSource(
   tokens: readonly Token[],
   i: number,
   occurrences: ModuleSpecifierOccurrence[],
   kind: ModuleSpecifierKind,
 ): number {
-  const n = tokens.length;
-  if (kind === 'export-from') {
-    const sourceIndex = exportSourceIndex(tokens, i);
-    if (sourceIndex === undefined) {
-      return i + 1;
-    }
-    const source = tokens[sourceIndex];
-    if (source?.kind === 'string') {
-      occurrences.push({ specifier: source.value, kind });
-      return sourceIndex + 1;
-    }
-    return i + 1;
+  const sourceIndex =
+    kind === 'export-from' ? exportSourceIndex(tokens, i) : importSourceIndex(tokens, i);
+  const source = sourceIndex === undefined ? undefined : tokens[sourceIndex];
+  if (source?.kind === 'string' && sourceIndex !== undefined) {
+    occurrences.push({ specifier: source.value, kind });
+    return sourceIndex + 1;
+  }
+  return i + 1;
+}
+
+/**
+ * Consume a default binding and/or a namespace/named clause, then require `from` + literal.
+ * Each property lookalike fails locally. Named clauses accept only specifiers, never arbitrary
+ * brace contents, so failed candidates cannot repeatedly search an unrelated suffix.
+ */
+function importSourceIndex(tokens: readonly Token[], importIndex: number): number | undefined {
+  let index = importIndex + 1;
+  if (
+    isIdentifier(tokens[index], 'type') &&
+    (isPunct(tokens[index + 1], '{') ||
+      isPunct(tokens[index + 1], '*') ||
+      (tokens[index + 1]?.kind === 'identifier' &&
+        !isIdentifier(tokens[index + 1], 'from') &&
+        !isIdentifier(tokens[index + 1], 'as')))
+  ) {
+    index++;
   }
 
-  let j = i + 1;
-  // How many `{ ... }` named clauses of the current statement are open. `import`/`export` are legal
-  // binding names inside such a clause (e.g. `import { export as v } from 'pkg'`), so they may only
-  // start a new construct at depth 0, otherwise the search stops before the real `from` source.
-  let braceDepth = 0;
-
-  while (j < n) {
-    const token = tokens[j];
-
-    if (token?.kind === 'punct') {
-      if (token.value === '{') {
-        braceDepth++;
-      } else if (token.value === '}') {
-        // Clamped so an unmatched `}` cannot leave a negative depth that hides later boundaries.
-        braceDepth = braceDepth > 0 ? braceDepth - 1 : 0;
-      }
+  if (tokens[index]?.kind === 'identifier') {
+    index++;
+    // Preserve the historical synthetic default-alias form supported by this scanner.
+    if (isIdentifier(tokens[index], 'as') && tokens[index + 1]?.kind === 'identifier') {
+      index += 2;
     }
+    if (isPunct(tokens[index], ',')) {
+      index++;
+    } else {
+      return importFromSourceIndex(tokens, index);
+    }
+  }
 
-    if (token?.kind === 'identifier') {
-      const next = tokens[j + 1];
-
-      // `import`/`export` only start a new construct outside the named clause. A `require`
-      // identifier only starts one when it begins a direct call: a binding named `require` (e.g.
-      // `import { require } from 'pkg'`) must not stop the search for the source that follows
-      // `from`.
+  if (isPunct(tokens[index], '*')) {
+    if (!isIdentifier(tokens[index + 1], 'as') || tokens[index + 2]?.kind !== 'identifier') {
+      return undefined;
+    }
+    index += 3;
+  } else if (isPunct(tokens[index], '{')) {
+    index++;
+    while (!isPunct(tokens[index], '}')) {
+      // `type` is contextual: `type as T` and `type` itself remain ordinary names.
       if (
-        (braceDepth === 0 && (token.value === 'import' || token.value === 'export')) ||
-        (token.value === 'require' && next?.kind === 'punct' && next.value === '(')
+        isIdentifier(tokens[index], 'type') &&
+        tokens[index + 1]?.kind === 'identifier' &&
+        !isIdentifier(tokens[index + 1], 'as')
       ) {
+        index++;
+      }
+      const imported = tokens[index];
+      if (imported?.kind !== 'identifier' && imported?.kind !== 'string') {
+        return undefined;
+      }
+      index++;
+      if (isIdentifier(tokens[index], 'as')) {
+        if (tokens[index + 1]?.kind !== 'identifier') {
+          return undefined;
+        }
+        index += 2;
+      } else if (imported.kind === 'string') {
+        return undefined;
+      }
+      if (!isPunct(tokens[index], ',')) {
         break;
       }
-
-      if (token.value === 'from' && next?.kind === 'string') {
-        occurrences.push({ specifier: next.value, kind });
-        return j + 2;
-      }
+      index++;
     }
-
-    j++;
+    if (!isPunct(tokens[index], '}')) {
+      return undefined;
+    }
+    index++;
+  } else {
+    return undefined;
   }
+  return importFromSourceIndex(tokens, index);
+}
 
-  // No source found; keep scanning from the next token.
-  return i + 1;
+function importFromSourceIndex(tokens: readonly Token[], index: number): number | undefined {
+  return isIdentifier(tokens[index], 'from') && tokens[index + 1]?.kind === 'string'
+    ? index + 1
+    : undefined;
 }
 
 function exportSourceIndex(tokens: readonly Token[], exportIndex: number): number | undefined {

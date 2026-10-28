@@ -45,6 +45,16 @@ const SCENARIOS: {
   result: Omit<AnalysisResult, 'projectRoot'>;
   note: string;
 }[] = [
+  ...(['declared', 'undeclared'] as const).map((mode) => ({
+    name: `import-property-${mode}`,
+    result: {
+      unusedDependencies:
+        mode === 'declared' ? ['fake-class', 'fake-destructuring', 'fake-object'] : [],
+      unusedDevDependencies: [],
+      missingDependencies: ['real-package'],
+    },
+    note: 'Import property names neither invent missing evidence nor suppress unused declarations.',
+  })),
   {
     name: 'esm',
     result: {
