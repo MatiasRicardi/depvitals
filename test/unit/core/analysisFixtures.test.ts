@@ -45,6 +45,25 @@ const SCENARIOS: {
   result: Omit<AnalysisResult, 'projectRoot'>;
   note: string;
 }[] = [
+  ...(['declared', 'undeclared'] as const).map((mode) => ({
+    name: `contextual-type-${mode}`,
+    result: {
+      unusedDependencies: [],
+      unusedDevDependencies: [],
+      missingDependencies: mode === 'undeclared' ? ['contextual-default', 'contextual-named'] : [],
+    },
+    note: 'Contextual type/as/from imports preserve both used and missing dependency evidence.',
+  })),
+  ...(['declared', 'undeclared'] as const).map((mode) => ({
+    name: `import-property-${mode}`,
+    result: {
+      unusedDependencies:
+        mode === 'declared' ? ['fake-class', 'fake-destructuring', 'fake-object'] : [],
+      unusedDevDependencies: [],
+      missingDependencies: ['real-package'],
+    },
+    note: 'Import property names neither invent missing evidence nor suppress unused declarations.',
+  })),
   {
     name: 'esm',
     result: {

@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "contextual-named": "1",
+    "contextual-default": "1"
+  }
+}
