@@ -15,6 +15,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import { analyzeProject } from '../src/core/analyzeProject.js';
+import { expressionOwnerCases } from './helpers/expressionOwnerCases.js';
 import { arrowAssertionCases } from './helpers/pr76ArrowAssertionCases.js';
 import { assertionBoundaryCases } from './helpers/pr76AssertionBoundaryCases.js';
 import { remainingParserCases } from './helpers/pr76RemainingCases.js';
@@ -1246,4 +1247,65 @@ describe('PR #76 complete assertion boundaries through the compiled CLI', () => 
       }
     });
   }
+});
+
+describe('Step 74 expression owners through analyzer and compiled CLI', () => {
+  for (const mode of ['missing', 'clean', 'decoy'] as const) {
+    it.each(expressionOwnerCases)(`$name with ${mode} manifest`, async (scenario) => {
+      const project = mkdtempSync(join(tmpdir(), 'depvitals-expression-owner-'));
+      const names = [...scenario.expected].sort();
+      const dependencies: Record<string, string> = {};
+      if (mode !== 'missing') {
+        for (const name of names) {
+          dependencies[name] = '*';
+        }
+      }
+      if (mode === 'decoy') {
+        dependencies['owner-fake-inner'] = '*';
+      }
+      const manifest = JSON.stringify({ dependencies });
+      try {
+        writeFileSync(join(project, 'package.json'), manifest);
+        writeFileSync(join(project, scenario.fileName), scenario.source);
+        expect(await analyzeProject(project)).toEqual({
+          projectRoot: project,
+          unusedDependencies: mode === 'decoy' ? ['owner-fake-inner'] : [],
+          unusedDevDependencies: [],
+          missingDependencies: mode === 'missing' ? names : [],
+        });
+        expect(runBuilt(project)).toEqual({
+          status: mode === 'clean' ? 0 : 1,
+          stdout:
+            mode === 'missing'
+              ? `DepVitals\n\nMissing dependencies (${String(names.length)})\n${names.map((name) => `  ${name}\n`).join('')}`
+              : mode === 'decoy'
+                ? 'DepVitals\n\nUnused dependencies (1)\n  owner-fake-inner\n'
+                : 'DepVitals\n\nNo dependency issues found.\n',
+          stderr: '',
+        });
+        expect(readdirSync(project).sort()).toEqual([scenario.fileName, 'package.json'].sort());
+        expect(readFileSync(join(project, 'package.json'), 'utf8')).toBe(manifest);
+        expect(readFileSync(join(project, scenario.fileName), 'utf8')).toBe(scenario.source);
+      } finally {
+        rmSync(project, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it('keeps a lexical failure after an expression owner operational with no partial report', async () => {
+    const project = mkdtempSync(join(tmpdir(), 'depvitals-expression-error-'));
+    const source = `const f = () => function() {} / require('owner-divisor') / 2; 'unterminated`;
+    try {
+      writeFileSync(join(project, 'package.json'), '{}');
+      writeFileSync(join(project, 'index.cjs'), source);
+      await expect(analyzeProject(project)).rejects.toThrow('Unterminated string');
+      const result = runBuilt(project);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain('Unterminated string');
+      expect(readFileSync(join(project, 'index.cjs'), 'utf8')).toBe(source);
+    } finally {
+      rmSync(project, { recursive: true, force: true });
+    }
+  });
 });

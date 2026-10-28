@@ -8,6 +8,8 @@ import {
   extractModuleSpecifiers,
 } from '../../../src/scanner/moduleSpecifiers.js';
 
+import { expressionOwnerCases } from '../../helpers/expressionOwnerCases.js';
+
 const memberPrefixes = [
   ['two bare fields', 'a\nb', false],
   ['initialized then bare', 'a = 1\nb', false],
@@ -498,4 +500,30 @@ describe('deterministic structural matrix', () => {
       ]);
     },
   );
+});
+
+describe('Step 74 function and class expression ownership', () => {
+  it.each(expressionOwnerCases)(
+    '$name retains distinct inner and exterior evidence',
+    (scenario) => {
+      assertSyntax(scenario.source, scenario.fileName.endsWith('.ts'));
+      expect(extractModuleSpecifiers(scenario.source).map(({ specifier }) => specifier)).toEqual(
+        scenario.expected,
+      );
+    },
+  );
+
+  it.each([
+    "function declared() {} /require('fake-function')/.test('');",
+    "async function declared() {} /require('fake-async')/.test('');",
+    "function* declared() {} /require('fake-generator')/.test('');",
+    "async function* declared() {} /require('fake-async-generator')/.test('');",
+    "class Declared {} /require('fake-class')/.test('');",
+    "function f() { return\nfunction declared() {} /require('fake-return')/.test(''); }",
+  ])('preserves a declaration followed by regex: %s', (source) => {
+    assertSyntax(source, false);
+    expect(extractModuleSpecifiers(source + " require('real-after');")).toEqual([
+      { specifier: 'real-after', kind: 'require' },
+    ]);
+  });
 });
