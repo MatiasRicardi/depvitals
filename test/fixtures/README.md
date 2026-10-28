@@ -225,3 +225,5 @@ with update checks disabled. Unit matrices additionally cover function types, co
 delimiters, nested fragments, JSX-like keyword prefixes, token boundaries and incomplete expressions.
 
 The `analysis/import-property-declared` and `analysis/import-property-undeclared` fixtures cover object, destructuring and class property names called `import`. Their later string statements are inert; only the exterior require supplies evidence. These fixtures are statically scanned, never executed.
+
+The `analysis/contextual-type-declared` and `analysis/contextual-type-undeclared` fixtures preserve evidence for type-only imports with imported `as` and default `from` bindings. They distinguish used declarations from missing dependencies without executing the TypeScript sources.

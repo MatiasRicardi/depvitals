@@ -46,6 +46,15 @@ const SCENARIOS: {
   note: string;
 }[] = [
   ...(['declared', 'undeclared'] as const).map((mode) => ({
+    name: `contextual-type-${mode}`,
+    result: {
+      unusedDependencies: [],
+      unusedDevDependencies: [],
+      missingDependencies: mode === 'undeclared' ? ['contextual-default', 'contextual-named'] : [],
+    },
+    note: 'Contextual type/as/from imports preserve both used and missing dependency evidence.',
+  })),
+  ...(['declared', 'undeclared'] as const).map((mode) => ({
     name: `import-property-${mode}`,
     result: {
       unusedDependencies:

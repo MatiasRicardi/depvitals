@@ -67,6 +67,22 @@ describe('extractModuleSpecifiers', () => {
       ]);
     });
 
+    it.each([
+      "import { type as as Alias } from 'pkg';",
+      "import { type as } from 'pkg';",
+      "import { type as as } from 'pkg';",
+      "import { type as Alias } from 'pkg';",
+      "import { type as as as } from 'pkg';",
+      "import { type, type as Other } from 'pkg';",
+      "import type from from 'pkg';",
+      "import type from, { Other } from 'pkg';",
+      "import type as from 'pkg';",
+      "import type from 'pkg';",
+      "import { type /* modifier */ as /* imported */ as /* alias */ Alias } from 'pkg';",
+    ])('retains evidence across contextual type/as/from ambiguity: %s', (source) => {
+      expect(extractModuleSpecifiers(source)).toEqual([{ specifier: 'pkg', kind: 'import' }]);
+    });
+
     it('keeps repeated import properties equivalent to renamed properties', () => {
       for (const count of [100, 500, 2000]) {
         for (const property of ['import', 'other']) {

@@ -3434,8 +3434,8 @@ function importSourceIndex(tokens: readonly Token[], importIndex: number): numbe
     (isPunct(tokens[index + 1], '{') ||
       isPunct(tokens[index + 1], '*') ||
       (tokens[index + 1]?.kind === 'identifier' &&
-        !isIdentifier(tokens[index + 1], 'from') &&
-        !isIdentifier(tokens[index + 1], 'as')))
+        (!isIdentifier(tokens[index + 1], 'from') || tokens[index + 2]?.kind !== 'string') &&
+        (!isIdentifier(tokens[index + 1], 'as') || isIdentifier(tokens[index + 2], 'from'))))
   ) {
     index++;
   }
@@ -3461,11 +3461,15 @@ function importSourceIndex(tokens: readonly Token[], importIndex: number): numbe
   } else if (isPunct(tokens[index], '{')) {
     index++;
     while (!isPunct(tokens[index], '}')) {
-      // `type` is contextual: `type as T` and `type` itself remain ordinary names.
+      // `type as T` imports the value `type`, but `type as` imports the type `as`.
+      // A second `as` plus an alias distinguishes `type as as Alias` from `type as as`.
       if (
         isIdentifier(tokens[index], 'type') &&
         tokens[index + 1]?.kind === 'identifier' &&
-        !isIdentifier(tokens[index + 1], 'as')
+        (!isIdentifier(tokens[index + 1], 'as') ||
+          isPunct(tokens[index + 2], ',') ||
+          isPunct(tokens[index + 2], '}') ||
+          (isIdentifier(tokens[index + 2], 'as') && tokens[index + 3]?.kind === 'identifier'))
       ) {
         index++;
       }
