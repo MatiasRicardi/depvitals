@@ -6,7 +6,7 @@ export async function findExternalProductionImports(source) {
   // so indentation, multiline declarations and inert text follow one tested lexical contract.
   const { extractModuleSpecifiers } = await import('../dist/scanner/moduleSpecifiers.js');
 
-  return extractModuleSpecifiers(source)
+  return extractModuleSpecifiers(source, { module: true })
     .filter(({ kind }) => kind === 'import' || kind === 'export-from')
     .map(({ specifier }) => specifier)
     .filter((specifier) => !isBuiltin(specifier) && !/^\.\.?\//.test(specifier));

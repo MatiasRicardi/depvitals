@@ -1,3 +1,5 @@
+import { spawnSync } from 'node:child_process';
+
 import { describe, expect, it } from 'vitest';
 
 const { findExternalProductionImports } = (await import(
@@ -43,6 +45,24 @@ describe('packaged production import guard', () => {
 
   it.each(inertCases)('accepts internal/builtin imports and inert text: %s', async (source) => {
     expect(await findExternalProductionImports(source)).toEqual([]);
+  });
+
+  it.each([
+    { source: "await /'/;", expected: [] },
+    { source: "await /'/; import fs from 'node:fs'; export * from './local.js';", expected: [] },
+    {
+      source: "await /'/;\nimport {\n value\n} from 'external';\nexport * from 'another';",
+      expected: ['external', 'another'],
+    },
+  ])('scans valid ESM with top-level await and a regex: $source', async ({ source, expected }) => {
+    const syntax = spawnSync(process.execPath, ['--check', '--input-type=module'], {
+      input: source,
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    expect(syntax.error).toBeUndefined();
+    expect(syntax.status, syntax.stderr).toBe(0);
+    expect(await findExternalProductionImports(source)).toEqual(expected);
   });
 
   it('accepts bare Node builtin module names', async () => {
