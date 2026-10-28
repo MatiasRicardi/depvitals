@@ -1,5 +1,10 @@
 # DepVitals
 
+[![npm version](https://img.shields.io/npm/v/depvitals)](https://www.npmjs.com/package/depvitals)
+[![CI](https://github.com/MatiasRicardi/depvitals/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MatiasRicardi/depvitals/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/MatiasRicardi/depvitals/graph/badge.svg?branch=main)](https://codecov.io/gh/MatiasRicardi/depvitals)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/MatiasRicardi/depvitals/blob/main/LICENSE)
+
 DepVitals finds unused and undeclared npm dependencies in single-package JavaScript and TypeScript projects. It is a zero-config Node.js CLI with a custom static scanner and no runtime dependencies.
 
 [Depcheck](https://github.com/depcheck/depcheck)-inspired, DepVitals focuses on dependency declarations and supported usage evidence. Use it to review dependencies during maintenance or before a release; review each finding before changing your manifest.
