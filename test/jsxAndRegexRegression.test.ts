@@ -192,3 +192,34 @@ describe('Step 68.2: the packaged entry point wires the JSX mode by extension an
     });
   });
 });
+
+describe('Step 75 template interpolation token boundaries', () => {
+  it.each(['declared', 'undeclared'] as const)(
+    '%s tags preserve real usage and inert text',
+    async (mode) => {
+      const project = fixture(`template-tag-${mode}`);
+      const before = snapshot(project);
+      const expected = {
+        exitCode: 1,
+        stdout:
+          mode === 'declared'
+            ? 'DepVitals\n\nUnused dependencies (4)\n  fake-member\n  fake-nested\n  fake-tag\n  fake-text\n'
+            : 'DepVitals\n\nMissing dependencies (3)\n  real-after\n  real-divisor\n  real-inner\n',
+        stderr: '',
+      };
+      expect(await runCli([project], OPTIONS)).toEqual(expected);
+      expect(await runCli([project], OPTIONS)).toEqual(expected);
+      const built = spawnSync(process.execPath, [BUILT_ENTRY, project], {
+        cwd: tmpdir(),
+        encoding: 'utf8',
+        env: { ...process.env, DEPVITALS_NO_UPDATE_CHECK: '1' },
+        timeout: 10_000,
+      });
+      expect(built.error).toBeUndefined();
+      expect({ exitCode: built.status, stdout: built.stdout, stderr: built.stderr }).toEqual(
+        expected,
+      );
+      expect(snapshot(project)).toEqual(before);
+    },
+  );
+});

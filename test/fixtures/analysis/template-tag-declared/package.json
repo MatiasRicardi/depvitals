@@ -1,0 +1,11 @@
+{
+  "dependencies": {
+    "fake-member": "*",
+    "fake-nested": "*",
+    "fake-tag": "*",
+    "fake-text": "*",
+    "real-after": "*",
+    "real-divisor": "*",
+    "real-inner": "*"
+  }
+}

@@ -270,6 +270,36 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(`export const run = () => { require('pkg'); };`)).toEqual(['pkg']);
     });
 
+    it.each([
+      ["const value = require`text${('fake-tag')}`;", []],
+      ["const value = require /* tag trivia */ `text${('fake-tag')}`;", []],
+      ["const value = require`text${('fake-first')}${('fake-second')}`;", []],
+      ["const value = require`outer${require`inner${('fake-nested')}`}`;", []],
+      ["const value = obj.require`text${('fake-member')}`;", []],
+      ["const value = require`text${'fake-string'}`;", []],
+      ["const value = require`require('fake-text')${require('real-inner')}`;", ['real-inner']],
+      [
+        "const value = tag`text${require('real-inner')}` / require('real-divisor') / 2; require('real-after');",
+        ['real-inner', 'real-divisor', 'real-after'],
+      ],
+      ["const value = require`outer${tag`inner${require('real-nested')}`}`;", ['real-nested']],
+    ] as const)('separates template tags from embedded code: %s', (source, expected) => {
+      const syntax = spawnSync(process.execPath, ['--check', '--input-type=commonjs'], {
+        input: source,
+        encoding: 'utf8',
+        timeout: 10_000,
+      });
+      expect(syntax.error).toBeUndefined();
+      expect(syntax.status, syntax.stderr).toBe(0);
+      expect(specifiers(source)).toEqual(expected);
+    });
+
+    it('keeps incomplete tagged template source as an operational lexical error', () => {
+      expect(() => extractModuleSpecifiers("require`text${require('real')}")).toThrow(
+        ModuleSpecifierError,
+      );
+    });
+
     it('scans JavaScript inside template interpolations', () => {
       expect(specifiers("const value = `${require('pkg')}`;")).toEqual(['pkg']);
       expect(specifiers("const other = `${import('other-pkg')}`;")).toEqual(['other-pkg']);

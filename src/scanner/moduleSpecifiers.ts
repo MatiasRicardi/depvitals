@@ -390,8 +390,8 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
     closedObjectBrace = false;
   };
 
-  // JSX markup and sibling expression containers are separate expressions. Emitting an explicit
-  // boundary keeps the token stream from gluing two of them into an import/require sequence that
+  // Template interpolations, JSX markup and sibling containers are separate expressions. An
+  // explicit boundary keeps the token stream from gluing them into an import/require sequence that
   // does not exist in source (for example `<p>{import}{('pkg')}</p>`).
   const pushBoundary = (offset: number): void => {
     emit({
@@ -461,6 +461,8 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
             ? { typeOwner: { annotation: typeAnnotation, depth: { ...typeAnnotation } } }
             : {}),
         });
+        // The preceding tag is not the callee of tokens inside this interpolation.
+        pushBoundary(i);
         inText = false;
         resetExpressionState();
         i += 2;
