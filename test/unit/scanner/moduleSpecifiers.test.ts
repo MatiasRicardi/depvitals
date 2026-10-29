@@ -94,6 +94,61 @@ describe('extractModuleSpecifiers', () => {
     });
   });
 
+  describe('Step 77 sole literal calls with a trailing comma', () => {
+    for (const [callee, kind] of [
+      ['require', 'require'],
+      ['import', 'dynamic-import'],
+    ] as const) {
+      it.each([
+        "'real',",
+        " /* before */ 'real' /* literal */ , /* comma */ ",
+        "\n'real' // literal\n, // comma\n",
+      ])(`${callee} retains the literal and occurrence kind: %s`, (argument) => {
+        expect(extractModuleSpecifiers(`${callee}(${argument});`)).toEqual([
+          { specifier: 'real', kind },
+        ]);
+      });
+      it.each(["'fake', options,", "'fake-' + suffix,", '`fake`,', "'fake',,"])(
+        `${callee} does not accept unsupported arguments: %s`,
+        (argument) => {
+          expect(specifiers(`${callee}(${argument}); require('real-after',);`)).toEqual([
+            'real-after',
+          ]);
+        },
+      );
+    }
+    it('preserves nested and adjacent calls when the outer call is unsupported', () => {
+      expect(
+        extractModuleSpecifiers(`require('real-before',);
+        require('fake-outer', import('real-nested',));
+        import('fake-import', require('real-options',));
+        require('real-after'); import('real-last',);`),
+      ).toEqual([
+        { specifier: 'real-before', kind: 'require' },
+        { specifier: 'real-nested', kind: 'dynamic-import' },
+        { specifier: 'real-options', kind: 'require' },
+        { specifier: 'real-after', kind: 'require' },
+        { specifier: 'real-last', kind: 'dynamic-import' },
+      ]);
+    });
+    it.each([
+      'require(...names);',
+      "require?.('fake',);",
+      "(require)('fake',);",
+      "require.resolve('fake',);",
+      "obj.require('fake',);",
+      "obj.import('fake',);",
+    ])('keeps other call forms unsupported: %s', (source) => {
+      expect(specifiers(source)).toEqual([]);
+    });
+    it.each(["require('real', /* unterminated", "import('real', 'unterminated"])(
+      'does not hide a lexical failure after the comma: %s',
+      (source) => {
+        expect(() => extractModuleSpecifiers(source)).toThrow(ModuleSpecifierError);
+      },
+    );
+  });
+
   describe('positive cases', () => {
     it('extracts default and named imports', () => {
       const source = `
@@ -1118,7 +1173,7 @@ describe('extractModuleSpecifiers', () => {
     });
 
     it('ignores require and dynamic import with extra arguments', () => {
-      // Only `keyword ( STRING )` is static, so a trailing argument disqualifies the call.
+      // Only one literal argument (with an optional trailing comma) is static.
       expect(specifiers(`require('pkg', other);`)).toEqual([]);
       expect(specifiers(`import('pkg', options);`)).toEqual([]);
     });

@@ -229,3 +229,5 @@ The `analysis/import-property-declared` and `analysis/import-property-undeclared
 The `analysis/contextual-type-declared` and `analysis/contextual-type-undeclared` fixtures preserve evidence for type-only imports with imported `as` and default `from` bindings. They distinguish used declarations from missing dependencies without executing the TypeScript sources.
 
 The `analysis/template-tag-declared` and `analysis/template-tag-undeclared` fixtures cover tag/interpolation token boundaries, nested and adjacent interpolations, member tags, inert template text and exterior division. Real embedded and exterior requires remain evidence; fake string packages stay unused or absent from missing findings. These sources are never executed.
+
+The `analysis/literal-trailing-comma-declared` and `analysis/literal-trailing-comma-undeclared` fixtures cover sole literal require/import calls with optional trailing commas and trivia. Unsupported computed, template, member and multi-argument outer calls remain inert; genuine nested calls remain visible. These source files are scanned statically and never executed.

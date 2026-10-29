@@ -3423,7 +3423,7 @@ function handleImport(
     return i + 2;
   }
 
-  // `import('pkg')` / `import ('pkg')`: only a sole string argument closed by `)` is static.
+  // A sole string argument, with an optional trailing comma, is static.
   if (next?.kind === 'punct' && next.value === '(') {
     const specifier = soleStringSpecifier(tokens, i + 2);
 
@@ -3602,7 +3602,7 @@ function handleRequire(
 
   const next = tokens[i + 1];
 
-  // `require('pkg')`: only a sole string argument closed by `)` is static.
+  // A sole string argument, with an optional trailing comma, is static.
   if (next?.kind === 'punct' && next.value === '(') {
     const specifier = soleStringSpecifier(tokens, i + 2);
 
@@ -3617,13 +3617,14 @@ function handleRequire(
 
 /**
  * The decoded string at `argIndex` when it is the only argument of the surrounding call, that is
- * when it is a string and the very next token closes the call with `)`. Returns undefined otherwise,
+ * when it is a string followed by an optional trailing comma and `)`. Returns undefined otherwise,
  * so a dynamic argument (e.g. `'pkg-' + name`) or a call with extra arguments (e.g.
  * `require('pkg', ctx)`) never yields a static specifier.
  */
 function soleStringSpecifier(tokens: readonly Token[], argIndex: number): string | undefined {
   const arg = tokens[argIndex];
-  const closing = tokens[argIndex + 1];
+  const closingIndex = isPunct(tokens[argIndex + 1], ',') ? argIndex + 2 : argIndex + 1;
+  const closing = tokens[closingIndex];
 
   if (arg?.kind !== 'string') {
     return undefined;

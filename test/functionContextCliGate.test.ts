@@ -1348,3 +1348,43 @@ describe('Step 76 implicit ESM through the compiled CLI', () => {
     expect(result.stderr).toContain('Unterminated regex');
   });
 });
+
+describe('Step 77 trailing literal commas through the compiled CLI', () => {
+  it.each(['declared', 'undeclared'] as const)(
+    '%s literal references preserve exact findings',
+    (mode) => {
+      const project = join(
+        REPO_ROOT,
+        'test',
+        'fixtures',
+        'analysis',
+        `literal-trailing-comma-${mode}`,
+      );
+      const before = readdirSync(project).map((name) => [
+        name,
+        readFileSync(join(project, name), 'utf8'),
+      ]);
+      expect(runBuilt(project)).toEqual({
+        status: 1,
+        stdout:
+          mode === 'declared'
+            ? 'DepVitals\n\nUnused dependencies (5)\n  fake-concat\n  fake-import-options\n  fake-member\n  fake-options\n  fake-template\n'
+            : 'DepVitals\n\nMissing dependencies (5)\n  real-after\n  real-import\n  real-nested\n  real-require\n  real-trivia\n',
+        stderr: '',
+      });
+      expect(
+        readdirSync(project).map((name) => [name, readFileSync(join(project, name), 'utf8')]),
+      ).toEqual(before);
+    },
+  );
+
+  it('does not produce a partial report for an unfinished comment after a comma', () => {
+    const result = runProject(
+      {},
+      { 'index.cjs': "require('real',); import('other', /* unterminated" },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Unterminated block comment');
+  });
+});
