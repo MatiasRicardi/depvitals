@@ -1093,13 +1093,24 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         !afterControlHead &&
         !prevIsExpressionKeyword &&
         canStartTypeAssertion(tokens[tokens.length - 1]);
+      // Capture the enclosing operand grammar before this identifier replaces it. Contextual
+      // await/yield, an arrow head and a fresh embedded expression all expect an expression.
+      const expressionPosition = functionIsExpressionPosition(
+        prevKind,
+        prevPunct,
+        colonIsExpression,
+        (prevKind === 'identifier' &&
+          prevIsExpressionKeyword &&
+          !BLOCK_AFTER_KEYWORD.has(previousIdentifier ?? '') &&
+          !(
+            (previousIdentifier === 'return' || previousIdentifier === 'yield') &&
+            tokenLineBreakBefore
+          )) ||
+          (isPunct(tokens[tokens.length - 1], '>') && isArrowHead(tokens[tokens.length - 2])) ||
+          (prevKind === 'start' && (frame?.kind === 'template-expr' || frame?.kind === 'jsx-expr')),
+      );
       if (value === 'async') {
-        asyncFunctionIsExpression = functionIsExpressionPosition(
-          prevKind,
-          prevPunct,
-          previousIdentifier,
-          colonIsExpression,
-        );
+        asyncFunctionIsExpression = expressionPosition;
         if (
           isIdentifier(tokens[tokens.length - 1], 'default') &&
           isIdentifier(tokens[tokens.length - 2], 'export')
@@ -1139,15 +1150,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
           braceDepth: braceContexts.length,
           frameDepth: frames.length,
           isExpression:
-            !isExportDefault &&
-            (previousIdentifier === 'extends' ||
-              functionIsExpressionPosition(
-                prevKind,
-                prevPunct,
-                previousIdentifier,
-                colonIsExpression,
-              ) ||
-              (isPunct(tokens[tokens.length - 1], '>') && isArrowHead(tokens[tokens.length - 2]))),
+            !isExportDefault && (previousIdentifier === 'extends' || expressionPosition),
         });
       }
       // A keyword after `.` is a property name (e.g. `x.return`), not an expression start.
@@ -1234,13 +1237,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
             : !(
                 isIdentifier(tokens[tokens.length - 1], 'default') &&
                 isIdentifier(tokens[tokens.length - 2], 'export')
-              ) &&
-              functionIsExpressionPosition(
-                prevKind,
-                prevPunct,
-                previousIdentifier,
-                colonIsExpression,
-              ),
+              ) && expressionPosition,
           parenDepth,
           bracketDepth,
           braceDepth: braceContexts.length,
@@ -3180,14 +3177,14 @@ const BLOCK_AFTER_KEYWORD: ReadonlySet<string> = new Set(['else', 'do']);
 function functionIsExpressionPosition(
   prevKind: PrevKind,
   prevPunct: string | undefined,
-  previousIdentifier: string | undefined,
   colonIsExpression: boolean,
+  expressionExpected: boolean,
 ): boolean {
+  if (expressionExpected) {
+    return true;
+  }
   if (prevKind === 'punct') {
     return prevPunct === ':' ? colonIsExpression : EXPRESSION_BEFORE_BRACE.has(prevPunct ?? '');
-  }
-  if (prevKind === 'identifier') {
-    return REGEX_PRECEDING_KEYWORDS.has(previousIdentifier ?? '');
   }
   return prevKind === 'regex';
 }
