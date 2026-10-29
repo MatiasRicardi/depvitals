@@ -1464,3 +1464,33 @@ describe('Step 79 function require parameter ownership through compiled CLI', ()
     expect(result.stderr).toContain('Unterminated string');
   });
 });
+
+describe('Step 79 review signature boundaries through the compiled CLI', () => {
+  it.each(['declared', 'undeclared'] as const)(
+    '%s signature boundaries preserve exact findings',
+    (mode) => {
+      const project = join(
+        REPO_ROOT,
+        'test',
+        'fixtures',
+        'analysis',
+        `require-signature-review-${mode}`,
+      );
+      const before = readdirSync(project).map((name) => [
+        name,
+        readFileSync(join(project, name), 'utf8'),
+      ]);
+      expect(runBuilt(project)).toEqual({
+        status: 1,
+        stdout:
+          mode === 'declared'
+            ? 'DepVitals\n\nUnused dependencies (3)\n  fake-bound\n  fake-newline\n  fake-regex\n'
+            : 'DepVitals\n\nMissing dependencies (4)\n  real-after\n  real-first\n  real-generic\n  real-implementation\n',
+        stderr: '',
+      });
+      expect(
+        readdirSync(project).map((name) => [name, readFileSync(join(project, name), 'utf8')]),
+      ).toEqual(before);
+    },
+  );
+});

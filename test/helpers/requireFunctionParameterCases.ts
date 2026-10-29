@@ -137,4 +137,72 @@ export const requireFunctionParameterCases = [
     source: "function local(require?: Loader) { require('fake-body'); } require('real-after');",
     expected: ['real-after'],
   },
+  {
+    name: 'bodyless signature with no annotation or semicolon restores globals',
+    fileName: 'index.ts',
+    source:
+      "declare function local(require: Loader)\nrequire('real-first'); require('real-after');",
+    expected: ['real-first', 'real-after'],
+  },
+  {
+    name: 'semicolon-free unannotated overload does not leak into implementation',
+    fileName: 'index.ts',
+    source:
+      "function local(require: Loader)\nfunction local(value: Loader) { require('real-implementation'); } require('real-after');",
+    expected: ['real-implementation', 'real-after'],
+  },
+  {
+    name: 'return annotation on the next line retains the function scope',
+    fileName: 'index.ts',
+    source:
+      "function local(require: Loader)\n: Return { require('fake-body'); } require('real-after');",
+    expected: ['real-after'],
+  },
+  ...['function', 'async function', 'function*', 'async function*'].map((keyword) => ({
+    name: `newline body retains ${keyword} parameter scope`,
+    fileName: 'index.cjs',
+    source: `${keyword} local(require)\n{ require('fake-body'); } require('real-after');`,
+    expected: ['real-after'],
+  })),
+  {
+    name: 'plain default generic type arguments do not become bindings',
+    fileName: 'index.ts',
+    source: "function local(value = make<string, require, Other>()) { require('real-body'); }",
+    expected: ['real-body'],
+  },
+  {
+    name: 'generic default still permits a following real require binding',
+    fileName: 'index.ts',
+    source:
+      "function local(value = make<string, require, Other>(), require: Loader) { require('fake-body'); } require('real-after');",
+    expected: ['real-after'],
+  },
+  {
+    name: 'generic default followed by a conditional keeps initializer grammar',
+    fileName: 'index.ts',
+    source:
+      "function local(value = make<string, require, Other>() ? 1 : require('real-default')) { require('real-body'); }",
+    expected: ['real-default', 'real-body'],
+  },
+  {
+    name: 'consecutive generic defaults preserve real initializer evidence',
+    fileName: 'index.ts',
+    source:
+      "function local(a = make<A, require, B>(), b = make<X, require, Y>(), c = require('real-default')) { require('real-body'); }",
+    expected: ['real-default', 'real-body'],
+  },
+  {
+    name: 'generic default does not remove an earlier real require binding',
+    fileName: 'index.ts',
+    source:
+      "function local(require: Loader, value = make<X, require, Y>()) { require('fake-body'); } require('real-after');",
+    expected: ['real-after'],
+  },
+  {
+    name: 'regex after an unannotated bodyless signature remains inert',
+    fileName: 'index.ts',
+    source:
+      "declare function local(require: Loader)\n/require('fake-regex')/.test(''); require('real-after');",
+    expected: ['real-after'],
+  },
 ] as const;

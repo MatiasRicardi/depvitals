@@ -46,6 +46,18 @@ const SCENARIOS: {
   note: string;
 }[] = [
   ...(['declared', 'undeclared'] as const).map((mode) => ({
+    name: `require-signature-review-${mode}`,
+    result: {
+      unusedDependencies: mode === 'declared' ? ['fake-bound', 'fake-newline', 'fake-regex'] : [],
+      unusedDevDependencies: [],
+      missingDependencies:
+        mode === 'undeclared'
+          ? ['real-after', 'real-first', 'real-generic', 'real-implementation']
+          : [],
+    },
+    note: 'Bodyless signatures restore global scope; generic default type names never become bindings, while real require parameters still bind.',
+  })),
+  ...(['declared', 'undeclared'] as const).map((mode) => ({
     name: `require-function-parameters-${mode}`,
     result: {
       unusedDependencies:

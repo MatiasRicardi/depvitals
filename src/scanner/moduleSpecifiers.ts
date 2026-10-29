@@ -194,6 +194,13 @@ type ParameterContext = {
   readonly openIndex: number;
   bindingStart: number;
   bindingEnd: number | undefined;
+  bindingCommas: {
+    index: number;
+    bindingStart: number;
+    bindingEnd: number | undefined;
+    phase: 'binding' | 'type' | 'initializer';
+    bindingCount: number;
+  }[];
   readonly signature: OwnedSignature | undefined;
   readonly control: boolean;
   readonly controlKeyword: string | undefined;
@@ -722,6 +729,18 @@ function tokenize(
       }
       typeAnnotation = undefined;
       inType = false;
+    }
+    const pendingBodylessSignature = pendingFunctionContexts[pendingFunctionContexts.length - 1];
+    if (
+      typeAnnotation === undefined &&
+      tokenLineBreakBefore &&
+      ch !== '{' &&
+      ch !== ':' &&
+      pendingBodylessSignature?.phase === 'awaiting-body' &&
+      atLexicalDepth(pendingBodylessSignature)
+    ) {
+      closeRequireScope(pendingFunctionContexts.pop()?.requireScope);
+      resetExpressionState();
     }
     if (
       classState !== undefined &&
@@ -1591,6 +1610,7 @@ function tokenize(
         openIndex: tokens.length,
         bindingStart: tokens.length + 1,
         bindingEnd: undefined,
+        bindingCommas: [],
         signature:
           signature === undefined
             ? undefined
@@ -1735,6 +1755,16 @@ function tokenize(
     }
     if (!inType && parameter !== undefined && atLexicalDepth(parameter.depth)) {
       if (ch === ',') {
+        const scope = parameter.signature?.context.requireScope;
+        if (scope !== undefined) {
+          parameter.bindingCommas.push({
+            index: tokens.length,
+            bindingStart: parameter.bindingStart,
+            bindingEnd: parameter.bindingEnd,
+            phase: parameter.phase,
+            bindingCount: scope.bindings.length,
+          });
+        }
         recordRequireBinding(parameter, tokens.length);
         parameter.bindingStart = tokens.length + 1;
         parameter.bindingEnd = undefined;
@@ -1789,7 +1819,25 @@ function tokenize(
       requireScopes[requireScopes.length - 1]?.inParameters === true &&
       !isArrowHead(tokens[tokens.length - 2], i)
     ) {
-      markParameterTypeArguments(tokens, tokens.length);
+      const start = markParameterTypeArguments(tokens, tokens.length);
+      const owner = parameterContexts[parameterContexts.length - 1];
+      const scope = owner?.signature?.context.requireScope;
+      if (start !== undefined && owner !== undefined && scope !== undefined) {
+        // Commas were provisional until the closing > established a type-argument list.
+        // Restore the initializer state as well as its binding ranges; do not re-lex source.
+        let first = owner.bindingCommas.length;
+        while (first > 0 && (owner.bindingCommas[first - 1]?.index ?? -1) >= start) {
+          first--;
+        }
+        const checkpoint = owner.bindingCommas[first];
+        if (checkpoint !== undefined) {
+          owner.bindingStart = checkpoint.bindingStart;
+          owner.bindingEnd = checkpoint.bindingEnd;
+          owner.phase = checkpoint.phase;
+          scope.bindings.length = checkpoint.bindingCount;
+          owner.bindingCommas.length = first;
+        }
+      }
     }
     prevKind = 'punct';
     prevPunct = ch;
@@ -2300,7 +2348,7 @@ function functionTypeArrowContinues(source: string, arrowEnd: number, n: number)
 }
 
 /** Preserve type-argument identity while inspecting a parameter binding pattern. */
-function markParameterTypeArguments(tokens: Token[], openIndex: number): void {
+function markParameterTypeArguments(tokens: Token[], openIndex: number): number | undefined {
   if (!isPunct(tokens[openIndex - 1], '>')) {
     return;
   }
@@ -2334,6 +2382,7 @@ function markParameterTypeArguments(tokens: Token[], openIndex: number): void {
       tokens[index] = { ...token, parameterType: true };
     }
   }
+  return start;
 }
 
 /**
