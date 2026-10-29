@@ -1102,7 +1102,10 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         (prevKind === 'identifier' &&
           prevIsExpressionKeyword &&
           !BLOCK_AFTER_KEYWORD.has(previousIdentifier ?? '') &&
-          !(previousIdentifier === 'return' && tokenLineBreakBefore)) ||
+          !(
+            (previousIdentifier === 'return' || previousIdentifier === 'yield') &&
+            tokenLineBreakBefore
+          )) ||
           (isPunct(tokens[tokens.length - 1], '>') && isArrowHead(tokens[tokens.length - 2])) ||
           (prevKind === 'start' && (frame?.kind === 'template-expr' || frame?.kind === 'jsx-expr')),
       );

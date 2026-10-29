@@ -40,8 +40,32 @@ const basicCases: readonly ExpressionOwnerCase[] = forms.flatMap(([form, value])
   }));
 });
 
+const yieldDeclarationCases: readonly ExpressionOwnerCase[] = [
+  'function declared() {}',
+  'async function declared() {}',
+  'function* declared() {}',
+  'async function* declared() {}',
+  'class Declared {}',
+].flatMap((declaration) =>
+  ['function*', 'async function*'].flatMap((outer) =>
+    ['\n', ' /* restricted line break\n */ '].map((lineBreak) => ({
+      name: `yield statement before ${declaration} in ${outer}, trivia=${JSON.stringify(lineBreak)}`,
+      fileName: 'index.cjs',
+      source: `require('owner-before');
+        ${outer} outer() {
+          yield${lineBreak}${declaration}
+          /require('owner-fake-inner')/.test('');
+          require('owner-inside');
+        }
+        require('owner-after');`,
+      expected: ['owner-before', 'owner-inside', 'owner-after'],
+    })),
+  ),
+);
+
 export const expressionOwnerCases: readonly ExpressionOwnerCase[] = [
   ...basicCases,
+  ...yieldDeclarationCases,
   {
     name: 'nested async arrow restores its ordinary function and outer async owner',
     fileName: 'index.cjs',
