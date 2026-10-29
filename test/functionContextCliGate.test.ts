@@ -15,6 +15,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import { analyzeProject } from '../src/core/analyzeProject.js';
+import { implicitModuleCases } from './helpers/implicitModuleCases.js';
 import { expressionOwnerCases } from './helpers/expressionOwnerCases.js';
 import { arrowAssertionCases } from './helpers/pr76ArrowAssertionCases.js';
 import { assertionBoundaryCases } from './helpers/pr76AssertionBoundaryCases.js';
@@ -1307,5 +1308,43 @@ describe('Step 74 expression owners through analyzer and compiled CLI', () => {
     } finally {
       rmSync(project, { recursive: true, force: true });
     }
+  });
+});
+
+describe('Step 76 implicit ESM through the compiled CLI', () => {
+  it.each(implicitModuleCases)('$name has valid syntax in its selected mode', (scenario) => {
+    const result = spawnSync(
+      process.execPath,
+      ['--check', scenario.module ? '--input-type=module' : '--input-type=commonjs'],
+      {
+        input: scenario.source,
+        encoding: 'utf8',
+        timeout: 10_000,
+      },
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  for (const declared of [false, true]) {
+    it.each(implicitModuleCases)(`$name, declared=${String(declared)}`, (scenario) => {
+      const names = [...scenario.expected].sort();
+      const dependencies = declared ? Object.fromEntries(names.map((name) => [name, '*'])) : {};
+      const result = runProject({ dependencies }, { 'index.js': scenario.source });
+      expect(result).toEqual({
+        status: declared ? 0 : 1,
+        stdout: declared
+          ? 'DepVitals\n\nNo dependency issues found.\n'
+          : `DepVitals\n\nMissing dependencies (${String(names.length)})\n${names.map((name) => `  ${name}\n`).join('')}`,
+        stderr: '',
+      });
+    });
+  }
+
+  it('keeps invalid implicit ESM as an operational error with empty stdout', () => {
+    const result = runProject({}, { 'index.js': "import 'real'; await /unterminated" });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Unterminated regex');
   });
 });

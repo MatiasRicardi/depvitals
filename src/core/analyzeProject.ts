@@ -265,10 +265,10 @@ async function readAndExtract(
    * Determine the narrow Node source mode needed for top-level `await`.
    *
    * Explicit module extensions win over the package type. CommonJS extensions remain scripts even
-   * under a module package, while `.js` and `.ts` follow the nearest package scope's exact
-   * `type: "module"` declaration.
+   * under a module package. Ambiguous `.js` scopes use bounded syntax detection; JSX/TypeScript
+   * extensions retain the existing nearest-scope `type: "module"` policy.
    */
-  function isModuleSource(file: string, packageType: string | undefined): boolean {
+  function sourceModuleMode(file: string, packageType: string | undefined): boolean | 'detect' {
     const lower = file.toLowerCase();
 
     if (lower.endsWith('.mjs') || lower.endsWith('.mts')) {
@@ -277,6 +277,10 @@ async function readAndExtract(
 
     if (lower.endsWith('.cjs') || lower.endsWith('.cts')) {
       return false;
+    }
+
+    if (lower.endsWith('.js') && packageType !== 'module' && packageType !== 'commonjs') {
+      return 'detect';
     }
 
     return (
@@ -291,7 +295,7 @@ async function readAndExtract(
   try {
     const occurrences = extractModuleSpecifiers(source, {
       jsx: usesJsxSyntax(file, source),
-      module: isModuleSource(file, packageType),
+      module: sourceModuleMode(file, packageType),
     });
     return occurrences.map((occurrence) => occurrence.specifier);
   } catch (error) {

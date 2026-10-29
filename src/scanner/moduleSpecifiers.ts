@@ -67,8 +67,8 @@ export type ExtractModuleSpecifiersOptions = {
   // inside `{...}` expression containers is still lexed, so real specifiers are found and JSX can
   // not be mistaken for regex/division. Only meaningful for `.jsx`/`.tsx` source.
   jsx?: boolean;
-  /** Treat top-level `await` as a keyword. Omitted and false retain script/CommonJS behavior. */
-  module?: boolean;
+  /** Explicit module/script grammar, or bounded syntax detection for ambiguous `.js` input. */
+  module?: boolean | 'detect';
 };
 
 /**
@@ -83,7 +83,14 @@ export function extractModuleSpecifiers(
   source: string,
   options: ExtractModuleSpecifiersOptions = {},
 ): readonly ModuleSpecifierOccurrence[] {
-  return interpret(tokenize(source, options.jsx ?? false, options.module ?? false));
+  const jsx = options.jsx ?? false;
+  // Ambiguous input gets one non-interpreting lexical probe and one definitive extraction. No
+  // source reread, parser retry after an exception, or repeated per-statement suffix scans.
+  const module =
+    options.module === 'detect'
+      ? tokenize(source, jsx, false, true).some((token) => token.moduleSignal === true)
+      : (options.module ?? false);
+  return interpret(tokenize(source, jsx, module));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -91,6 +98,7 @@ export function extractModuleSpecifiers(
 /* -------------------------------------------------------------------------- */
 
 type Token = {
+  readonly moduleSignal?: boolean;
   readonly lineBreakBefore?: boolean;
   readonly assertionEnd?: boolean;
 } & (
@@ -261,7 +269,12 @@ type Frame =
  * Turn source into a stream of significant tokens, skipping whitespace, line/block comments, regex
  * literals and template literals.
  */
-function tokenize(source: string, jsx = false, module = false): readonly Token[] {
+function tokenize(
+  source: string,
+  jsx = false,
+  module = false,
+  detectModule = false,
+): readonly Token[] {
   const tokens: Token[] = [];
   const n = source.length;
   let i = 0;
@@ -1122,6 +1135,13 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
       }
       prevIdentifier = value;
       const isMemberName = prevKind === 'punct' && prevPunct === '.';
+      const atRoot =
+        braceContexts.length === 0 && parenDepth === 0 && bracketDepth === 0 && frames.length === 0;
+      let moduleSignal =
+        detectModule &&
+        !isMemberName &&
+        ((value === 'import' && importSignalsModule(source, i, atRoot)) ||
+          (value === 'export' && atRoot && exportSignalsModule(source, i)));
       const classMemberName =
         value === 'class' &&
         (insideObjectLiteral() || insideClassBody()) &&
@@ -1191,9 +1211,29 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
           parameterGrammarSuspended || fieldGrammarSuspended
             ? undefined
             : (expressionContextIsCurrent ?? bodyContext);
+        const probe =
+          detectModule &&
+          value === 'await' &&
+          !(
+            prevKind === 'identifier' &&
+            ['class', 'function', 'var', 'let', 'const', 'extends'].includes(
+              previousIdentifier ?? '',
+            )
+          ) &&
+          functionContext === undefined &&
+          !parameterGrammarSuspended &&
+          !fieldGrammarSuspended
+            ? probeAwaitOperand(
+                source,
+                i,
+                parameterContexts[parameterContexts.length - 1]?.forPhase !== undefined,
+              )
+            : undefined;
+        moduleSignal ||= probe?.module === true;
         if (
           value === 'await' &&
           (functionContext?.async === true ||
+            probe?.keyword === true ||
             (functionContext === undefined &&
               module &&
               !parameterGrammarSuspended &&
@@ -1254,6 +1294,7 @@ function tokenize(source: string, jsx = false, module = false): readonly Token[]
         offset: start,
         endOffset: i,
         ...(isMemberName ? { propertyName: true } : {}),
+        ...(moduleSignal ? { moduleSignal: true } : {}),
       });
       if (startsAssertion) {
         typeAnnotation = {
@@ -3609,7 +3650,94 @@ function skipBlockComment(source: string, start: number): number {
   throw new ModuleSpecifierError('Unterminated block comment', 'invalid-source', start);
 }
 
+/** A dynamic import remains valid script syntax; only static forms and meta signal a module. */
+function importSignalsModule(source: string, end: number, atRoot: boolean): boolean {
+  const next = skipTrivia(source, end, source.length);
+  if (source[next] === '.') {
+    const meta = skipTrivia(source, next + 1, source.length);
+    return (
+      (isIdentifierStartAt(source, meta) || isUnicodeEscapeStart(source, meta)) &&
+      readIdentifier(source, meta).value === 'meta'
+    );
+  }
+  return (
+    atRoot &&
+    (source[next] === "'" ||
+      source[next] === '"' ||
+      source[next] === '{' ||
+      source[next] === '*' ||
+      isIdentifierStartAt(source, next) ||
+      isUnicodeEscapeStart(source, next))
+  );
+}
+
+function exportSignalsModule(source: string, end: number): boolean {
+  const next = skipTrivia(source, end, source.length);
+  return (
+    source[next] === '{' ||
+    source[next] === '*' ||
+    (isIdentifierStartAt(source, next) &&
+      ['default', 'const', 'let', 'var', 'function', 'async', 'class'].includes(
+        readIdentifier(source, next).value,
+      ))
+  );
+}
+
+/**
+ * Probe top-level await without treating every identifier named await as a keyword. A complete
+ * regex may be read opaquely during this pass even when its following operand makes it script
+ * division. That protects apostrophes until a later static declaration settles the whole file.
+ * Calls, indexing, tags and unary +/- remain ambiguous script expressions absent another signal.
+ */
+function probeAwaitOperand(
+  source: string,
+  end: number,
+  inForHead: boolean,
+): { keyword: boolean; module: boolean } {
+  const trivia = readTrivia(source, end, source.length);
+  const next = trivia.end;
+  const ch = source[next];
+  if (ch === '/') {
+    const finish = regexEnd(source, next);
+    if (finish === undefined) {
+      return { keyword: false, module: false };
+    }
+    const following = skipTrivia(source, finish, source.length);
+    const tail = source[following];
+    const unambiguous =
+      tail === undefined ||
+      [';', ',', ')', ']', '}', '.', '?'].includes(tail) ||
+      source.startsWith('&&', following) ||
+      source.startsWith('||', following);
+    return { keyword: true, module: unambiguous };
+  }
+  // A newline also permits a bare await identifier statement followed by another statement.
+  if (trivia.lineBreak) {
+    return { keyword: false, module: false };
+  }
+  if (isIdentifierStartAt(source, next) || isUnicodeEscapeStart(source, next)) {
+    const name = readIdentifier(source, next).value;
+    const operand = !['in', 'instanceof'].includes(name) && !(name === 'of' && inForHead);
+    return { keyword: operand, module: operand };
+  }
+  const operand =
+    ch !== undefined &&
+    (isNumberStart(ch) ||
+      (ch === '.' && isNumberStart(source[next + 1] ?? '')) ||
+      ["'", '"', '{', '~'].includes(ch) ||
+      (ch === '!' && source[next + 1] !== '='));
+  return { keyword: operand, module: operand };
+}
+
 function skipRegex(source: string, start: number): number {
+  const end = regexEnd(source, start);
+  if (end === undefined) {
+    throw new ModuleSpecifierError('Unterminated regex literal', 'invalid-source', start);
+  }
+  return end;
+}
+
+function regexEnd(source: string, start: number): number | undefined {
   const n = source.length;
   let i = start + 1;
   let inClass = false;
@@ -3620,7 +3748,7 @@ function skipRegex(source: string, start: number): number {
     // A regex literal cannot contain a raw line terminator. Rejecting it here stops a wrong regex
     // start from swallowing the following lines.
     if (ch === '\n' || ch === '\r' || ch === '\u2028' || ch === '\u2029') {
-      throw new ModuleSpecifierError('Unterminated regex literal', 'invalid-source', start);
+      return undefined;
     }
 
     if (ch === '\\') {
@@ -3650,7 +3778,7 @@ function skipRegex(source: string, start: number): number {
     i++;
   }
 
-  throw new ModuleSpecifierError('Unterminated regex literal', 'invalid-source', start);
+  return undefined;
 }
 
 function skipRegexFlags(source: string, i: number): number {
