@@ -1296,6 +1296,11 @@ function tokenize(
         ...(isMemberName ? { propertyName: true } : {}),
         ...(moduleSignal ? { moduleSignal: true } : {}),
       });
+      // Once the mode is known, only the definitive module pass should validate the remainder.
+      // Continuing this probe with script grammar could reject valid newline await operands.
+      if (detectModule && moduleSignal) {
+        return tokens;
+      }
       if (startsAssertion) {
         typeAnnotation = {
           role: 'assertion',
@@ -3706,7 +3711,8 @@ function probeAwaitOperand(
     const tail = source[following];
     const unambiguous =
       tail === undefined ||
-      [';', ',', ')', ']', '}', '.', '?'].includes(tail) ||
+      [';', ',', ')', ']', '}', '?'].includes(tail) ||
+      (tail === '.' && !isNumberStart(source[following + 1] ?? '')) ||
       source.startsWith('&&', following) ||
       source.startsWith('||', following);
     return { keyword: true, module: unambiguous };

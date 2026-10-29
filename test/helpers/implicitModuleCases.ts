@@ -145,4 +145,46 @@ export const implicitModuleCases = [
     expected: ['real'],
     module: false,
   },
+  {
+    name: 'decimal divisor keeps an await identifier in script mode',
+    source: "var await = 4; await / require('real') / .5;",
+    expected: ['real'],
+    module: false,
+  },
+  {
+    name: 'decimal exponent divisor keeps script mode',
+    source: "var await = 4; await / require('real') / .5e2;",
+    expected: ['real'],
+    module: false,
+  },
+  {
+    name: 'regex member access still signals module syntax',
+    source: "await /require('fake')/.test(''); require('real');",
+    expected: ['real'],
+    module: true,
+  },
+  {
+    name: 'known static import permits await newline object division',
+    source: "import 'real'; await\n{} / 2;",
+    expected: ['real'],
+    module: true,
+  },
+  {
+    name: 'known export permits await newline object division',
+    source: "export {}; await\n{} / require('real') / 2;",
+    expected: ['real'],
+    module: true,
+  },
+  {
+    name: 'known import meta permits await newline function division',
+    source: "import.meta; await\nfunction(){} / require('real');",
+    expected: ['real'],
+    module: true,
+  },
+  {
+    name: 'known top-level await permits later newline object division',
+    source: "await 1; await\n{} / require('real') / 2;",
+    expected: ['real'],
+    module: true,
+  },
 ] as const;
