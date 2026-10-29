@@ -1,6 +1,7 @@
 # DepVitals
 
 [![npm version](https://img.shields.io/npm/v/depvitals)](https://www.npmjs.com/package/depvitals)
+[![Runtime dependencies: 0](https://img.shields.io/badge/runtime_dependencies-0-brightgreen)](https://github.com/MatiasRicardi/depvitals/blob/main/package.json)
 [![CI](https://github.com/MatiasRicardi/depvitals/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MatiasRicardi/depvitals/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/MatiasRicardi/depvitals/graph/badge.svg?branch=main)](https://codecov.io/gh/MatiasRicardi/depvitals)
 [![CodeQL](https://github.com/MatiasRicardi/depvitals/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/MatiasRicardi/depvitals/actions/workflows/codeql.yml)

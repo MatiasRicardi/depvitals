@@ -1,5 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import type * as nodeFsPromises from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +17,8 @@ import {
  * Fixture directory. Every scenario is a real directory tree with a `package.json` and supported
  * source files, so the analysis runs the complete pipeline against real files on disk.
  */
+import { implicitModuleCases } from '../../helpers/implicitModuleCases.js';
+
 const FIXTURES = fileURLToPath(new URL('../../fixtures/analysis/', import.meta.url));
 
 function fixture(path: string): string {
@@ -544,5 +547,78 @@ describe('analyzeProject', () => {
         rmSync(sandbox, { recursive: true, force: true });
       }
     });
+  });
+});
+
+describe('Step 76 ambiguous js package scopes', () => {
+  for (const declared of [false, true]) {
+    it.each(implicitModuleCases)(`$name, declared=${String(declared)}`, async (scenario) => {
+      const manifest = {
+        dependencies: declared
+          ? Object.fromEntries(scenario.expected.map((name) => [name, '*']))
+          : {},
+      };
+      const result = await analyzeTemporaryProject(manifest, { 'index.js': scenario.source });
+      expect(result.unusedDependencies).toEqual([]);
+      expect(result.missingDependencies).toEqual(declared ? [] : [...scenario.expected].sort());
+    });
+  }
+  it('uses ambiguous child scope instead of inheriting root module mode', async () => {
+    const result = await analyzeTemporaryProject(
+      { type: 'module' },
+      {
+        'child/package.json': '{}',
+        'child/index.js': "var await = 4; await / require('child-real') / 2;",
+        'child/esm.js': "import 'static-real'; await /require('fake')/;",
+        'root.js': "await /require('root-fake')/;",
+      },
+    );
+    expect(result.missingDependencies).toEqual(['child-real', 'static-real']);
+  });
+});
+
+describe('Step 76 mode boundaries and bounded reads', () => {
+  it('reads ambiguous source once despite its lexical mode probe', async () => {
+    const start = vi.mocked(readFile).mock.calls.length;
+    await analyzeTemporaryProject({}, { 'index.js': "import 'real'; await /don't/;" });
+    const reads = vi
+      .mocked(readFile)
+      .mock.calls.slice(start)
+      .filter(([path]) => typeof path === 'string' && path.endsWith('index.js'));
+    expect(reads).toHaveLength(1);
+  });
+
+  it('preserves explicit commonjs and the existing JSX/TS extension policy', async () => {
+    const source = "var await = 4; await / require('real') / 2;";
+    for (const fileName of [
+      'index.js',
+      'index.cjs',
+      'index.cts',
+      'index.jsx',
+      'index.ts',
+      'index.tsx',
+    ]) {
+      const result = await analyzeTemporaryProject({ type: 'commonjs' }, { [fileName]: source });
+      expect(result.missingDependencies).toEqual(['real']);
+    }
+    for (const fileName of ['index.jsx', 'index.ts', 'index.tsx']) {
+      const result = await analyzeTemporaryProject(
+        {},
+        { [fileName]: "await / require('real') / 2;" },
+      );
+      expect(result.missingDependencies).toEqual(['real']);
+    }
+  });
+
+  it('does not turn ambiguous-file lexical failures into a successful report', async () => {
+    const error = await captureAnalysisError(() =>
+      analyzeTemporaryProject(
+        {},
+        {
+          'index.js': "import 'real'; await /unterminated",
+        },
+      ),
+    );
+    expect(error.code).toBe('invalid-source');
   });
 });

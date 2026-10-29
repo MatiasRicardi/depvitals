@@ -109,7 +109,7 @@ export async function loadProjectManifest(projectRoot: string): Promise<ProjectM
  *
  * Source-mode resolution calls this for nested package scopes. A missing manifest means that the
  * parent scope remains applicable; an existing manifest with no string `type` starts a new scope
- * with script/CommonJS behavior.
+ * whose `.js` files are ambiguous rather than inheriting the parent's explicit module mode.
  */
 export async function loadPackageTypeHint(directory: string): Promise<PackageTypeHint | undefined> {
   const packageJsonPath = join(resolve(directory), MANIFEST_FILENAME);
