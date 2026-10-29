@@ -149,6 +149,65 @@ describe('extractModuleSpecifiers', () => {
     );
   });
 
+  describe('Step 78 dynamic import object options', () => {
+    it.each([
+      "{ with: { type: 'json' } }",
+      "{ assert: { type: 'json' } },",
+      " /* options */ { 'with': { 'type': 'json', }, extra: { nested: {} } } /* end */,",
+      '{}',
+      "{ extra: { note: \"require('fake-attribute')\" }, with: { type: 'custom' } }",
+    ])('credits only the literal source with %s', (options) => {
+      expect(extractModuleSpecifiers(`import('real', ${options});`)).toEqual([
+        { specifier: 'real', kind: 'dynamic-import' },
+      ]);
+    });
+    it('keeps real references inside supported object options visible', () => {
+      expect(
+        extractModuleSpecifiers(`import('real-outer', {
+        with: { type: "import('fake-text')" },
+        extra: fn([require('real-require',), import('real-inner', {})]),
+      },); require('real-after');`),
+      ).toEqual([
+        { specifier: 'real-outer', kind: 'dynamic-import' },
+        { specifier: 'real-require', kind: 'require' },
+        { specifier: 'real-inner', kind: 'dynamic-import' },
+        { specifier: 'real-after', kind: 'require' },
+      ]);
+    });
+    it.each([
+      "import('fake', options);",
+      "import(require('real-nested'), {});",
+      "import('fake', makeOptions(require('real-nested')));",
+      "import('fake', [require('real-nested')]);",
+      "import('fake', {} || require('real-nested'));",
+      "import('fake', {}, require('real-nested'));",
+      "import('fake-' + suffix, { with: { type: 'json' } });",
+      "import(`fake`, { with: { type: 'json' } });",
+      "require('fake', { with: { type: 'json' } });",
+    ])('rejects unsupported outer shapes without hiding independent evidence: %s', (source) => {
+      const expected = source.includes("require('real-nested')")
+        ? ['real-nested', 'real-after']
+        : ['real-after'];
+      expect(specifiers(source + "require('real-after',);")).toEqual(expected);
+    });
+    it.each([
+      "import('fake', { with: { type: 'json' });",
+      "import('fake', { with: [ 'json' } });",
+      "import('fake', { with: { type: 'json' }",
+    ])('does not trust unfinished or mismatched option delimiters: %s', (source) => {
+      expect(specifiers(source)).toEqual([]);
+    });
+    it('does not hide a lexical error inside the options', () => {
+      expect(() => extractModuleSpecifiers("import('real', {with:{type:'unterminated")).toThrow(
+        ModuleSpecifierError,
+      );
+    });
+    it('handles nested options without consuming inner imports', () => {
+      const source = "import('real', { nested: ".repeat(150) + '0' + '})'.repeat(150);
+      expect(specifiers(source)).toEqual(Array<string>(150).fill('real'));
+    });
+  });
+
   describe('positive cases', () => {
     it('extracts default and named imports', () => {
       const source = `
@@ -1172,8 +1231,8 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(`const value = require('pkg-' + name);`)).toEqual([]);
     });
 
-    it('ignores require and dynamic import with extra arguments', () => {
-      // Only one literal argument (with an optional trailing comma) is static.
+    it('ignores require extra arguments and non-object dynamic import options', () => {
+      // require needs one literal; a variable is not a supported dynamic import options object.
       expect(specifiers(`require('pkg', other);`)).toEqual([]);
       expect(specifiers(`import('pkg', options);`)).toEqual([]);
     });

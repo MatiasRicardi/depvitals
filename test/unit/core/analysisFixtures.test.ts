@@ -46,6 +46,38 @@ const SCENARIOS: {
   note: string;
 }[] = [
   ...(['declared', 'undeclared'] as const).map((mode) => ({
+    name: `dynamic-import-options-${mode}`,
+    result: {
+      unusedDependencies:
+        mode === 'declared'
+          ? [
+              'fake-array',
+              'fake-attribute',
+              'fake-computed',
+              'fake-extra',
+              'fake-require',
+              'fake-text',
+              'fake-variable',
+              'json',
+            ]
+          : [],
+      unusedDevDependencies: [],
+      missingDependencies:
+        mode === 'undeclared'
+          ? [
+              'real-after',
+              'real-array',
+              'real-assert',
+              'real-extra',
+              'real-nested',
+              'real-outer',
+              'real-with',
+            ]
+          : [],
+    },
+    note: 'Balanced dynamic import options retain literal sources and independent nested calls, never attribute strings.',
+  })),
+  ...(['declared', 'undeclared'] as const).map((mode) => ({
     name: `literal-trailing-comma-${mode}`,
     result: {
       unusedDependencies:

@@ -3335,6 +3335,11 @@ function isRegexStart(
 function interpret(tokens: readonly Token[]): ModuleSpecifierOccurrence[] {
   const occurrences: ModuleSpecifierOccurrence[] = [];
   const n = tokens.length;
+  let closingDelimiters: ReadonlyMap<number, number> | undefined;
+  const closingDelimiter = (openIndex: number): number | undefined => {
+    closingDelimiters ??= indexClosingDelimiters(tokens);
+    return closingDelimiters.get(openIndex);
+  };
   let i = 0;
 
   while (i < n) {
@@ -3346,7 +3351,7 @@ function interpret(tokens: readonly Token[]): ModuleSpecifierOccurrence[] {
     }
 
     if (token.value === 'import') {
-      i = handleImport(tokens, i, occurrences);
+      i = handleImport(tokens, i, occurrences, closingDelimiter);
       continue;
     }
 
@@ -3372,7 +3377,7 @@ function interpret(tokens: readonly Token[]): ModuleSpecifierOccurrence[] {
  * - `obj.import(...)` is ignored (a member call, preceded by `.`).
  * - `import.meta` is ignored (treated as `import` followed by `.`).
  * - `import 'pkg'` and `import ... from 'pkg'` are `import`.
- * - `import('pkg')` is `dynamic-import` only when the sole argument is a static string.
+ * - Dynamic import accepts a literal source with optional bounded object-literal options.
  */
 /**
  * Whether the identifier at `i` is a property name (`obj.require`), which is never the global
@@ -3404,6 +3409,7 @@ function handleImport(
   tokens: readonly Token[],
   i: number,
   occurrences: ModuleSpecifierOccurrence[],
+  closingDelimiter: (openIndex: number) => number | undefined,
 ): number {
   const next = tokens[i + 1];
 
@@ -3423,9 +3429,9 @@ function handleImport(
     return i + 2;
   }
 
-  // A sole string argument, with an optional trailing comma, is static.
+  // Keep literal specifiers with sole-argument or bounded object-literal options forms.
   if (next?.kind === 'punct' && next.value === '(') {
-    const specifier = soleStringSpecifier(tokens, i + 2);
+    const specifier = dynamicImportSpecifier(tokens, i + 2, closingDelimiter);
 
     if (specifier !== undefined) {
       occurrences.push({ specifier, kind: 'dynamic-import' });
@@ -3602,7 +3608,7 @@ function handleRequire(
 
   const next = tokens[i + 1];
 
-  // A sole string argument, with an optional trailing comma, is static.
+  // A sole string argument, with an optional trailing comma, is static; options are not supported.
   if (next?.kind === 'punct' && next.value === '(') {
     const specifier = soleStringSpecifier(tokens, i + 2);
 
@@ -3613,6 +3619,88 @@ function handleRequire(
   }
 
   return i + 1;
+}
+
+/** Index balanced delimiters once, lazily, so nested option calls do not rescan suffixes. */
+function indexClosingDelimiters(tokens: readonly Token[]): ReadonlyMap<number, number> {
+  const closing = new Map<number, number>();
+  const stack: number[] = [];
+
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
+
+    if (token?.kind !== 'punct') {
+      continue;
+    }
+
+    if (token.value === '(' || token.value === '[' || token.value === '{') {
+      stack.push(index);
+      continue;
+    }
+
+    const opener = closerFor(token.value);
+
+    if (opener === undefined) {
+      continue;
+    }
+
+    const open = stack.pop();
+
+    if (open === undefined || !isPunct(tokens[open], opener)) {
+      // Do not pair an enclosing option object across a malformed nested delimiter.
+      stack.length = 0;
+    } else {
+      closing.set(open, index);
+    }
+  }
+
+  return closing;
+}
+
+/** The opener a closer matches, or undefined when the token is not a closer. */
+function closerFor(value: string): string | undefined {
+  if (value === ')') {
+    return '(';
+  }
+
+  return value === ']' ? '[' : value === '}' ? '{' : undefined;
+}
+
+/**
+ * Recognize the supported dynamic import arguments: a literal source plus either no further
+ * argument or one balanced object-literal options expression. Option contents are never evaluated
+ * and never contribute evidence. `require` keeps the stricter sole-literal rule.
+ */
+function dynamicImportSpecifier(
+  tokens: readonly Token[],
+  argIndex: number,
+  closingDelimiter: (openIndex: number) => number | undefined,
+): string | undefined {
+  const sole = soleStringSpecifier(tokens, argIndex);
+
+  if (sole !== undefined) {
+    return sole;
+  }
+
+  const specifier = tokens[argIndex];
+
+  if (
+    specifier?.kind !== 'string' ||
+    !isPunct(tokens[argIndex + 1], ',') ||
+    !isPunct(tokens[argIndex + 2], '{')
+  ) {
+    return undefined;
+  }
+
+  const optionsClose = closingDelimiter(argIndex + 2);
+
+  if (optionsClose === undefined) {
+    return undefined;
+  }
+
+  const next = isPunct(tokens[optionsClose + 1], ',') ? optionsClose + 2 : optionsClose + 1;
+
+  return isPunct(tokens[next], ')') ? specifier.value : undefined;
 }
 
 /**
