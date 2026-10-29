@@ -1,0 +1,14 @@
+{
+  "dependencies": {
+    "real-after": "*",
+    "real-import": "*",
+    "real-nested": "*",
+    "real-require": "*",
+    "real-trivia": "*",
+    "fake-concat": "*",
+    "fake-import-options": "*",
+    "fake-member": "*",
+    "fake-options": "*",
+    "fake-template": "*"
+  }
+}

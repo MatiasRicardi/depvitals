@@ -46,6 +46,21 @@ const SCENARIOS: {
   note: string;
 }[] = [
   ...(['declared', 'undeclared'] as const).map((mode) => ({
+    name: `literal-trailing-comma-${mode}`,
+    result: {
+      unusedDependencies:
+        mode === 'declared'
+          ? ['fake-concat', 'fake-import-options', 'fake-member', 'fake-options', 'fake-template']
+          : [],
+      unusedDevDependencies: [],
+      missingDependencies:
+        mode === 'undeclared'
+          ? ['real-after', 'real-import', 'real-nested', 'real-require', 'real-trivia']
+          : [],
+    },
+    note: 'Sole literals with trailing commas count as source evidence; unsupported outer calls retain nested real calls only.',
+  })),
+  ...(['declared', 'undeclared'] as const).map((mode) => ({
     name: `contextual-type-${mode}`,
     result: {
       unusedDependencies: [],
