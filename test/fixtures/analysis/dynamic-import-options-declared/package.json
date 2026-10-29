@@ -1,0 +1,19 @@
+{
+  "dependencies": {
+    "real-after": "*",
+    "real-array": "*",
+    "real-assert": "*",
+    "real-extra": "*",
+    "real-nested": "*",
+    "real-outer": "*",
+    "real-with": "*",
+    "fake-array": "*",
+    "fake-attribute": "*",
+    "fake-computed": "*",
+    "fake-extra": "*",
+    "fake-require": "*",
+    "fake-text": "*",
+    "fake-variable": "*",
+    "json": "*"
+  }
+}

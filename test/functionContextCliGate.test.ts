@@ -1388,3 +1388,40 @@ describe('Step 77 trailing literal commas through the compiled CLI', () => {
     expect(result.stderr).toContain('Unterminated block comment');
   });
 });
+
+describe('Step 78 dynamic import options through the compiled CLI', () => {
+  it.each(['declared', 'undeclared'] as const)(
+    '%s option calls preserve exact findings',
+    (mode) => {
+      const project = join(
+        REPO_ROOT,
+        'test',
+        'fixtures',
+        'analysis',
+        `dynamic-import-options-${mode}`,
+      );
+      const before = readdirSync(project).map((name) => [
+        name,
+        readFileSync(join(project, name), 'utf8'),
+      ]);
+      expect(runBuilt(project)).toEqual({
+        status: 1,
+        stdout:
+          mode === 'declared'
+            ? 'DepVitals\n\nUnused dependencies (8)\n  fake-array\n  fake-attribute\n  fake-computed\n  fake-extra\n  fake-require\n  fake-text\n  fake-variable\n  json\n'
+            : 'DepVitals\n\nMissing dependencies (7)\n  real-after\n  real-array\n  real-assert\n  real-extra\n  real-nested\n  real-outer\n  real-with\n',
+        stderr: '',
+      });
+      expect(
+        readdirSync(project).map((name) => [name, readFileSync(join(project, name), 'utf8')]),
+      ).toEqual(before);
+    },
+  );
+
+  it('does not return partial evidence for an unterminated option string', () => {
+    const result = runProject({}, { 'index.cjs': "import('real', { with: { type: 'unterminated" });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Unterminated string');
+  });
+});
