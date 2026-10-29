@@ -97,7 +97,16 @@ export function extractModuleSpecifiers(
 /* Tokenizer                                                                  */
 /* -------------------------------------------------------------------------- */
 
+type RequireScope = {
+  readonly parent: RequireScope | undefined;
+  readonly bindings: { start: number; end: number }[];
+  inParameters: boolean;
+};
+
 type Token = {
+  readonly requireScope?: RequireScope;
+  readonly parameterFrame?: number;
+  readonly parameterType?: boolean;
   readonly moduleSignal?: boolean;
   readonly lineBreakBefore?: boolean;
   readonly assertionEnd?: boolean;
@@ -139,6 +148,7 @@ type PrevKind = 'start' | 'identifier' | 'number' | 'string' | 'punct' | 'regex'
 // value (its closing `}` ends an expression, so a following `/` is division) versus a declaration
 // in statement position (its closing `}` starts a block, so a following `/` may be a regex).
 type FuncContext = {
+  readonly requireScope?: RequireScope;
   readonly async: boolean;
   readonly generator: boolean;
   readonly isExpression: boolean;
@@ -182,6 +192,8 @@ type OwnedSignature = TypedReturnSignature & { readonly owner: LexicalDepth };
 
 type ParameterContext = {
   readonly openIndex: number;
+  bindingStart: number;
+  bindingEnd: number | undefined;
   readonly signature: OwnedSignature | undefined;
   readonly control: boolean;
   readonly controlKeyword: string | undefined;
@@ -309,7 +321,16 @@ function tokenize(
     if (memberAtToken !== undefined) {
       advanceMember(memberAtToken, significant, tokens[tokens.length - 1]);
     }
-    tokens.push(significant);
+    const scope = requireScopes[requireScopes.length - 1];
+    tokens.push(
+      scope?.inParameters === true
+        ? {
+            ...significant,
+            parameterFrame: frames.length,
+            ...(typeAnnotation === undefined ? {} : { parameterType: true }),
+          }
+        : significant,
+    );
     if (token.kind !== 'punct' || token.syntheticBoundary !== true) {
       htmlCloseCommentAllowed = false;
     }
@@ -337,6 +358,19 @@ function tokenize(
   // Function context of every open function body, tracked independently of expression frame resets
   // so `${}` boundaries cannot change the nearest await/yield grammar.
   const functionContextStack: FuncContext[] = [];
+  const requireScopes: RequireScope[] = [];
+  const closeRequireScope = (scope: RequireScope | undefined): void => {
+    if (scope !== undefined && requireScopes[requireScopes.length - 1] === scope) {
+      requireScopes.pop();
+    }
+  };
+  const recordRequireBinding = (parameters: ParameterContext, end: number): void => {
+    const scope = parameters.signature?.context.requireScope;
+    const bindingEnd = parameters.bindingEnd ?? end;
+    if (scope !== undefined && parameters.bindingStart < bindingEnd) {
+      scope.bindings.push({ start: parameters.bindingStart, end: bindingEnd });
+    }
+  };
   // The nearest function body owns the await/yield grammar. An ordinary nested function therefore
   // suspends an async/generator context from an outer function instead of inheriting it.
   // A default callback may open and finish while an outer signature is still reading parameters.
@@ -681,7 +715,7 @@ function tokenize(
     ) {
       const signature = typeAnnotation.signature;
       if (pendingFunctionContexts[pendingFunctionContexts.length - 1] === signature.context) {
-        pendingFunctionContexts.pop();
+        closeRequireScope(pendingFunctionContexts.pop()?.requireScope);
       }
       if (classState !== undefined && signature.context.isClassMember === true) {
         classState.member = undefined;
@@ -1011,6 +1045,7 @@ function tokenize(
         closed?.role === 'function' ||
         closed?.role === 'class';
       if (closed?.role === 'function') {
+        closeRequireScope(closed.context.requireScope);
         functionContextStack.pop();
       }
       if (
@@ -1272,6 +1307,11 @@ function tokenize(
           previousIdentifier === 'async' && prevKind === 'identifier' && !tokenLineBreakBefore;
 
         pendingFunctionContexts.push({
+          requireScope: {
+            parent: requireScopes[requireScopes.length - 1],
+            bindings: [],
+            inParameters: true,
+          },
           async: isAsync,
           generator: false,
           isExpression: isAsync
@@ -1293,6 +1333,9 @@ function tokenize(
         value,
         offset: start,
         endOffset: i,
+        ...(value === 'require' && requireScopes.length > 0
+          ? { requireScope: requireScopes[requireScopes.length - 1] }
+          : {}),
         ...(isMemberName ? { propertyName: true } : {}),
         ...(moduleSignal ? { moduleSignal: true } : {}),
       });
@@ -1395,6 +1438,7 @@ function tokenize(
           angleDepth: 0,
           typeOperandExpected: true,
         };
+        parameter.bindingEnd ??= tokens.length;
         parameter.phase = 'type';
         inType = true;
       }
@@ -1545,6 +1589,8 @@ function tokenize(
           : signatureCandidate;
       parameterContexts.push({
         openIndex: tokens.length,
+        bindingStart: tokens.length + 1,
+        bindingEnd: undefined,
         signature:
           signature === undefined
             ? undefined
@@ -1575,6 +1621,9 @@ function tokenize(
         atLexicalDepth(pending) &&
         signature?.isFunctionKeyword === true
       ) {
+        if (pending.requireScope !== undefined) {
+          requireScopes.push(pending.requireScope);
+        }
         pending.parameterDepth = parenDepth + 1;
         pending.phase = 'parameters';
       }
@@ -1599,6 +1648,13 @@ function tokenize(
       }
 
       const parameters = parameterContexts.pop();
+      if (parameters?.signature?.isFunctionKeyword === true) {
+        recordRequireBinding(parameters, tokens.length);
+        const scope = parameters.signature.context.requireScope;
+        if (scope !== undefined) {
+          scope.inParameters = false;
+        }
+      }
       matchingOpen = parameters?.openIndex;
       closedParameterSignature = parameters?.signature;
       afterControlHead = parameters?.control === true;
@@ -1679,8 +1735,12 @@ function tokenize(
     }
     if (!inType && parameter !== undefined && atLexicalDepth(parameter.depth)) {
       if (ch === ',') {
+        recordRequireBinding(parameter, tokens.length);
+        parameter.bindingStart = tokens.length + 1;
+        parameter.bindingEnd = undefined;
         parameter.phase = 'binding';
       } else if (equalsOperator?.operator === 'assignment') {
+        parameter.bindingEnd ??= tokens.length;
         parameter.phase = 'initializer';
       }
     }
@@ -1700,7 +1760,7 @@ function tokenize(
 
     // A callback's statements cannot invalidate a signature outside its body or parameter list.
     if (!inType && ch === ';' && pending !== undefined && atLexicalDepth(pending)) {
-      pendingFunctionContexts.pop();
+      closeRequireScope(pendingFunctionContexts.pop()?.requireScope);
     }
 
     const previousToken = tokens[tokens.length - 1];
@@ -1723,6 +1783,14 @@ function tokenize(
         : {}),
       ...(closedExpressionBrace ? { expressionEnd: true } : {}),
     });
+    if (
+      !inType &&
+      ch === '>' &&
+      requireScopes[requireScopes.length - 1]?.inParameters === true &&
+      !isArrowHead(tokens[tokens.length - 2], i)
+    ) {
+      markParameterTypeArguments(tokens, tokens.length);
+    }
     prevKind = 'punct';
     prevPunct = ch;
     i++;
@@ -2229,6 +2297,43 @@ function functionTypeArrowContinues(source: string, arrowEnd: number, n: number)
   }
 
   return false;
+}
+
+/** Preserve type-argument identity while inspecting a parameter binding pattern. */
+function markParameterTypeArguments(tokens: Token[], openIndex: number): void {
+  if (!isPunct(tokens[openIndex - 1], '>')) {
+    return;
+  }
+  const start = signatureNameIndex(tokens, openIndex) + 1;
+  if (!isPunct(tokens[start], '<')) {
+    return;
+  }
+  // A real JS destructuring entry between comparison operators needs a default or property
+  // separator. Do not mistake that binding for a generic argument. Nested type members may
+  // contain their own separators inside balanced (), [] and {}.
+  let depth = 0;
+  for (let index = start + 1; index < openIndex - 1; index++) {
+    const token = tokens[index];
+    if (token?.kind !== 'punct') {
+      continue;
+    }
+    if (['(', '[', '{'].includes(token.value)) {
+      depth++;
+    } else if ([')', ']', '}'].includes(token.value)) {
+      depth--;
+    } else if (
+      depth === 0 &&
+      (token.operator === 'assignment' || token.value === ':' || token.value === ';')
+    ) {
+      return;
+    }
+  }
+  for (let index = start; index < openIndex; index++) {
+    const token = tokens[index];
+    if (token !== undefined) {
+      tokens[index] = { ...token, parameterType: true };
+    }
+  }
 }
 
 /**
@@ -3340,6 +3445,26 @@ function interpret(tokens: readonly Token[]): ModuleSpecifierOccurrence[] {
     closingDelimiters ??= indexClosingDelimiters(tokens);
     return closingDelimiters.get(openIndex);
   };
+  const resolvedRequireScopes = new Map<RequireScope, boolean>();
+  const requireIsShadowed = (scope: RequireScope): boolean => {
+    const path: RequireScope[] = [];
+    let current: RequireScope | undefined = scope;
+    while (current !== undefined && !resolvedRequireScopes.has(current)) {
+      path.push(current);
+      current = current.parent;
+    }
+    let shadowed = current === undefined ? false : (resolvedRequireScopes.get(current) ?? false);
+    for (let index = path.length - 1; index >= 0; index--) {
+      const owner = path[index];
+      if (owner !== undefined) {
+        shadowed ||= owner.bindings.some((range) =>
+          bindingHasRequire(tokens, range.start, range.end, closingDelimiter),
+        );
+        resolvedRequireScopes.set(owner, shadowed);
+      }
+    }
+    return shadowed;
+  };
   let i = 0;
 
   while (i < n) {
@@ -3361,6 +3486,10 @@ function interpret(tokens: readonly Token[]): ModuleSpecifierOccurrence[] {
     }
 
     if (token.value === 'require') {
+      if (token.requireScope !== undefined && requireIsShadowed(token.requireScope)) {
+        i++;
+        continue;
+      }
       i = handleRequire(tokens, i, occurrences);
       continue;
     }
@@ -3619,6 +3748,100 @@ function handleRequire(
   }
 
   return i + 1;
+}
+
+/** Inspect binding targets only, skipping property keys, types and initializer expressions. */
+function bindingHasRequire(
+  tokens: readonly Token[],
+  start: number,
+  end: number,
+  closingDelimiter: (openIndex: number) => number | undefined,
+): boolean {
+  const targets = [{ start, end }];
+  while (targets.length > 0) {
+    const target = targets.pop();
+    if (target === undefined) {
+      break;
+    }
+    let index = bindingAfterRest(tokens, target.start);
+    const token = tokens[index];
+    if (token?.kind === 'identifier') {
+      const next = tokens[index + 1];
+      if (
+        token.value === 'require' &&
+        (index + 1 >= target.end ||
+          isPunct(next, ',') ||
+          isPunct(next, '?') ||
+          (next?.kind === 'punct' && next.operator === 'assignment'))
+      ) {
+        return true;
+      }
+      continue;
+    }
+    const object = isPunct(token, '{');
+    if (!object && !isPunct(token, '[')) {
+      continue;
+    }
+    const close = closingDelimiter(index);
+    if (close === undefined || close >= target.end) {
+      continue;
+    }
+    const frame = token?.parameterFrame;
+    index++;
+    while (index < close) {
+      if (isPunct(tokens[index], ',')) {
+        index++;
+        continue;
+      }
+      index = bindingAfterRest(tokens, index);
+      let binding = index;
+      if (object) {
+        const keyClose = isPunct(tokens[index], '[') ? closingDelimiter(index) : index;
+        if (keyClose === undefined) {
+          break;
+        }
+        if (isPunct(tokens[keyClose + 1], ':')) {
+          binding = keyClose + 2;
+        }
+      }
+      targets.push({ start: binding, end: close });
+      index = bindingElementEnd(tokens, binding, close, frame, closingDelimiter);
+    }
+  }
+  return false;
+}
+
+function bindingAfterRest(tokens: readonly Token[], index: number): number {
+  return isPunct(tokens[index], '.') &&
+    isPunct(tokens[index + 1], '.') &&
+    isPunct(tokens[index + 2], '.')
+    ? index + 3
+    : index;
+}
+
+function bindingElementEnd(
+  tokens: readonly Token[],
+  start: number,
+  end: number,
+  frame: number | undefined,
+  closingDelimiter: (openIndex: number) => number | undefined,
+): number {
+  let index = start;
+  while (index < end) {
+    const token = tokens[index];
+    if (isPunct(token, ',') && token?.parameterFrame === frame && token?.parameterType !== true) {
+      return index + 1;
+    }
+    if (isPunct(token, '(') || isPunct(token, '[') || isPunct(token, '{')) {
+      const close = closingDelimiter(index);
+      if (close !== undefined && close < end) {
+        index = close + 1;
+        continue;
+      }
+    }
+    index++;
+  }
+  return end;
 }
 
 /** Index balanced delimiters once, lazily, so nested option calls do not rescan suffixes. */

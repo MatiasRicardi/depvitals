@@ -1,0 +1,15 @@
+{
+  "dependencies": {
+    "real-after": "*",
+    "real-before": "*",
+    "real-default": "*",
+    "real-key": "*",
+    "real-loader": "*",
+    "real-module": "*",
+    "real-type": "*",
+    "fake-body": "*",
+    "fake-default": "*",
+    "fake-inherited": "*",
+    "fake-template": "*"
+  }
+}

@@ -1425,3 +1425,42 @@ describe('Step 78 dynamic import options through the compiled CLI', () => {
     expect(result.stderr).toContain('Unterminated string');
   });
 });
+
+describe('Step 79 function require parameter ownership through compiled CLI', () => {
+  it.each(['declared', 'undeclared'] as const)(
+    '%s parameter bindings preserve exact findings',
+    (mode) => {
+      const project = join(
+        REPO_ROOT,
+        'test',
+        'fixtures',
+        'analysis',
+        `require-function-parameters-${mode}`,
+      );
+      const before = readdirSync(project).map((name) => [
+        name,
+        readFileSync(join(project, name), 'utf8'),
+      ]);
+      expect(runBuilt(project)).toEqual({
+        status: 1,
+        stdout:
+          mode === 'declared'
+            ? 'DepVitals\n\nUnused dependencies (4)\n  fake-body\n  fake-default\n  fake-inherited\n  fake-template\n'
+            : 'DepVitals\n\nMissing dependencies (7)\n  real-after\n  real-before\n  real-default\n  real-key\n  real-loader\n  real-module\n  real-type\n',
+        stderr: '',
+      });
+      expect(
+        readdirSync(project).map((name) => [name, readFileSync(join(project, name), 'utf8')]),
+      ).toEqual(before);
+    },
+  );
+  it('keeps lexical errors fatal even when require is shadowed', () => {
+    const result = runProject(
+      {},
+      { 'index.cjs': "function local(require) { require('unterminated" },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Unterminated string');
+  });
+});

@@ -208,6 +208,22 @@ describe('extractModuleSpecifiers', () => {
     });
   });
 
+  it('keeps all import/export kinds independent of a require parameter', () => {
+    expect(
+      extractModuleSpecifiers(
+        `import {require as loader} from 'real-static';
+      function local(require) { require('fake-local'); import('real-dynamic'); }
+      export {value} from 'real-export'; require('real-global');`,
+        { module: true },
+      ),
+    ).toEqual([
+      { specifier: 'real-static', kind: 'import' },
+      { specifier: 'real-dynamic', kind: 'dynamic-import' },
+      { specifier: 'real-export', kind: 'export-from' },
+      { specifier: 'real-global', kind: 'require' },
+    ]);
+  });
+
   describe('positive cases', () => {
     it('extracts default and named imports', () => {
       const source = `
