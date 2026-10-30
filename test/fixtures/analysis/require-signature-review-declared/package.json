@@ -1,0 +1,11 @@
+{
+  "dependencies": {
+    "real-after": "*",
+    "real-first": "*",
+    "real-generic": "*",
+    "real-implementation": "*",
+    "fake-bound": "*",
+    "fake-newline": "*",
+    "fake-regex": "*"
+  }
+}

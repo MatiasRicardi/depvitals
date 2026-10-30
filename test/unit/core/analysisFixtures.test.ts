@@ -46,6 +46,39 @@ const SCENARIOS: {
   note: string;
 }[] = [
   ...(['declared', 'undeclared'] as const).map((mode) => ({
+    name: `require-signature-review-${mode}`,
+    result: {
+      unusedDependencies: mode === 'declared' ? ['fake-bound', 'fake-newline', 'fake-regex'] : [],
+      unusedDevDependencies: [],
+      missingDependencies:
+        mode === 'undeclared'
+          ? ['real-after', 'real-first', 'real-generic', 'real-implementation']
+          : [],
+    },
+    note: 'Bodyless signatures restore global scope; generic default type names never become bindings, while real require parameters still bind.',
+  })),
+  ...(['declared', 'undeclared'] as const).map((mode) => ({
+    name: `require-function-parameters-${mode}`,
+    result: {
+      unusedDependencies:
+        mode === 'declared' ? ['fake-body', 'fake-default', 'fake-inherited', 'fake-template'] : [],
+      unusedDevDependencies: [],
+      missingDependencies:
+        mode === 'undeclared'
+          ? [
+              'real-after',
+              'real-before',
+              'real-default',
+              'real-key',
+              'real-loader',
+              'real-module',
+              'real-type',
+            ]
+          : [],
+    },
+    note: 'Function parameter bindings suppress only their owned requires, including earlier defaults and nested bodies; keys/types and real module imports stay evidence.',
+  })),
+  ...(['declared', 'undeclared'] as const).map((mode) => ({
     name: `dynamic-import-options-${mode}`,
     result: {
       unusedDependencies:

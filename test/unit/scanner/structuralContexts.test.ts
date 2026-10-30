@@ -10,6 +10,8 @@ import {
 
 import { expressionOwnerCases } from '../../helpers/expressionOwnerCases.js';
 
+import { requireFunctionParameterCases } from '../../helpers/requireFunctionParameterCases.js';
+
 const memberPrefixes = [
   ['two bare fields', 'a\nb', false],
   ['initialized then bare', 'a = 1\nb', false],
@@ -525,5 +527,14 @@ describe('Step 74 function and class expression ownership', () => {
     expect(extractModuleSpecifiers(source + " require('real-after');")).toEqual([
       { specifier: 'real-after', kind: 'require' },
     ]);
+  });
+});
+
+describe('Step 79 require parameter bindings in explicit functions', () => {
+  it.each(requireFunctionParameterCases)('$name', (scenario) => {
+    assertSyntax(scenario.source, scenario.fileName.endsWith('.ts'));
+    expect(extractModuleSpecifiers(scenario.source).map(({ specifier }) => specifier)).toEqual(
+      scenario.expected,
+    );
   });
 });
