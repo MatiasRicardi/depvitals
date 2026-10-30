@@ -1,5 +1,17 @@
 /** Step 80 review regressions and adjacent controls; source is never evaluated. */
 export const requireParameterReviewCases = [
+  ...['other =>', '(other) =>', '() =>'].map((alternative) => ({
+    name: `plain parenthesized consequent and alternate ${alternative}`,
+    fileName: 'case.mjs',
+    source: `const f = flag ? (require) : ${alternative} require('real'); require('outside');`,
+    expected: ['real', 'outside'],
+  })),
+  ...['require', 'require: Loader'].map((parameter) => ({
+    name: `typed arrow consequent (${parameter}) retains its parameter scope`,
+    fileName: 'case.ts',
+    source: `const f = flag ? (${parameter}): Result => require('fake') : require('real'); require('outside');`,
+    expected: ['real', 'outside'],
+  })),
   ...[
     "const o = { list: [0, foo(require)], value: require('real') }; require('outside');",
     "const o = { value: call(0, foo(require), require('real')) }; require('outside');",

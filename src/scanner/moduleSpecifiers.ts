@@ -1654,15 +1654,10 @@ function tokenize(
         tokenLineBreakBefore,
         currentClass()?.member?.start,
       );
-      const previousToken = tokens[tokens.length - 1];
-      const arrowBodyParenthesis =
-        isPunct(previousToken, '>') &&
-        isArrowHead(tokens[tokens.length - 2], previousToken?.offset);
       // A ternary's alternate may itself be an arrow. Its => is not proof that
-      // this body's parentheses were parameters: a typed nested arrow must still
+      // the consequent's parentheses were parameters: a typed arrow must still
       // leave the enclosing conditional's colon after its own body.
-      const needsConditionalEnd =
-        arrowBodyParenthesis && conditional !== undefined && atLexicalDepth(conditional);
+      const needsConditionalEnd = conditional !== undefined && atLexicalDepth(conditional);
       const selectedSignature =
         signatureCandidate?.isArrowSignature === true &&
         !arrowFollowsParametersSafely(source, i, n, jsx, needsConditionalEnd)
