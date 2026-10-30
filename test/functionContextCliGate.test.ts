@@ -19,6 +19,7 @@ import { implicitModuleCases } from './helpers/implicitModuleCases.js';
 import { expressionOwnerCases } from './helpers/expressionOwnerCases.js';
 import { arrowAssertionCases } from './helpers/pr76ArrowAssertionCases.js';
 import { assertionBoundaryCases } from './helpers/pr76AssertionBoundaryCases.js';
+import { requireParameterReviewCases } from './helpers/requireParameterReviewCases.js';
 import { remainingParserCases } from './helpers/pr76RemainingCases.js';
 
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
@@ -1528,5 +1529,51 @@ describe('Step 80 arrow and method require ownership through compiled CLI', () =
     expect(result.status).toBe(1);
     expect(result.stdout).toBe('');
     expect(result.stderr).toContain('Unterminated string');
+  });
+});
+
+describe('Step 80 review through analyzer and compiled CLI', () => {
+  it.each(
+    requireParameterReviewCases.flatMap((scenario) =>
+      (['declared', 'undeclared'] as const).map((mode) => ({ ...scenario, mode })),
+    ),
+  )('$name ($mode)', async ({ source, fileName, expected, mode }) => {
+    const project = mkdtempSync(join(tmpdir(), 'depvitals-step80-review-'));
+    try {
+      const real = [...new Set(expected)].sort();
+      const manifest = JSON.stringify({
+        type: 'module',
+        ...(mode === 'declared'
+          ? { dependencies: Object.fromEntries([...real, 'fake'].map((name) => [name, '*'])) }
+          : {}),
+      });
+      writeFileSync(join(project, 'package.json'), manifest);
+      writeFileSync(join(project, fileName), source);
+      expect(await analyzeProject(project)).toEqual({
+        projectRoot: project,
+        unusedDependencies: mode === 'declared' ? ['fake'] : [],
+        unusedDevDependencies: [],
+        missingDependencies: mode === 'undeclared' ? real : [],
+      });
+      expect(runBuilt(project)).toEqual({
+        status: 1,
+        stdout:
+          mode === 'declared'
+            ? 'DepVitals\n\nUnused dependencies (1)\n  fake\n'
+            : `DepVitals\n\nMissing dependencies (${String(real.length)})\n${real.map((name) => `  ${name}\n`).join('')}`,
+        stderr: '',
+      });
+      expect(readdirSync(project).sort()).toEqual([fileName, 'package.json'].sort());
+      expect(readFileSync(join(project, fileName), 'utf8')).toBe(source);
+      expect(readFileSync(join(project, 'package.json'), 'utf8')).toBe(manifest);
+    } finally {
+      rmSync(project, { recursive: true, force: true });
+    }
+  });
+  it('keeps malformed JSX defaults fatal', () => {
+    const result = runProject({}, { 'index.tsx': "const f = (value = <p>don't (" });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Unterminated JSX');
   });
 });

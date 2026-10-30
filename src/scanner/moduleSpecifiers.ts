@@ -255,7 +255,8 @@ type PendingClassContext = LexicalDepth & {
 // A brace owns its closing action. In particular an initializer's object/function cannot close
 // the enclosing class member, and only a function body restores the nearest function grammar.
 type BraceContext =
-  | { readonly role: 'object' | 'block' }
+  | { readonly role: 'object'; readonly depth: LexicalDepth }
+  | { readonly role: 'block' }
   | { readonly role: 'class'; readonly state: ClassContext; readonly isExpression: boolean }
   | { readonly role: 'static-block'; readonly owner: ClassContext }
   | { readonly role: 'function'; readonly context: FuncContext; readonly owner?: ClassContext };
@@ -415,6 +416,12 @@ function tokenize(
   const insideObjectLiteral = (): boolean =>
     braceContexts[braceContexts.length - 1]?.role === 'object';
   const insideClassBody = (): boolean => braceContexts[braceContexts.length - 1]?.role === 'class';
+  const atMethodContainer = (): boolean => {
+    const brace = braceContexts[braceContexts.length - 1];
+    return brace?.role === 'object'
+      ? atLexicalDepth(brace.depth)
+      : brace?.role === 'class' && atLexicalDepth(brace.state);
+  };
   const currentClass = (): ClassContext | undefined => {
     const brace = braceContexts[braceContexts.length - 1];
     return brace?.role === 'class' ? brace.state : undefined;
@@ -984,7 +991,12 @@ function tokenize(
         atRoot &&
         annotation.role === 'return' &&
         annotation.signature.isArrowSignature &&
-        !functionTypeArrowContinues(source, i, n)
+        !functionTypeArrowContinues(
+          source,
+          i,
+          n,
+          conditional !== undefined && atLexicalDepth(conditional),
+        )
       ) {
         // The signature's own `=>`: everything after it is the body, not the return type.
         typedArrowContext = annotation.signature.context;
@@ -1211,7 +1223,7 @@ function tokenize(
           (value === 'export' && atRoot && exportSignalsModule(source, i)));
       const classMemberName =
         value === 'class' &&
-        (insideObjectLiteral() || insideClassBody()) &&
+        atMethodContainer() &&
         memberDeclarationHead(
           tokens,
           tokens.length,
@@ -1325,7 +1337,7 @@ function tokenize(
       // when a following `*` is seen). The context is consumed at the body `{`.
       const methodName =
         value === 'function' &&
-        (insideObjectLiteral() || insideClassBody()) &&
+        atMethodContainer() &&
         memberDeclarationHead(
           tokens,
           tokens.length,
@@ -1610,7 +1622,19 @@ function tokenize(
       } else if (isStaticBlock && owner !== undefined) {
         braceContexts.push({ role: 'static-block', owner });
       } else {
-        braceContexts.push({ role: isObject ? 'object' : 'block' });
+        braceContexts.push(
+          isObject
+            ? {
+                role: 'object',
+                depth: {
+                  parenDepth,
+                  bracketDepth,
+                  braceDepth: braceContexts.length + 1,
+                  frameDepth: frames.length,
+                },
+              }
+            : { role: 'block' },
+        );
       }
 
       // Count the brace inside the innermost open `${...}` or JSX `{...}` expression so its closing
@@ -1625,14 +1649,23 @@ function tokenize(
       const signatureCandidate = parameterSignatureContext(
         tokens,
         pending !== undefined && atLexicalDepth(pending) ? pending : undefined,
-        insideObjectLiteral() || insideClassBody(),
+        atMethodContainer(),
         insideClassBody(),
         tokenLineBreakBefore,
         currentClass()?.member?.start,
       );
+      const previousToken = tokens[tokens.length - 1];
+      const arrowBodyParenthesis =
+        isPunct(previousToken, '>') &&
+        isArrowHead(tokens[tokens.length - 2], previousToken?.offset);
+      // A ternary's alternate may itself be an arrow. Its => is not proof that
+      // this body's parentheses were parameters: a typed nested arrow must still
+      // leave the enclosing conditional's colon after its own body.
+      const needsConditionalEnd =
+        arrowBodyParenthesis && conditional !== undefined && atLexicalDepth(conditional);
       const selectedSignature =
         signatureCandidate?.isArrowSignature === true &&
-        !arrowFollowsParametersSafely(source, i, n, jsx)
+        !arrowFollowsParametersSafely(source, i, n, jsx, needsConditionalEnd)
           ? undefined
           : signatureCandidate;
       const signature =
@@ -2006,45 +2039,145 @@ function jsxTagIsGeneric(source: string, i: number, n: number): boolean {
 // because a template literal is a single argument value, so its internal parentheses never shape
 // the parameter list. Regex-vs-division tracking mirrors the main tokenizer so a regex default
 // (for example `= /a/)`) is skipped instead of read as division.
-function arrowFollowsParameters(source: string, open: number, n: number, jsx = false): boolean {
+function arrowFollowsParameters(
+  source: string,
+  open: number,
+  n: number,
+  jsx = false,
+  needsConditionalEnd = false,
+  mode: 'parameters' | 'conditional-body' = 'parameters',
+): boolean {
   let depth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
+  let conditionalDepth = 0;
   let prevKind: PrevKind = 'start';
   let prevPunct: string | undefined;
 
   let k = open;
-  let jsxElements = 0;
+  const jsxFrames: Frame[] = [];
 
   while (k < n) {
-    k = skipTrivia(source, k, n);
-    const ch = source[k];
-
-    if (ch === undefined) {
-      break;
-    }
-
-    // A JSX closing tag's slash is not a regex default. Only an established opening
-    // element enables this boundary, so a comparison against a regex stays JavaScript.
-    if (jsx && ch === '<') {
-      if (source[k + 1] === '/' && jsxElements > 0) {
+    let ch = source[k];
+    const frame = jsxFrames[jsxFrames.length - 1];
+    if (frame?.kind === 'jsx-text') {
+      if (ch === '{') {
+        jsxFrames.push({ kind: 'jsx-expr', depth: 0, offset: k });
+        prevKind = 'start';
+        prevPunct = undefined;
+        k++;
+        continue;
+      }
+      if (ch === '<' && source[k + 1] === '/') {
         const end = source.indexOf('>', k + 2);
         if (end < 0) {
           return false;
         }
-        jsxElements--;
+        jsxFrames.pop();
+        prevKind = 'template';
+        prevPunct = undefined;
         k = end + 1;
-        prevKind = 'identifier';
+        continue;
+      }
+      // Quotes, parentheses, backticks and comment markers in children are inert.
+      if (ch !== '<') {
+        k++;
+        continue;
+      }
+    } else if (frame?.kind === 'jsx-tag') {
+      if (ch === '<' && skipTrivia(source, frame.nameEnd, n) === k) {
+        k = readJsxTypeArguments(source, k, n, []);
+      } else if (ch === '{') {
+        jsxFrames.push({ kind: 'jsx-expr', depth: 0, offset: k });
+        prevKind = 'start';
+        prevPunct = undefined;
+        k++;
+      } else if (ch === '"' || ch === "'") {
+        k = skipJsxAttributeValue(source, k, n);
+      } else if (ch === '/' && source[k + 1] === '>') {
+        jsxFrames.pop();
+        prevKind = 'template';
+        prevPunct = undefined;
+        k += 2;
+      } else if (ch === '>') {
+        jsxFrames.pop();
+        jsxFrames.push({ kind: 'jsx-text', name: frame.name, offset: frame.offset });
+        k++;
+      } else {
+        k++;
+      }
+      continue;
+    } else {
+      k = skipTrivia(source, k, n);
+      ch = source[k];
+    }
+    if (ch === undefined) {
+      break;
+    }
+    if (
+      jsx &&
+      ch === '<' &&
+      (frame?.kind === 'jsx-text' || isRegexStart(prevKind, prevPunct, false, false, false))
+    ) {
+      if (source[k + 1] === '>') {
+        jsxFrames.push({ kind: 'jsx-text', name: null, offset: k });
+        k += 2;
         continue;
       }
       if (
-        isRegexStart(prevKind, prevPunct, false, false, false) &&
-        (source[k + 1] === '>' ||
-          (isIdentifierStartAt(source, k + 1) && !jsxTagIsGeneric(source, k + 1, n)))
+        isIdentifierStartAt(source, k + 1) &&
+        (frame?.kind === 'jsx-text' || !jsxTagIsGeneric(source, k + 1, n))
       ) {
-        jsxElements++;
+        const tag = readJsxTagName(source, k + 1, n);
+        jsxFrames.push({ kind: 'jsx-tag', name: tag.name, offset: k, nameEnd: tag.end });
+        k = tag.end;
+        continue;
       }
     }
-    if (jsxElements > 0 && ch === '>' && source[k - 1] === '/') {
-      jsxElements--;
+    if (frame?.kind === 'jsx-text') {
+      k++;
+      continue;
+    }
+    if (frame?.kind === 'jsx-expr') {
+      if (ch === '}') {
+        if (frame.depth === 0) {
+          jsxFrames.pop();
+          prevKind = 'template';
+          prevPunct = undefined;
+          k++;
+          continue;
+        }
+        frame.depth--;
+      } else if (ch === '{') {
+        frame.depth++;
+      }
+    }
+
+    // Reuse the same opaque regions to confirm a typed nested arrow in a ternary.
+    // Colons in JSX, object literals, nested delimiters or inner conditionals do not
+    // close the enclosing conditional. Stop at this expression's own boundary.
+    if (mode === 'conditional-body') {
+      if (jsxFrames.length === 0 && depth === 0 && bracketDepth === 0 && braceDepth === 0) {
+        if (ch === ':') {
+          if (conditionalDepth === 0) {
+            return true;
+          }
+          conditionalDepth--;
+        } else if (
+          ch === '?' &&
+          source[k + 1] !== '?' &&
+          source[k - 1] !== '?' &&
+          source[k + 1] !== '.'
+        ) {
+          conditionalDepth++;
+        } else if ([';', ',', ')', ']', '}'].includes(ch)) {
+          return false;
+        }
+      }
+      if (ch === '[') bracketDepth++;
+      else if (ch === ']') bracketDepth--;
+      else if (ch === '{') braceDepth++;
+      else if (ch === '}') braceDepth--;
     }
 
     // String literals: their brackets and slashes are inert text, so skip the whole value.
@@ -2079,12 +2212,16 @@ function arrowFollowsParameters(source: string, open: number, n: number, jsx = f
       prevKind = 'punct';
       prevPunct = ')';
 
-      if (depth === 0) {
+      if (depth === 0 && mode === 'parameters') {
         const j = skipTrivia(source, k + 1, n);
-
+        if (source[j] === '=' && source[j + 1] === '>') {
+          return true;
+        }
+        const arrow = source[j] === ':' ? arrowAfterReturnType(source, j + 1, n) : undefined;
         return (
-          (source[j] === '=' && source[j + 1] === '>') ||
-          (source[j] === ':' && arrowFollowsReturnType(source, j + 1, n))
+          arrow !== undefined &&
+          (!needsConditionalEnd ||
+            arrowFollowsParameters(source, arrow + 2, n, jsx, false, 'conditional-body'))
         );
       }
     } else if (isIdentifierStartAt(source, k)) {
@@ -2150,7 +2287,7 @@ function computedMethodFollows(source: string, start: number, n: number): boolea
   return false;
 }
 
-function arrowFollowsReturnType(source: string, start: number, n: number): boolean {
+function arrowAfterReturnType(source: string, start: number, n: number): number | undefined {
   let parenDepth = 0;
   let bracketDepth = 0;
   let braceDepth = 0;
@@ -2161,7 +2298,7 @@ function arrowFollowsReturnType(source: string, start: number, n: number): boole
     index = skipTrivia(source, index, n);
     const ch = source[index];
     if (ch === undefined) {
-      return false;
+      return undefined;
     }
 
     if (ch === "'" || ch === '"') {
@@ -2174,7 +2311,7 @@ function arrowFollowsReturnType(source: string, start: number, n: number): boole
     }
     if (ch === '=' && source[index + 1] === '>') {
       if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0 && angleDepth === 0) {
-        return true;
+        return index;
       }
       index += 2;
       continue;
@@ -2196,7 +2333,7 @@ function arrowFollowsReturnType(source: string, start: number, n: number): boole
         identifier.value !== 'import' &&
         !TYPE_OPERAND_KEYWORDS.has(identifier.value)
       ) {
-        return false;
+        return undefined;
       }
       index = identifier.end;
       continue;
@@ -2206,28 +2343,28 @@ function arrowFollowsReturnType(source: string, start: number, n: number): boole
       parenDepth++;
     } else if (ch === ')') {
       if (parenDepth === 0) {
-        return false;
+        return undefined;
       }
       parenDepth--;
     } else if (ch === '[') {
       bracketDepth++;
     } else if (ch === ']') {
       if (bracketDepth === 0) {
-        return false;
+        return undefined;
       }
       bracketDepth--;
     } else if (ch === '{') {
       braceDepth++;
     } else if (ch === '}') {
       if (braceDepth === 0) {
-        return false;
+        return undefined;
       }
       braceDepth--;
     } else if (ch === '<') {
       angleDepth++;
     } else if (ch === '>') {
       if (angleDepth === 0) {
-        return false;
+        return undefined;
       }
       angleDepth--;
     } else if (
@@ -2237,13 +2374,13 @@ function arrowFollowsReturnType(source: string, start: number, n: number): boole
       angleDepth === 0 &&
       (ch === ';' || ch === ',')
     ) {
-      return false;
+      return undefined;
     }
 
     index++;
   }
 
-  return false;
+  return undefined;
 }
 
 function arrowFollowsParametersSafely(
@@ -2251,9 +2388,10 @@ function arrowFollowsParametersSafely(
   open: number,
   n: number,
   jsx = false,
+  needsConditionalEnd = false,
 ): boolean {
   try {
-    return arrowFollowsParameters(source, open, n, jsx);
+    return arrowFollowsParameters(source, open, n, jsx, needsConditionalEnd);
   } catch (error) {
     if (error instanceof ModuleSpecifierError) {
       return false;
@@ -2476,7 +2614,12 @@ const TYPE_OPERAND_KEYWORDS: ReadonlySet<string> = new Set([
  * (`(): (x: number) => void => {}`); once the return type is over, the next significant token is the
  * body (`{`), a statement terminator or a delimiter that closes the surrounding code.
  */
-function functionTypeArrowContinues(source: string, arrowEnd: number, n: number): boolean {
+function functionTypeArrowContinues(
+  source: string,
+  arrowEnd: number,
+  n: number,
+  conditionalEnd = false,
+): boolean {
   let depth = 0;
 
   for (let i = arrowEnd + 1; i < n; i++) {
@@ -2493,7 +2636,7 @@ function functionTypeArrowContinues(source: string, arrowEnd: number, n: number)
 
       depth--;
     } else if (depth === 0) {
-      if (ch === '{' || ch === ';' || ch === ',') {
+      if (ch === '{' || ch === ';' || ch === ',' || (conditionalEnd && ch === ':')) {
         return false;
       }
 
@@ -3011,7 +3154,9 @@ function arrowParameterPrefix(token: Token | undefined): boolean {
   }
   return (
     token.kind === 'identifier' &&
-    ['return', 'throw', 'yield', 'await', 'void', 'typeof', 'delete'].includes(token.value)
+    ['return', 'throw', 'yield', 'await', 'void', 'typeof', 'delete', 'default'].includes(
+      token.value,
+    )
   );
 }
 
