@@ -104,6 +104,7 @@ type RequireScope = {
 };
 
 type Token = {
+  readonly signatureContext?: FuncContext;
   readonly requireScope?: RequireScope;
   readonly parameterFrame?: number;
   readonly parameterType?: boolean;
@@ -707,7 +708,7 @@ function tokenize(
         expressionFunctionContext,
       )
     ) {
-      expressionFunctionContexts.pop();
+      closeRequireScope(expressionFunctionContexts.pop()?.requireScope);
       expressionFunctionContext = expressionFunctionContexts[expressionFunctionContexts.length - 1];
     }
 
@@ -717,11 +718,17 @@ function tokenize(
       atLexicalDepth(typeAnnotation.signature.owner) &&
       atTypeRoot(typeAnnotation) &&
       !typeAnnotation.typeOperandExpected &&
-      identifier !== undefined &&
-      (!TYPE_OPERAND_KEYWORDS.has(identifier.value) || identifier.value === 'const')
+      ((identifier !== undefined &&
+        (!TYPE_OPERAND_KEYWORDS.has(identifier.value) || identifier.value === 'const')) ||
+        (ch === '[' &&
+          typeAnnotation.signature.context.isClassMember === true &&
+          computedMethodFollows(source, i, n)))
     ) {
       const signature = typeAnnotation.signature;
-      if (pendingFunctionContexts[pendingFunctionContexts.length - 1] === signature.context) {
+      if (
+        pendingFunctionContexts[pendingFunctionContexts.length - 1]?.requireScope ===
+        signature.context.requireScope
+      ) {
         closeRequireScope(pendingFunctionContexts.pop()?.requireScope);
       }
       if (classState !== undefined && signature.context.isClassMember === true) {
@@ -732,14 +739,16 @@ function tokenize(
     }
     const pendingBodylessSignature = pendingFunctionContexts[pendingFunctionContexts.length - 1];
     if (
-      typeAnnotation === undefined &&
-      tokenLineBreakBefore &&
-      ch !== '{' &&
-      ch !== ':' &&
       pendingBodylessSignature?.phase === 'awaiting-body' &&
-      atLexicalDepth(pendingBodylessSignature)
+      atLexicalDepth(pendingBodylessSignature) &&
+      ((typeAnnotation === undefined && tokenLineBreakBefore && ch !== '{' && ch !== ':') ||
+        (ch === '}' &&
+          (typeAnnotation === undefined ||
+            (typeAnnotation.role === 'return' && atTypeRoot(typeAnnotation)))))
     ) {
       closeRequireScope(pendingFunctionContexts.pop()?.requireScope);
+      typeAnnotation = undefined;
+      inType = false;
       resetExpressionState();
     }
     if (
@@ -798,7 +807,7 @@ function tokenize(
           context,
         )
       ) {
-        expressionFunctionContexts.pop();
+        closeRequireScope(expressionFunctionContexts.pop()?.requireScope);
         context = expressionFunctionContexts[expressionFunctionContexts.length - 1];
       }
 
@@ -958,7 +967,11 @@ function tokenize(
         inType = false;
         lineTerminatorSinceLastToken = false;
 
-        if (!annotation.signature.isFunctionKeyword) {
+        if (
+          !annotation.signature.isFunctionKeyword &&
+          pendingFunctionContexts[pendingFunctionContexts.length - 1]?.requireScope !==
+            annotation.signature.context.requireScope
+        ) {
           pendingFunctionContexts.push({
             ...annotation.signature.context,
             ...annotation.signature.owner,
@@ -1347,10 +1360,32 @@ function tokenize(
           phase: 'awaiting-parameters',
         });
       }
+      // A bare arrow parameter has no opening parenthesis to own its binding range.
+      const next = !inType && !isMemberName ? skipTrivia(source, i, n) : n;
+      const singleArrowContext: FuncContext | undefined =
+        source[next] === '=' && source[next + 1] === '>'
+          ? {
+              async:
+                prevKind === 'identifier' &&
+                previousIdentifier === 'async' &&
+                !tokenLineBreakBefore,
+              generator: false,
+              isExpression: false,
+              requireScope: {
+                parent: requireScopes[requireScopes.length - 1],
+                bindings: [{ start: tokens.length, end: tokens.length + 1 }],
+                inParameters: false,
+              },
+            }
+          : undefined;
+      if (singleArrowContext?.requireScope !== undefined) {
+        requireScopes.push(singleArrowContext.requireScope);
+      }
       emit({
         kind: 'identifier',
         value,
         offset: start,
+        ...(singleArrowContext === undefined ? {} : { signatureContext: singleArrowContext }),
         endOffset: i,
         ...(value === 'require' && requireScopes.length > 0
           ? { requireScope: requireScopes[requireScopes.length - 1] }
@@ -1587,25 +1622,39 @@ function tokenize(
       // A `(` after a control keyword opens a control head; only its matching `)` may then be
       // followed by a regex literal, so the nesting depth of every `(` has to be tracked.
       const pending = pendingFunctionContexts[pendingFunctionContexts.length - 1];
-      const previousToken = tokens[tokens.length - 1];
-      const arrowBodyParenthesis =
-        previousToken?.kind === 'punct' &&
-        previousToken.value === '>' &&
-        isArrowHead(tokens[tokens.length - 2], previousToken.offset);
-      const signatureCandidate = arrowBodyParenthesis
-        ? undefined
-        : parameterSignatureContext(
-            tokens,
-            pending !== undefined && atLexicalDepth(pending) ? pending : undefined,
-            insideObjectLiteral() || insideClassBody(),
-            insideClassBody(),
-            tokenLineBreakBefore,
-            currentClass()?.member?.start,
-          );
-      const signature =
-        signatureCandidate?.isArrowSignature === true && !arrowFollowsParametersSafely(source, i, n)
+      const signatureCandidate = parameterSignatureContext(
+        tokens,
+        pending !== undefined && atLexicalDepth(pending) ? pending : undefined,
+        insideObjectLiteral() || insideClassBody(),
+        insideClassBody(),
+        tokenLineBreakBefore,
+        currentClass()?.member?.start,
+      );
+      const selectedSignature =
+        signatureCandidate?.isArrowSignature === true &&
+        !arrowFollowsParametersSafely(source, i, n, jsx)
           ? undefined
           : signatureCandidate;
+      const signature =
+        selectedSignature === undefined
+          ? undefined
+          : {
+              ...selectedSignature,
+              context:
+                selectedSignature.context.requireScope !== undefined
+                  ? selectedSignature.context
+                  : {
+                      ...selectedSignature.context,
+                      requireScope: {
+                        parent: requireScopes[requireScopes.length - 1],
+                        bindings: [],
+                        inParameters: true,
+                      },
+                    },
+            };
+      if (signature?.context.requireScope !== undefined) {
+        requireScopes.push(signature.context.requireScope);
+      }
       parameterContexts.push({
         openIndex: tokens.length,
         bindingStart: tokens.length + 1,
@@ -1641,9 +1690,6 @@ function tokenize(
         atLexicalDepth(pending) &&
         signature?.isFunctionKeyword === true
       ) {
-        if (pending.requireScope !== undefined) {
-          requireScopes.push(pending.requireScope);
-        }
         pending.parameterDepth = parenDepth + 1;
         pending.phase = 'parameters';
       }
@@ -1668,7 +1714,7 @@ function tokenize(
       }
 
       const parameters = parameterContexts.pop();
-      if (parameters?.signature?.isFunctionKeyword === true) {
+      if (parameters?.signature !== undefined) {
         recordRequireBinding(parameters, tokens.length);
         const scope = parameters.signature.context.requireScope;
         if (scope !== undefined) {
@@ -1677,6 +1723,18 @@ function tokenize(
       }
       matchingOpen = parameters?.openIndex;
       closedParameterSignature = parameters?.signature;
+      if (
+        closedParameterSignature !== undefined &&
+        !closedParameterSignature.isFunctionKeyword &&
+        !closedParameterSignature.isArrowSignature
+      ) {
+        pendingFunctionContexts.push({
+          ...closedParameterSignature.context,
+          ...closedParameterSignature.owner,
+          parameterDepth: undefined,
+          phase: 'awaiting-body',
+        });
+      }
       afterControlHead = parameters?.control === true;
 
       if (parenDepth > 0) {
@@ -1716,17 +1774,15 @@ function tokenize(
 
       if (context !== undefined) {
         if (source[next] === '{') {
-          if (typedArrowContext !== undefined) {
-            pendingFunctionContexts.push({
-              ...typedArrowContext,
-              parenDepth,
-              bracketDepth,
-              braceDepth: braceContexts.length,
-              frameDepth: frames.length,
-              parameterDepth: undefined,
-              phase: 'awaiting-body',
-            });
-          }
+          pendingFunctionContexts.push({
+            ...context,
+            parenDepth,
+            bracketDepth,
+            braceDepth: braceContexts.length,
+            frameDepth: frames.length,
+            parameterDepth: undefined,
+            phase: 'awaiting-body',
+          });
         } else {
           const parameterOwner = nearestFunctionParameter(parameterContexts);
           const classMemberOwner = nearestClassField(braceContexts);
@@ -1794,6 +1850,8 @@ function tokenize(
     }
 
     const previousToken = tokens[tokens.length - 1];
+    const openingSignature =
+      ch === '(' ? parameterContexts[parameterContexts.length - 1]?.signature?.context : undefined;
     emit({
       kind: 'punct',
       value: ch,
@@ -1807,6 +1865,7 @@ function tokenize(
         ? { expressionEnd: true }
         : {}),
       ...equalsOperator,
+      ...(openingSignature === undefined ? {} : { signatureContext: openingSignature }),
       ...(matchingOpen !== undefined ? { matchingOpen } : {}),
       ...(closedClassMemberBoundary || opensClassMemberBoundary || (ch === ';' && insideClassBody())
         ? { memberSeparator: true }
@@ -1947,12 +2006,13 @@ function jsxTagIsGeneric(source: string, i: number, n: number): boolean {
 // because a template literal is a single argument value, so its internal parentheses never shape
 // the parameter list. Regex-vs-division tracking mirrors the main tokenizer so a regex default
 // (for example `= /a/)`) is skipped instead of read as division.
-function arrowFollowsParameters(source: string, open: number, n: number): boolean {
+function arrowFollowsParameters(source: string, open: number, n: number, jsx = false): boolean {
   let depth = 0;
   let prevKind: PrevKind = 'start';
   let prevPunct: string | undefined;
 
   let k = open;
+  let jsxElements = 0;
 
   while (k < n) {
     k = skipTrivia(source, k, n);
@@ -1960,6 +2020,31 @@ function arrowFollowsParameters(source: string, open: number, n: number): boolea
 
     if (ch === undefined) {
       break;
+    }
+
+    // A JSX closing tag's slash is not a regex default. Only an established opening
+    // element enables this boundary, so a comparison against a regex stays JavaScript.
+    if (jsx && ch === '<') {
+      if (source[k + 1] === '/' && jsxElements > 0) {
+        const end = source.indexOf('>', k + 2);
+        if (end < 0) {
+          return false;
+        }
+        jsxElements--;
+        k = end + 1;
+        prevKind = 'identifier';
+        continue;
+      }
+      if (
+        isRegexStart(prevKind, prevPunct, false, false, false) &&
+        (source[k + 1] === '>' ||
+          (isIdentifierStartAt(source, k + 1) && !jsxTagIsGeneric(source, k + 1, n)))
+      ) {
+        jsxElements++;
+      }
+    }
+    if (jsxElements > 0 && ch === '>' && source[k - 1] === '/') {
+      jsxElements--;
     }
 
     // String literals: their brackets and slashes are inert text, so skip the whole value.
@@ -2018,6 +2103,53 @@ function arrowFollowsParameters(source: string, open: number, n: number): boolea
   return false;
 }
 
+/** A newline computed method head ends a complete bodyless member return annotation. */
+function computedMethodFollows(source: string, start: number, n: number): boolean {
+  let depth = 0;
+  let index = start;
+  let previous: PrevKind = 'start';
+  let punct: string | undefined;
+  while (index < n) {
+    index = skipTrivia(source, index, n);
+    const ch = source[index];
+    if (ch === undefined) {
+      break;
+    }
+    if (ch === "'" || ch === '"') {
+      index = readString(source, index).next;
+      previous = 'string';
+      continue;
+    }
+    if (ch === '`') {
+      index = skipTemplateLiteral(source, index);
+      previous = 'template';
+      continue;
+    }
+    if (ch === '/' && isRegexStart(previous, punct, false, false, false)) {
+      index = skipRegex(source, index);
+      previous = 'regex';
+      continue;
+    }
+    if (ch === '[') {
+      depth++;
+    } else if (ch === ']') {
+      depth--;
+      if (depth === 0) {
+        return source[skipTrivia(source, index + 1, n)] === '(';
+      }
+    }
+    if (isIdentifierStartAt(source, index) || isUnicodeEscapeStart(source, index)) {
+      index = readIdentifier(source, index).end;
+      previous = 'identifier';
+    } else {
+      previous = isNumberStart(ch) ? 'number' : 'punct';
+      punct = ch;
+      index++;
+    }
+  }
+  return false;
+}
+
 function arrowFollowsReturnType(source: string, start: number, n: number): boolean {
   let parenDepth = 0;
   let bracketDepth = 0;
@@ -2045,6 +2177,28 @@ function arrowFollowsReturnType(source: string, start: number, n: number): boole
         return true;
       }
       index += 2;
+      continue;
+    }
+
+    if (
+      parenDepth === 0 &&
+      bracketDepth === 0 &&
+      braceDepth === 0 &&
+      angleDepth === 0 &&
+      (isIdentifierStartAt(source, index) || isUnicodeEscapeStart(source, index))
+    ) {
+      const identifier = readIdentifier(source, index);
+      const next = skipTrivia(source, identifier.end, n);
+      // An operand followed by a call is runtime code (not a return type). In particular,
+      // a conditional's `: async () =>` must not claim the preceding sequence expression.
+      if (
+        source[next] === '(' &&
+        identifier.value !== 'import' &&
+        !TYPE_OPERAND_KEYWORDS.has(identifier.value)
+      ) {
+        return false;
+      }
+      index = identifier.end;
       continue;
     }
 
@@ -2092,9 +2246,14 @@ function arrowFollowsReturnType(source: string, start: number, n: number): boole
   return false;
 }
 
-function arrowFollowsParametersSafely(source: string, open: number, n: number): boolean {
+function arrowFollowsParametersSafely(
+  source: string,
+  open: number,
+  n: number,
+  jsx = false,
+): boolean {
   try {
-    return arrowFollowsParameters(source, open, n);
+    return arrowFollowsParameters(source, open, n, jsx);
   } catch (error) {
     if (error instanceof ModuleSpecifierError) {
       return false;
@@ -2831,11 +2990,29 @@ function inferArrowContext(tokens: readonly Token[], arrowIndex: number): FuncCo
     markerToken.value === 'async' &&
     asyncModifierIsContinuous(tokens, markerIndex, parametersIndex);
 
-  return {
-    async,
-    generator: false,
-    isExpression: false,
-  };
+  return (
+    parametersStart.signatureContext ?? {
+      async,
+      generator: false,
+      isExpression: false,
+    }
+  );
+}
+
+/** Parameter lists can start at expression/statement boundaries, never after a call's name. */
+function arrowParameterPrefix(token: Token | undefined): boolean {
+  if (token === undefined) {
+    return true;
+  }
+  if (token.kind === 'punct') {
+    return (
+      EXPRESSION_BEFORE_BRACE.has(token.value) || [':', '>', ';', '{', '/'].includes(token.value)
+    );
+  }
+  return (
+    token.kind === 'identifier' &&
+    ['return', 'throw', 'yield', 'await', 'void', 'typeof', 'delete'].includes(token.value)
+  );
 }
 
 function parameterSignatureContext(
@@ -2873,12 +3050,7 @@ function parameterSignatureContext(
   const marker = tokens[nameIndex - 1];
   // A generic signature has no name of its own before `(` when it is anonymous (`async <T,>(v: T) => {}`).
   const startsArrowParameters =
-    openIndex === 0 ||
-    (isIdentifier(name, 'async') &&
-      (openIndex === 1 ||
-        (marker?.kind === 'punct' && ['=', '(', '[', ',', ':'].includes(marker.value)) ||
-        isIdentifier(marker, 'return'))) ||
-    (name?.kind === 'punct' && ['=', '(', '[', ',', ':'].includes(name.value));
+    arrowParameterPrefix(name) || (isIdentifier(name, 'async') && arrowParameterPrefix(marker));
 
   if (startsArrowParameters) {
     const asyncToken = name?.kind === 'identifier' && name.value === 'async' ? name : undefined;
@@ -3813,6 +3985,16 @@ function bindingHasRequire(
       break;
     }
     let index = bindingAfterRest(tokens, target.start);
+    // Constructor parameter properties prefix the binding, rather than naming it.
+    let modifier = tokens[index];
+    while (
+      index + 1 < target.end &&
+      modifier?.kind === 'identifier' &&
+      ['public', 'private', 'protected', 'readonly', 'override'].includes(modifier.value)
+    ) {
+      index++;
+      modifier = tokens[index];
+    }
     const token = tokens[index];
     if (token?.kind === 'identifier') {
       const next = tokens[index + 1];

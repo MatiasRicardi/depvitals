@@ -10,6 +10,8 @@ import {
 
 import { expressionOwnerCases } from '../../helpers/expressionOwnerCases.js';
 
+import { requireArrowMethodParameterCases } from '../../helpers/requireArrowMethodParameterCases.js';
+
 import { requireFunctionParameterCases } from '../../helpers/requireFunctionParameterCases.js';
 
 const memberPrefixes = [
@@ -537,4 +539,29 @@ describe('Step 79 require parameter bindings in explicit functions', () => {
       scenario.expected,
     );
   });
+});
+
+describe('Step 80 require parameter bindings in arrows and methods', () => {
+  it.each(requireArrowMethodParameterCases)('$name', (scenario) => {
+    assertSyntax(scenario.source, scenario.fileName.endsWith('.ts'));
+    expect(extractModuleSpecifiers(scenario.source).map(({ specifier }) => specifier)).toEqual(
+      scenario.expected,
+    );
+  });
+});
+
+it.each([
+  "const f = (require) => <p>{require('fake')}</p>; require('real-after');",
+  "const f = <T,>(value = <p>{require('fake-default')}</p>, require: Loader) => <p>{require('fake')}</p>; require('real-after');",
+  "const o = { run(require) { return <p>{() => require('fake')}</p>; } }; require('real-after');",
+])('preserves parameter ownership across JSX overlays: %s', (source) => {
+  const syntax = ts.transpileModule(source, {
+    fileName: 'case.tsx',
+    reportDiagnostics: true,
+    compilerOptions: { target: ts.ScriptTarget.ESNext, jsx: ts.JsxEmit.Preserve },
+  });
+  expect(syntax.diagnostics).toEqual([]);
+  expect(extractModuleSpecifiers(source, { jsx: true })).toEqual([
+    { specifier: 'real-after', kind: 'require' },
+  ]);
 });

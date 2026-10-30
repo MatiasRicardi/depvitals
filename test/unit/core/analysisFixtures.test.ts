@@ -46,6 +46,31 @@ const SCENARIOS: {
   note: string;
 }[] = [
   ...(['declared', 'undeclared'] as const).map((mode) => ({
+    name: `require-arrow-method-parameters-${mode}`,
+    result: {
+      unusedDependencies:
+        mode === 'declared'
+          ? ['fake-arrow', 'fake-class', 'fake-default', 'fake-inherited', 'fake-method']
+          : [],
+      unusedDevDependencies: [],
+      missingDependencies:
+        mode === 'undeclared'
+          ? [
+              'real-after',
+              'real-asi',
+              'real-before',
+              'real-default',
+              'real-inside',
+              'real-key',
+              'real-key-control',
+              'real-method-name',
+              'real-module',
+            ]
+          : [],
+    },
+    note: 'Arrow and method parameters own only their initializers and bodies; computed keys, imports, method names and exterior calls remain evidence.',
+  })),
+  ...(['declared', 'undeclared'] as const).map((mode) => ({
     name: `require-signature-review-${mode}`,
     result: {
       unusedDependencies: mode === 'declared' ? ['fake-bound', 'fake-newline', 'fake-regex'] : [],

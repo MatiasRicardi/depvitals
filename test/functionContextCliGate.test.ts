@@ -1494,3 +1494,39 @@ describe('Step 79 review signature boundaries through the compiled CLI', () => {
     },
   );
 });
+
+describe('Step 80 arrow and method require ownership through compiled CLI', () => {
+  it.each(['declared', 'undeclared'] as const)('%s ownership preserves exact findings', (mode) => {
+    const project = join(
+      REPO_ROOT,
+      'test',
+      'fixtures',
+      'analysis',
+      `require-arrow-method-parameters-${mode}`,
+    );
+    const before = readdirSync(project).map((name) => [
+      name,
+      readFileSync(join(project, name), 'utf8'),
+    ]);
+    expect(runBuilt(project)).toEqual({
+      status: 1,
+      stdout:
+        mode === 'declared'
+          ? 'DepVitals\n\nUnused dependencies (5)\n  fake-arrow\n  fake-class\n  fake-default\n  fake-inherited\n  fake-method\n'
+          : 'DepVitals\n\nMissing dependencies (9)\n  real-after\n  real-asi\n  real-before\n  real-default\n  real-inside\n  real-key\n  real-key-control\n  real-method-name\n  real-module\n',
+      stderr: '',
+    });
+    expect(
+      readdirSync(project).map((name) => [name, readFileSync(join(project, name), 'utf8')]),
+    ).toEqual(before);
+  });
+  it.each([
+    "const f = (require) => require('unterminated",
+    "const o = { run(require) { require('unterminated",
+  ])('does not return a partial report for shadowed malformed source: %s', (source) => {
+    const result = runProject({}, { 'index.cjs': source });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Unterminated string');
+  });
+});
