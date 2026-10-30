@@ -1,5 +1,62 @@
 /** Step 80 review regressions and adjacent controls; source is never evaluated. */
 export const requireParameterReviewCases = [
+  ...[
+    'CALL as Pair<A, B>',
+    'CALL satisfies Pair<A, B>',
+    'CALL as Pair<A, Pair<B, C>>',
+    'CALL as Pair<{ value: A; next: B }, [A, B]>',
+    'CALL as Pair<(a: A, b: B) => C, D>',
+    'CALL as Pair<A extends B ? C : D, E>',
+    'CALL as Pair<`a,b`, B>',
+    'CALL as Pair<A /* comma, colon: */ , B>',
+    'CALL as Pair<A, B> + 1',
+    'make<A, B>(CALL)',
+    'make<A, Pair<B, C>>(CALL)',
+    'CALL + value < other',
+    'CALL + (a < b, c > d)',
+  ].flatMap((body) =>
+    (['require', 'load'] as const).map((parameter) => ({
+      name: `conditional typed arrow type arguments (${parameter}): ${body}`,
+      fileName: 'case.ts',
+      source: `const f = flag ? (${parameter}): Result => ${body.replace('CALL', parameter === 'require' ? "require('fake')" : "require('real')")} : () => {}; require('outside');`,
+      expected: parameter === 'require' ? ['outside'] : ['real', 'outside'],
+    })),
+  ),
+  {
+    name: 'conditional typed arrow comparisons remain expressions',
+    fileName: 'case.ts',
+    source:
+      "const f = flag ? (require): Result => require('fake') + (a < b ? 1 : 2) : () => {}; require('outside');",
+    expected: ['outside'],
+  },
+  {
+    name: 'conditional type argument import remains real evidence',
+    fileName: 'case.ts',
+    source:
+      "const f = flag ? (require): Result => require('fake') as Pair<import('real-type').A, B> : () => {}; require('outside');",
+    expected: ['real-type', 'outside'],
+  },
+  {
+    name: 'generic type arguments in a default callback cannot bind its enclosing parameters',
+    fileName: 'case.ts',
+    source:
+      "const f = (cb = (require) => make<A, require, B>(require('fake')), load) => require('real'); require('outside');",
+    expected: ['real', 'outside'],
+  },
+  {
+    name: 'generic call type imports remain evidence inside a bound arrow',
+    fileName: 'case.ts',
+    source:
+      "const f = flag ? (require): Result => make<import('real-type').A, B>(require('fake')) : () => {}; require('outside');",
+    expected: ['real-type', 'outside'],
+  },
+  {
+    name: 'comparison commas cannot borrow a later declaration as type arguments',
+    fileName: 'case.mjs',
+    source:
+      "const f = flag ? (require) : other => a < b, next = 1 > 0; require('real'); require('outside');",
+    expected: ['real', 'outside'],
+  },
   ...['other =>', '(other) =>', '() =>'].map((alternative) => ({
     name: `plain parenthesized consequent and alternate ${alternative}`,
     fileName: 'case.mjs',

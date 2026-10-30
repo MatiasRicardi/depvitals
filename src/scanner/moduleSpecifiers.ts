@@ -694,6 +694,36 @@ function tokenize(
       typeAnnotation = undefined;
       inType = false;
     }
+    const expressionOwner = expressionFunctionContexts[expressionFunctionContexts.length - 1];
+    if (
+      typeAnnotation === undefined &&
+      ch === '<' &&
+      prevKind === 'identifier' &&
+      expressionOwner !== undefined &&
+      atLexicalDepth(expressionOwner)
+    ) {
+      const args = expressionTypeArguments(source, i, n);
+      if (args !== undefined) {
+        // Type-only commas and function types cannot retire a runtime arrow owner.
+        // Keep the tokens for genuine import type queries, using the existing type lexer.
+        emit({ kind: 'punct', value: '<', offset: i, endOffset: i + 1, parameterType: true });
+        for (const token of args.tokens) emit({ ...token, parameterType: true });
+        emit({
+          kind: 'punct',
+          value: '>',
+          offset: args.end - 1,
+          endOffset: args.end,
+          parameterType: true,
+        });
+        i = args.end;
+        prevKind = 'identifier';
+        prevPunct = undefined;
+        prevIsExpressionKeyword = false;
+        afterControlHead = false;
+        continue;
+      }
+    }
+
     // An assertion must release its type context before the same runtime delimiter can retire
     // an enclosing arrow. Consume the delimiter only after restoring the nearest function grammar.
     let expressionFunctionContext =
@@ -2046,6 +2076,7 @@ function arrowFollowsParameters(
   let bracketDepth = 0;
   let braceDepth = 0;
   let conditionalDepth = 0;
+  let assertionOwner: { paren: number; bracket: number; brace: number; frame: number } | undefined;
   let prevKind: PrevKind = 'start';
   let prevPunct: string | undefined;
 
@@ -2148,6 +2179,31 @@ function arrowFollowsParameters(
       }
     }
 
+    if (mode === 'conditional-body' && ch === '<' && prevKind === 'identifier') {
+      const inAssertion =
+        assertionOwner?.paren === depth &&
+        assertionOwner.bracket === bracketDepth &&
+        assertionOwner.brace === braceDepth &&
+        assertionOwner.frame === jsxFrames.length;
+      const args = expressionTypeArguments(source, k, n, inAssertion);
+      if (args !== undefined) {
+        k = args.end;
+        prevKind = 'identifier';
+        prevPunct = undefined;
+        continue;
+      }
+    }
+
+    if (
+      assertionOwner?.paren === depth &&
+      assertionOwner.bracket === bracketDepth &&
+      assertionOwner.brace === braceDepth &&
+      assertionOwner.frame === jsxFrames.length &&
+      ['+', '-', '*', '/', '%', '=', '?', '!'].includes(ch)
+    ) {
+      assertionOwner = undefined;
+    }
+
     // Reuse the same opaque regions to confirm a typed nested arrow in a ternary.
     // Colons in JSX, object literals, nested delimiters or inner conditionals do not
     // close the enclosing conditional. Stop at this expression's own boundary.
@@ -2221,6 +2277,19 @@ function arrowFollowsParameters(
       }
     } else if (isIdentifierStartAt(source, k)) {
       const identifier = readIdentifier(source, k);
+      if (
+        mode === 'conditional-body' &&
+        ['as', 'satisfies'].includes(identifier.value) &&
+        prevKind !== 'start' &&
+        !(prevKind === 'punct' && prevPunct === '.')
+      ) {
+        assertionOwner = {
+          paren: depth,
+          bracket: bracketDepth,
+          brace: braceDepth,
+          frame: jsxFrames.length,
+        };
+      }
       k = identifier.end - 1;
       prevKind = 'identifier';
       prevPunct = undefined;
@@ -2233,6 +2302,38 @@ function arrowFollowsParameters(
   }
 
   return false;
+}
+
+/** Skip a balanced type-argument list only when its suffix can continue an expression. */
+function expressionTypeArguments(
+  source: string,
+  open: number,
+  n: number,
+  typeAssertion = false,
+): { end: number; tokens: Token[] } | undefined {
+  const tokens: Token[] = [];
+  let end: number;
+  try {
+    end = readJsxTypeArguments(source, open, n, tokens, true);
+  } catch (error) {
+    if (error instanceof ModuleSpecifierError) {
+      return undefined;
+    }
+    throw error;
+  }
+  const next = skipTrivia(source, end, n);
+  const ch = source[next];
+  if (!typeAssertion) {
+    return ch === '(' ? { end, tokens } : undefined;
+  }
+  if (isIdentifierStartAt(source, next) || isUnicodeEscapeStart(source, next)) {
+    return ['as', 'satisfies', 'in', 'instanceof'].includes(readIdentifier(source, next).value)
+      ? { end, tokens }
+      : undefined;
+  }
+  return ch !== undefined && (isNumberStart(ch) || ch === '"' || ch === "'")
+    ? undefined
+    : { end, tokens };
 }
 
 /** A newline computed method head ends a complete bodyless member return annotation. */
@@ -2461,8 +2562,15 @@ function skipTemplateLiteral(source: string, start: number): number {
  * Lex only the boundaries of a component's type arguments. These tokens preserve literal imports
  * without changing the surrounding JavaScript function/brace state or treating type braces as JSX.
  */
-function readJsxTypeArguments(source: string, open: number, n: number, tokens: Token[]): number {
+function readJsxTypeArguments(
+  source: string,
+  open: number,
+  n: number,
+  tokens: Token[],
+  expressionProbe = false,
+): number {
   const closers = ['>'];
+  let conditionalDepth = 0;
   let i = open + 1;
 
   while (i < n) {
@@ -2472,6 +2580,21 @@ function readJsxTypeArguments(source: string, open: number, n: number, tokens: T
 
     if (ch === undefined) {
       break;
+    }
+
+    // A speculative expression probe must not borrow a > from a later statement
+    // or conditional branch. Colons in conditional types still belong to the list.
+    if (expressionProbe && closers.length === 1) {
+      if (ch === '?') conditionalDepth++;
+      else if (ch === ':' && conditionalDepth > 0) conditionalDepth--;
+      else if (
+        ch === ';' ||
+        ch === ':' ||
+        (ch === '=' && source[i + 1] !== '>') ||
+        [')', ']', '}'].includes(ch)
+      ) {
+        throw new ModuleSpecifierError('Invalid type argument boundary', 'invalid-source', i);
+      }
     }
 
     if (ch === "'" || ch === '"') {
@@ -2488,6 +2611,10 @@ function readJsxTypeArguments(source: string, open: number, n: number, tokens: T
     }
 
     if (ch === '`') {
+      if (expressionProbe) {
+        i = skipTemplateLiteral(source, i);
+        continue;
+      }
       throw new ModuleSpecifierError(
         'Template literal types in JSX type arguments are not supported',
         'invalid-source',
