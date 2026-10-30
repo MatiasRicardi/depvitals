@@ -297,6 +297,7 @@ function tokenize(
   detectModule = false,
 ): readonly Token[] {
   const tokens: Token[] = [];
+  const typeArgumentBounds = new Map<number, number | null>();
   const n = source.length;
   let i = 0;
   // Whether the previous identifier token is an expression-starting keyword (return, typeof, ...).
@@ -702,25 +703,27 @@ function tokenize(
       expressionOwner !== undefined &&
       atLexicalDepth(expressionOwner)
     ) {
-      const args = expressionTypeArguments(source, i, n);
-      if (args !== undefined) {
-        // Type-only commas and function types cannot retire a runtime arrow owner.
-        // Keep the tokens for genuine import type queries, using the existing type lexer.
-        emit({ kind: 'punct', value: '<', offset: i, endOffset: i + 1, parameterType: true });
-        for (const token of args.tokens) emit({ ...token, parameterType: true });
-        emit({
-          kind: 'punct',
-          value: '>',
-          offset: args.end - 1,
-          endOffset: args.end,
-          parameterType: true,
-        });
-        i = args.end;
-        prevKind = 'identifier';
-        prevPunct = undefined;
-        prevIsExpressionKeyword = false;
-        afterControlHead = false;
-        continue;
+      const end = expressionTypeArgumentEnd(source, i, n, typeArgumentBounds);
+      if (end !== undefined) {
+        // Use the ordinary type overlay: it preserves template imports and lexical scopes.
+        typeAnnotation = {
+          role: 'assertion',
+          conditionalDepth: 0,
+          conditionalOperand: false,
+          importCallPending: false,
+          owner: {
+            parenDepth,
+            bracketDepth,
+            braceDepth: braceContexts.length,
+            frameDepth: frames.length,
+          },
+          parenDepth: 0,
+          bracketDepth: 0,
+          braceDepth: 0,
+          angleDepth: 0,
+          typeOperandExpected: true,
+        };
+        inType = true;
       }
     }
 
@@ -2082,6 +2085,7 @@ function arrowFollowsParameters(
 
   let k = open;
   const jsxFrames: Frame[] = [];
+  const typeArgumentBounds = new Map<number, number | null>();
 
   while (k < n) {
     let ch = source[k];
@@ -2185,9 +2189,9 @@ function arrowFollowsParameters(
         assertionOwner.bracket === bracketDepth &&
         assertionOwner.brace === braceDepth &&
         assertionOwner.frame === jsxFrames.length;
-      const args = expressionTypeArguments(source, k, n, inAssertion);
-      if (args !== undefined) {
-        k = args.end;
+      const end = expressionTypeArgumentEnd(source, k, n, typeArgumentBounds, inAssertion);
+      if (end !== undefined) {
+        k = end;
         prevKind = 'identifier';
         prevPunct = undefined;
         continue;
@@ -2305,35 +2309,35 @@ function arrowFollowsParameters(
 }
 
 /** Skip a balanced type-argument list only when its suffix can continue an expression. */
-function expressionTypeArguments(
+function expressionTypeArgumentEnd(
   source: string,
   open: number,
   n: number,
+  bounds: Map<number, number | null>,
   typeAssertion = false,
-): { end: number; tokens: Token[] } | undefined {
-  const tokens: Token[] = [];
-  let end: number;
-  try {
-    end = readJsxTypeArguments(source, open, n, tokens, true);
-  } catch (error) {
-    if (error instanceof ModuleSpecifierError) {
-      return undefined;
+): number | undefined {
+  let end = bounds.get(open);
+  if (end === undefined) {
+    try {
+      end = readJsxTypeArguments(source, open, n, [], true, bounds);
+    } catch (error) {
+      if (error instanceof ModuleSpecifierError) {
+        bounds.set(open, null);
+        return undefined;
+      }
+      throw error;
     }
-    throw error;
   }
+  if (end === null) return undefined;
   const next = skipTrivia(source, end, n);
   const ch = source[next];
-  if (!typeAssertion) {
-    return ch === '(' ? { end, tokens } : undefined;
-  }
+  if (!typeAssertion) return ch === '(' ? end : undefined;
   if (isIdentifierStartAt(source, next) || isUnicodeEscapeStart(source, next)) {
     return ['as', 'satisfies', 'in', 'instanceof'].includes(readIdentifier(source, next).value)
-      ? { end, tokens }
+      ? end
       : undefined;
   }
-  return ch !== undefined && (isNumberStart(ch) || ch === '"' || ch === "'")
-    ? undefined
-    : { end, tokens };
+  return ch !== undefined && (isNumberStart(ch) || ch === '"' || ch === "'") ? undefined : end;
 }
 
 /** A newline computed method head ends a complete bodyless member return annotation. */
@@ -2558,6 +2562,24 @@ function skipTemplateLiteral(source: string, start: number): number {
   throw new ModuleSpecifierError('Unterminated template literal', 'invalid-source', start);
 }
 
+/** Probe template types with the same type boundaries as their interpolated operands. */
+function skipTemplateType(
+  source: string,
+  start: number,
+  n: number,
+  bounds?: Map<number, number | null>,
+): number {
+  let i = start + 1;
+  while (i < n) {
+    if (source[i] === '\\') i += 2;
+    else if (source[i] === '`') return i + 1;
+    else if (source[i] === '$' && source[i + 1] === '{') {
+      i = readJsxTypeArguments(source, i + 1, n, [], true, bounds, '}');
+    } else i++;
+  }
+  throw new ModuleSpecifierError('Unterminated template literal', 'invalid-source', start);
+}
+
 /**
  * Lex only the boundaries of a component's type arguments. These tokens preserve literal imports
  * without changing the surrounding JavaScript function/brace state or treating type braces as JSX.
@@ -2568,95 +2590,140 @@ function readJsxTypeArguments(
   n: number,
   tokens: Token[],
   expressionProbe = false,
+  bounds?: Map<number, number | null>,
+  rootClose: '>' | '}' = '>',
 ): number {
-  const closers = ['>'];
-  let conditionalDepth = 0;
+  const closers: string[] = [rootClose];
+  const opens = [open];
+  const conditions = [0];
   let i = open + 1;
 
-  while (i < n) {
-    const trivia = readTrivia(source, i, n);
-    i = trivia.end;
-    const ch = source[i];
+  try {
+    while (i < n) {
+      const trivia = readTrivia(source, i, n);
+      i = trivia.end;
+      const ch = source[i];
 
-    if (ch === undefined) {
-      break;
-    }
-
-    // A speculative expression probe must not borrow a > from a later statement
-    // or conditional branch. Colons in conditional types still belong to the list.
-    if (expressionProbe && closers.length === 1) {
-      if (ch === '?') conditionalDepth++;
-      else if (ch === ':' && conditionalDepth > 0) conditionalDepth--;
-      else if (
-        ch === ';' ||
-        ch === ':' ||
-        (ch === '=' && source[i + 1] !== '>') ||
-        [')', ']', '}'].includes(ch)
-      ) {
-        throw new ModuleSpecifierError('Invalid type argument boundary', 'invalid-source', i);
+      if (ch === undefined) {
+        break;
       }
-    }
 
-    if (ch === "'" || ch === '"') {
-      const { value, next } = readString(source, i);
-      tokens.push({
-        kind: 'string',
-        value,
-        offset: i,
-        endOffset: next,
-        lineBreakBefore: trivia.lineBreak,
-      });
-      i = next;
-      continue;
-    }
+      // A speculative expression probe must not borrow a > from a later statement
+      // or conditional branch. Colons in conditional types still belong to the list.
+      if (
+        expressionProbe &&
+        (closers[closers.length - 1] === '>' || (rootClose === '}' && closers.length === 1))
+      ) {
+        const level = conditions.length - 1;
+        if (ch === '?') conditions[level] = (conditions[level] ?? 0) + 1;
+        else if (ch === ':' && (conditions[level] ?? 0) > 0)
+          conditions[level] = (conditions[level] ?? 0) - 1;
+        else if (
+          ch === ';' ||
+          ch === ':' ||
+          (ch === '=' && source[i + 1] !== '>') ||
+          ([')', ']', '}'].includes(ch) && ch !== closers[closers.length - 1])
+        ) {
+          throw new ModuleSpecifierError('Invalid type argument boundary', 'invalid-source', i);
+        }
+      }
 
-    if (ch === '`') {
-      if (expressionProbe) {
-        i = skipTemplateLiteral(source, i);
+      if (ch === "'" || ch === '"') {
+        const { value, next } = readString(source, i);
+        tokens.push({
+          kind: 'string',
+          value,
+          offset: i,
+          endOffset: next,
+          lineBreakBefore: trivia.lineBreak,
+        });
+        i = next;
         continue;
       }
-      throw new ModuleSpecifierError(
-        'Template literal types in JSX type arguments are not supported',
-        'invalid-source',
-        i,
-      );
-    }
 
-    if (isIdentifierStartAt(source, i)) {
-      const start = i;
-      const identifier = readIdentifier(source, i);
-      i = identifier.end;
+      if (ch === '`') {
+        if (expressionProbe) {
+          i = skipTemplateType(source, i, n, bounds);
+          continue;
+        }
+        throw new ModuleSpecifierError(
+          'Template literal types in JSX type arguments are not supported',
+          'invalid-source',
+          i,
+        );
+      }
+
+      if (isIdentifierStartAt(source, i)) {
+        const start = i;
+        const identifier = readIdentifier(source, i);
+        const next = skipTrivia(source, identifier.end, n);
+        if (
+          expressionProbe &&
+          source[next] === '(' &&
+          identifier.value !== 'import' &&
+          !TYPE_OPERAND_KEYWORDS.has(identifier.value) &&
+          !(
+            closers[closers.length - 1] === '}' &&
+            closers.length > 1 &&
+            memberDeclarationHead(tokens, tokens.length, false) !== undefined
+          )
+        ) {
+          throw new ModuleSpecifierError(
+            'Runtime call in type argument probe',
+            'invalid-source',
+            i,
+          );
+        }
+        i = identifier.end;
+        tokens.push({
+          kind: 'identifier',
+          value: identifier.value,
+          offset: start,
+          endOffset: i,
+          lineBreakBefore: trivia.lineBreak,
+        });
+        continue;
+      }
+
+      if (expressionProbe && ch === '{' && isPunct(tokens[tokens.length - 1], ')')) {
+        throw new ModuleSpecifierError('Runtime body in type argument probe', 'invalid-source', i);
+      }
+      if (ch === '<' || ch === '(' || ch === '{' || ch === '[') {
+        closers.push(ch === '<' ? '>' : ch === '(' ? ')' : ch === '{' ? '}' : ']');
+        opens.push(i);
+        conditions.push(0);
+      } else if (ch === closers[closers.length - 1] && !(ch === '>' && source[i - 1] === '=')) {
+        closers.pop();
+        const opened = opens.pop();
+        conditions.pop();
+        if (expressionProbe && ch === '>' && opened !== undefined) bounds?.set(opened, i + 1);
+        if (closers.length === 0) {
+          return i + 1;
+        }
+      }
+
       tokens.push({
-        kind: 'identifier',
-        value: identifier.value,
-        offset: start,
-        endOffset: i,
+        kind: 'punct',
+        value: ch,
+        offset: i,
+        endOffset: i + 1,
         lineBreakBefore: trivia.lineBreak,
+        ...(ch === '=' ? classifyEquals(source, i, true) : {}),
       });
-      continue;
+      i++;
     }
 
-    if (ch === '<' || ch === '(' || ch === '{' || ch === '[') {
-      closers.push(ch === '<' ? '>' : ch === '(' ? ')' : ch === '{' ? '}' : ']');
-    } else if (ch === closers[closers.length - 1] && !(ch === '>' && source[i - 1] === '=')) {
-      closers.pop();
-      if (closers.length === 0) {
-        return i + 1;
+    throw new ModuleSpecifierError('Unterminated JSX type arguments', 'invalid-source', open);
+  } catch (error) {
+    if (expressionProbe && bounds !== undefined) {
+      // One failed walk classifies every still-open angle encountered along the way.
+      for (let level = 0; level < closers.length; level++) {
+        const opened = opens[level];
+        if (closers[level] === '>' && opened !== undefined) bounds.set(opened, null);
       }
     }
-
-    tokens.push({
-      kind: 'punct',
-      value: ch,
-      offset: i,
-      endOffset: i + 1,
-      lineBreakBefore: trivia.lineBreak,
-      ...(ch === '=' ? classifyEquals(source, i, true) : {}),
-    });
-    i++;
+    throw error;
   }
-
-  throw new ModuleSpecifierError('Unterminated JSX type arguments', 'invalid-source', open);
 }
 
 /**

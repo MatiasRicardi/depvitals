@@ -1,5 +1,58 @@
 /** Step 80 review regressions and adjacent controls; source is never evaluated. */
 export const requireParameterReviewCases = [
+  {
+    name: 'runtime comparison method bodies keep their own parameter scopes',
+    fileName: 'case.mjs',
+    source:
+      "const f = load => left < ({ run(require) { require('fake'); } }) > (0); require('outside');",
+    expected: ['outside'],
+  },
+  {
+    name: 'runtime comparison template callbacks keep their own parameter scopes',
+    fileName: 'case.mjs',
+    source: "const f = load => left < `${(require) => require('fake')}` > (0); require('outside');",
+    expected: ['outside'],
+  },
+  {
+    name: 'runtime comparison template calls remain evidence',
+    fileName: 'case.mjs',
+    source: "const f = load => left < `${require('real')}` > (0); require('outside');",
+    expected: ['real', 'outside'],
+  },
+  {
+    name: 'multiline template type imports remain evidence',
+    fileName: 'case.ts',
+    source:
+      "const f = require => make<`${\nimport('real-type').Name\n}`, B>(require('fake')); require('outside');",
+    expected: ['real-type', 'outside'],
+  },
+  ...['CALL', '(CALL)', '[CALL]', '({ value: CALL })'].flatMap((value) =>
+    (['require', 'load'] as const).map((parameter) => ({
+      name: `runtime comparison keeps its scope (${parameter}): ${value}`,
+      fileName: 'case.mjs',
+      source: `const f = ${parameter} => left < ${value.replace('CALL', parameter === 'require' ? "require('fake')" : "require('real')")} > (0); require('outside');`,
+      expected: parameter === 'require' ? ['outside'] : ['real', 'outside'],
+    })),
+  ),
+  ...[
+    "`${import('real-type').Name}`",
+    "`inert import('fake') ${import('real-type').Name}`",
+    "`${Pair<import('real-type').A, import('other-type').B>}`",
+    "`outer${`inner${import('real-type').Name}`}`",
+  ].map((type) => ({
+    name: `template type retains interpolated imports: ${type}`,
+    fileName: 'case.ts',
+    source: `const f = require => make<${type}, B>(require('fake')); require('outside');`,
+    expected: type.includes("'other-type'")
+      ? ['real-type', 'other-type', 'outside']
+      : ['real-type', 'outside'],
+  })),
+  {
+    name: 'failed outer comparison probe does not discard a nested generic call',
+    fileName: 'case.ts',
+    source: "const f = require => left < make<A, B>(require('fake')); require('outside');",
+    expected: ['outside'],
+  },
   ...[
     'CALL as Pair<A, B>',
     'CALL satisfies Pair<A, B>',
