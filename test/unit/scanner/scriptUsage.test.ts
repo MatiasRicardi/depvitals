@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { spawnSync } from 'node:child_process';
 import { hereDocumentCases, hereDocumentDeclaredNames } from '../../helpers/hereDocumentCases.js';
+import { opaqueShellCases, opaqueShellDeclaredNames } from '../../helpers/opaqueShellCases.js';
 
 import { findPackageScriptUsage } from '../../../src/scanner/scriptUsage.js';
 
@@ -2276,6 +2277,24 @@ describe('Step 81 here-document payload boundaries', () => {
     expect([...findPackageScriptUsage(scripts, declared)]).toEqual(expected);
     expect([...declared]).toEqual(hereDocumentDeclaredNames);
     expect(scripts.check).toBe(script);
+    if (syntax && process.platform === 'linux') {
+      const checked = spawnSync('bash', ['-n'], {
+        input: script,
+        encoding: 'utf8',
+        timeout: 10_000,
+      });
+      expect(checked.error).toBeUndefined();
+      expect(checked.status, checked.stderr).toBe(0);
+    }
+  });
+});
+
+describe('Step 82 opaque shell region boundaries', () => {
+  it.each(opaqueShellCases)('$name', ({ script, expected, syntax }) => {
+    const scripts = Object.freeze({ check: script });
+    const declared = new Set(opaqueShellDeclaredNames);
+    expect([...findPackageScriptUsage(scripts, declared)]).toEqual(expected);
+    expect([...declared]).toEqual(opaqueShellDeclaredNames);
     if (syntax && process.platform === 'linux') {
       const checked = spawnSync('bash', ['-n'], {
         input: script,
