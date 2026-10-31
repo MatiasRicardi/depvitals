@@ -966,6 +966,17 @@ function skipUnsupportedRegion(script: string, start: number): number {
         i++;
         continue;
       }
+      // These reserved words leave the next word in command position.
+      if (top.commandStart && top.wordBoundary) {
+        const lead = ['if', 'then', 'do', 'else', 'elif', 'while', 'until', 'time', '{'].find(
+          (word) => script.startsWith(word, i) && isRegionWordBoundary(script[i + word.length]),
+        );
+        if (lead !== undefined) {
+          i += lead.length;
+          top.wordBoundary = true;
+          continue;
+        }
+      }
       // Case patterns and arithmetic/function syntax cannot be balanced as simple groups.
       if (
         top.commandStart &&
