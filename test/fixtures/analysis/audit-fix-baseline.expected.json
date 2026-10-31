@@ -1,0 +1,167 @@
+{
+  "description": "Corrected default before optional configuration; all paths are fixture-relative.",
+  "declared": {
+    "configUsedNames": [
+      "eslint-config-prettier",
+      "ts-jest"
+    ],
+    "rawAnalysis": {
+      "unusedDependencies": [
+        "audit-self",
+        "computed-fake",
+        "eslint-config-prettier",
+        "eslint-plugin-react",
+        "multiarg-fake",
+        "property-fake",
+        "regex-fake",
+        "script-text-only",
+        "shadow-fake",
+        "tag-fake",
+        "unused-a",
+        "unused-z"
+      ],
+      "unusedDevDependencies": [
+        "eslint",
+        "ts-jest",
+        "unused-dev"
+      ],
+      "missingDependencies": [
+        "duplicate-missing",
+        "genuine-missing",
+        "workspace-only"
+      ]
+    },
+    "analysis": {
+      "unusedDependencies": [
+        "audit-self",
+        "computed-fake",
+        "eslint-plugin-react",
+        "multiarg-fake",
+        "property-fake",
+        "regex-fake",
+        "script-text-only",
+        "shadow-fake",
+        "tag-fake",
+        "unused-a",
+        "unused-z"
+      ],
+      "unusedDevDependencies": [
+        "eslint",
+        "unused-dev"
+      ],
+      "missingDependencies": [
+        "duplicate-missing",
+        "genuine-missing",
+        "workspace-only"
+      ]
+    },
+    "cli": {
+      "exitCode": 1,
+      "stdout": "DepVitals\n\nUnused dependencies (11)\n  audit-self\n  computed-fake\n  eslint-plugin-react\n  multiarg-fake\n  property-fake\n  regex-fake\n  script-text-only\n  shadow-fake\n  tag-fake\n  unused-a\n  unused-z\n\nUnused devDependencies (2)\n  eslint\n  unused-dev\n\nMissing dependencies (3)\n  duplicate-missing\n  genuine-missing\n  workspace-only\n",
+      "stderr": ""
+    }
+  },
+  "undeclared": {
+    "configUsedNames": [],
+    "rawAnalysis": {
+      "unusedDependencies": [],
+      "unusedDevDependencies": [],
+      "missingDependencies": [
+        "arrow-real",
+        "cjs-await-real",
+        "cjs-class-real",
+        "duplicate-missing",
+        "dynamic-real",
+        "function-real",
+        "genuine-missing",
+        "static-real",
+        "template-real",
+        "trailing-real",
+        "workspace-only"
+      ]
+    },
+    "analysis": {
+      "unusedDependencies": [],
+      "unusedDevDependencies": [],
+      "missingDependencies": [
+        "arrow-real",
+        "cjs-await-real",
+        "cjs-class-real",
+        "duplicate-missing",
+        "dynamic-real",
+        "function-real",
+        "genuine-missing",
+        "static-real",
+        "template-real",
+        "trailing-real",
+        "workspace-only"
+      ]
+    },
+    "cli": {
+      "exitCode": 1,
+      "stdout": "DepVitals\n\nMissing dependencies (11)\n  arrow-real\n  cjs-await-real\n  cjs-class-real\n  duplicate-missing\n  dynamic-real\n  function-real\n  genuine-missing\n  static-real\n  template-real\n  trailing-real\n  workspace-only\n",
+      "stderr": ""
+    }
+  },
+  "external-eslint": {
+    "configUsedNames": [
+      "eslint-plugin-react",
+      "ts-jest"
+    ],
+    "rawAnalysis": {
+      "unusedDependencies": [
+        "audit-self",
+        "computed-fake",
+        "eslint-config-prettier",
+        "eslint-plugin-react",
+        "multiarg-fake",
+        "property-fake",
+        "regex-fake",
+        "script-text-only",
+        "shadow-fake",
+        "tag-fake",
+        "unused-a",
+        "unused-z"
+      ],
+      "unusedDevDependencies": [
+        "eslint",
+        "ts-jest",
+        "unused-dev"
+      ],
+      "missingDependencies": [
+        "duplicate-missing",
+        "genuine-missing",
+        "workspace-only"
+      ]
+    },
+    "analysis": {
+      "unusedDependencies": [
+        "audit-self",
+        "computed-fake",
+        "eslint-config-prettier",
+        "multiarg-fake",
+        "property-fake",
+        "regex-fake",
+        "script-text-only",
+        "shadow-fake",
+        "tag-fake",
+        "unused-a",
+        "unused-z"
+      ],
+      "unusedDevDependencies": [
+        "eslint",
+        "unused-dev"
+      ],
+      "missingDependencies": [
+        "duplicate-missing",
+        "genuine-missing",
+        "workspace-only"
+      ]
+    },
+    "cli": {
+      "exitCode": 1,
+      "stdout": "DepVitals\n\nUnused dependencies (11)\n  audit-self\n  computed-fake\n  eslint-config-prettier\n  multiarg-fake\n  property-fake\n  regex-fake\n  script-text-only\n  shadow-fake\n  tag-fake\n  unused-a\n  unused-z\n\nUnused devDependencies (2)\n  eslint\n  unused-dev\n\nMissing dependencies (3)\n  duplicate-missing\n  genuine-missing\n  workspace-only\n",
+      "stderr": ""
+    }
+  }
+}
