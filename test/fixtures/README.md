@@ -239,3 +239,5 @@ The `analysis/require-function-parameters-declared` and `analysis/require-functi
 The `analysis/require-signature-review-declared` and `analysis/require-signature-review-undeclared` fixtures cover semicolon-free bodyless signatures without return annotations, overload implementations, generic default type arguments and genuine newline bodies. They preserve both global evidence and local parameter shadowing and are never evaluated.
 
 - `analysis/require-arrow-method-parameters-{declared,undeclared}` covers arrow and method parameter ownership, ASI and typed returns, inherited nested scopes, computed keys, constructor parameter properties, real imports and exterior global calls. The TypeScript fixture is scanned as text, never executed.
+
+The `analysis/script-heredoc-{declared,undeclared,unsupported,unterminated}` fixtures cover literal here-document payloads, real commands before/after a proven delimiter, unsupported simultaneous headers and missing closing delimiters. Scripts are analyzed without execution; their text never creates missing-dependency findings.

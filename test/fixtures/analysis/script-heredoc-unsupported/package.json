@@ -1,0 +1,10 @@
+{
+  "scripts": {
+    "check": "tsc; cat <<EOF <<SECOND\neslint\nEOF\nSECOND\nprettier"
+  },
+  "devDependencies": {
+    "eslint": "*",
+    "prettier": "*",
+    "typescript": "*"
+  }
+}
