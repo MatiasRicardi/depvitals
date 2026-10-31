@@ -1,0 +1,60 @@
+{
+  "name": "audit-self",
+  "version": "0.0.0",
+  "exports": {
+    "./feature": "./dist/feature.js"
+  },
+  "dependencies": {
+    "arrow-real": "*",
+    "audit-self": "*",
+    "computed-fake": "*",
+    "dynamic-real": "*",
+    "eslint-config-prettier": "*",
+    "eslint-plugin-react": "*",
+    "function-real": "*",
+    "multiarg-fake": "*",
+    "property-fake": "*",
+    "regex-fake": "*",
+    "script-text-only": "*",
+    "shadow-fake": "*",
+    "static-real": "*",
+    "tag-fake": "*",
+    "template-real": "*",
+    "trailing-real": "*",
+    "unused-a": "*",
+    "unused-z": "*"
+  },
+  "devDependencies": {
+    "eslint": "*",
+    "prettier": "*",
+    "ts-jest": "*",
+    "typescript": "*",
+    "unused-dev": "*"
+  },
+  "peerDependencies": {
+    "peer-used": "*",
+    "peer-unused": "*"
+  },
+  "optionalDependencies": {
+    "optional-used": "*",
+    "optional-unused": "*"
+  },
+  "scripts": {
+    "payload": "cat <<'EOF'\neslint\npayload-only\nEOF\nprettier",
+    "group": "echo $( (echo hi); eslint ) && tsc",
+    "comment": "echo $(# \"\necho hi\n) && prettier",
+    "arguments": "echo tsc prettier script-text-only",
+    "undeclared": "undeclared-script-tool",
+    "postinstall": "node -e \"require('node:fs').writeFileSync('SCRIPT_RAN', 'ran')\""
+  },
+  "eslintConfig": {
+    "extends": [
+      "prettier",
+      "airbnb"
+    ]
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "jest-environment-jsdom"
+  }
+}
