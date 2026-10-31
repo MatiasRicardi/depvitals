@@ -3,11 +3,13 @@
  *
  * This module classifies a single raw module specifier into a small set of categories without
  * executing code, reading the filesystem or consulting `node_modules`. It is a pure transformation
- * that sits between specifier extraction (Step 9) and dependency analysis (Step 12).
+ * that sits between specifier extraction (Step 9) and dependency analysis (Step 12). Separate internal
+ * helpers prepare bounded exact self-reference metadata without altering ordinary classification.
  *
  * It deliberately does not:
  * - decide whether a specifier is used, unused or missing (that belongs to the analyzer);
- * - resolve files on disk, `node_modules`, package `exports`, TS `paths` or bundler aliases;
+ * - resolve files on disk, `node_modules`, TS `paths` or bundler aliases;
+ * - implement general package `exports` resolution (conditions, patterns and fallbacks);
  * - validate a name against npm registry publication rules (names are compared case-sensitively);
  * - read `package.json#imports`, so `#` import aliases cannot be resolved here.
  *
@@ -127,4 +129,93 @@ function isMalformed(specifier: string): boolean {
     specifier.includes('?') ||
     specifier.includes('%')
   );
+}
+
+/**
+ * Minimal ownership metadata for one existing package scope. An object with no name/exports still
+ * marks a scope boundary; `undefined` is reserved for absence of a scope, not inheritance here.
+ * Targets are validated lexically and then discarded: only exact exported subpaths are needed.
+ */
+export type PackageSelfReferenceScope = {
+  readonly name: string | undefined;
+  readonly exportedSubpaths: ReadonlySet<string>;
+};
+
+/**
+ * Prepare the bounded self-reference subset from static JSON metadata, without I/O or mutation.
+ * Only a direct root string or an object consisting entirely of exact keys and safe string targets
+ * is supported. Mixed/conditional/pattern/array exports are deliberately not partially interpreted.
+ * This helper does not load metadata or change analyzer findings.
+ */
+export function createPackageSelfReferenceScope(
+  metadata: Readonly<Record<string, unknown>>,
+): PackageSelfReferenceScope {
+  const rawName = metadata['name'];
+  const name =
+    typeof rawName === 'string' && !rawName.includes('*') && !hasControlCharacter(rawName)
+      ? rawName
+      : undefined;
+  const exports = metadata['exports'];
+  const exportedSubpaths = new Set<string>();
+  if (typeof exports === 'string') {
+    if (isSafeExportPath(exports)) exportedSubpaths.add('.');
+  } else if (typeof exports === 'object' && exports !== null && !Array.isArray(exports)) {
+    const entries = Object.entries(exports);
+    if (
+      entries.every(
+        ([key, target]) =>
+          (key === '.' || isSafeExportPath(key)) &&
+          typeof target === 'string' &&
+          isSafeExportPath(target),
+      )
+    ) {
+      for (const [key] of entries) exportedSubpaths.add(key);
+    }
+  }
+  return { name, exportedSubpaths };
+}
+
+/**
+ * Match the raw specifier before package-root normalization. A same-name declaration alone is not
+ * evidence of ownership, and builtin/unsupported references cannot become self references.
+ * Neither target existence nor runtime resolution is consulted.
+ */
+export function isPackageSelfReference(
+  specifier: string,
+  scope: PackageSelfReferenceScope | undefined,
+): boolean {
+  if (scope?.name === undefined) return false;
+  const key =
+    specifier === scope.name
+      ? '.'
+      : specifier.startsWith(`${scope.name}/`)
+        ? `./${specifier.slice(scope.name.length + 1)}`
+        : undefined;
+  if (key === undefined || !scope.exportedSubpaths.has(key)) return false;
+  const classified = classifyPackageSpecifier(specifier);
+  return classified.kind === 'external' && classified.packageName === scope.name;
+}
+
+/** A deliberately literal subset: no normalization, URL decoding, patterns or path resolution. */
+function isSafeExportPath(value: string): boolean {
+  if (!value.startsWith('./') || /[\\%*?:#]/.test(value) || hasControlCharacter(value))
+    return false;
+  return value
+    .slice(2)
+    .split('/')
+    .every(
+      (segment) =>
+        segment !== '' &&
+        segment !== '.' &&
+        segment !== '..' &&
+        segment.toLowerCase() !== 'node_modules',
+    );
+}
+
+function hasControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    if (code < 32 || code === 127) return true;
+  }
+  return false;
 }
