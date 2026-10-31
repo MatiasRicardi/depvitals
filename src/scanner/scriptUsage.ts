@@ -641,6 +641,13 @@ function skipHereDocument(script: string, start: number): number | undefined {
     const newline = script.indexOf('\n', i);
     let end = newline < 0 ? script.length : newline;
     if (newline >= 0 && script[end - 1] === '\r') end--;
+    if (quote === undefined && newline >= 0) {
+      // Unquoted payloads remove an unescaped backslash-newline before delimiter matching.
+      // Logical-line reconstruction is outside the resume subset: do not trust the remainder.
+      let escapeStart = end;
+      while (escapeStart > i && script[escapeStart - 1] === '\\') escapeStart--;
+      if ((end - escapeStart) % 2 === 1) return undefined;
+    }
     let content = i;
     if (stripTabs) while (script[content] === '\t') content++;
     if (script.slice(content, end) === delimiter) {

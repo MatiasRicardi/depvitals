@@ -6,7 +6,60 @@ type HereDocumentCase = {
   readonly syntax: boolean;
 };
 
+const backslash = String.fromCharCode(92);
+const lf = String.fromCharCode(10);
+const crlf = String.fromCharCode(13, 10);
+const tab = String.fromCharCode(9);
+
 export const hereDocumentCases: readonly HereDocumentCase[] = [
+  ...['EOF', "'EOF'", '"EOF"'].flatMap((delimiter) =>
+    ['<<', '<<-'].flatMap((operator) =>
+      [lf, crlf].map((newline) => ({
+        name: 'payload continuation ' + operator + delimiter + ' ' + JSON.stringify(newline),
+        script: [
+          'before-tool; cat ' + operator + delimiter,
+          'payload ' + backslash,
+          (operator === '<<-' ? tab : '') + 'EOF',
+          'eslint',
+          'EOF',
+          'prettier',
+        ].join(newline),
+        expected: delimiter === 'EOF' ? ['before-tool'] : ['before-tool', 'eslint', 'prettier'],
+        syntax: newline === lf,
+      })),
+    ),
+  ),
+  ...[2, 3, 4].map((slashes) => ({
+    name: 'payload continuation parity ' + String(slashes),
+    script: [
+      'before-tool; cat <<EOF',
+      'payload ' + backslash.repeat(slashes),
+      'EOF',
+      'eslint',
+      'EOF',
+      'prettier',
+    ].join(lf),
+    expected: slashes % 2 === 0 ? ['before-tool', 'eslint', 'prettier'] : ['before-tool'],
+    syntax: true,
+  })),
+  {
+    name: 'backslash followed by spaces does not continue the payload line',
+    script: [
+      'before-tool; cat <<EOF',
+      'payload ' + backslash + '  ',
+      'EOF',
+      'eslint',
+      'prettier',
+    ].join(lf),
+    expected: ['before-tool', 'eslint', 'prettier'],
+    syntax: true,
+  },
+  {
+    name: 'continued delimiter spelling is outside the resume subset',
+    script: ['before-tool; cat <<EOF', 'E' + backslash, 'OF', 'prettier'].join(lf),
+    expected: ['before-tool'],
+    syntax: true,
+  },
   ...['EOF', "'EOF'", '"EOF"'].flatMap((delimiter) =>
     ['<<', '<<-'].flatMap((operator) =>
       ['\n', '\r\n'].map((newline) => ({
