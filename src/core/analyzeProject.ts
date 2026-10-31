@@ -50,10 +50,14 @@
 import { readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
-import { loadPackageTypeHint, loadProjectManifest } from '../scanner/projectManifest.js';
+import {
+  loadPackageScope,
+  loadProjectManifest,
+  type PackageScopeMetadata,
+} from '../scanner/projectManifest.js';
 import { discoverSourceFiles } from '../scanner/sourceFiles.js';
 import { extractModuleSpecifiers } from '../scanner/moduleSpecifiers.js';
-import { classifyPackageSpecifier } from '../scanner/packageSpecifier.js';
+import { classifyPackageSpecifier, isPackageSelfReference } from '../scanner/packageSpecifier.js';
 import { findPackageScriptUsage } from '../scanner/scriptUsage.js';
 
 /**
@@ -156,15 +160,17 @@ export async function analyzeProject(
 
   // External package roots referenced by source files, collapsed to their package root.
   const sourceUsedNames = new Set<string>();
-  const packageTypeByDirectory = new Map<string, string | undefined>([
-    [manifest.root, manifest.packageType],
+  // Seed the selected root so scope lookup never consults a parent outside the scan.
+  const scopeByDirectory = new Map<string, PackageScopeMetadata>([
+    [manifest.root, { packageType: manifest.packageType, selfReference: manifest.selfReference }],
   ]);
 
   for (const file of sourceFiles) {
-    const packageType = await packageTypeForFile(file, manifest.root, packageTypeByDirectory);
-    const specifiers = await readAndExtract(file, packageType);
+    const scope = await packageScopeForDirectory(dirname(file), scopeByDirectory);
+    const specifiers = await readAndExtract(file, scope.packageType);
 
     for (const specifier of specifiers) {
+      if (isPackageSelfReference(specifier, scope.selfReference)) continue;
       const classified = classifyPackageSpecifier(specifier);
 
       if (classified.kind === 'external') {
@@ -208,33 +214,20 @@ export async function analyzeProject(
  * Resolve the nearest package scope for one discovered source file.
  *
  * An existing nested `package.json` starts a new scope even when it omits `type`; directories
- * without one inherit their parent. Results are cached per directory for the rest of the scan.
+ * without one inherit their parent. Ownership and module mode share this walk and cache. The
+ * selected root is always seeded before lookup, so traversal stops there.
  */
-async function packageTypeForFile(
-  file: string,
-  projectRoot: string,
-  cache: Map<string, string | undefined>,
-): Promise<string | undefined> {
-  return packageTypeForDirectory(dirname(file), projectRoot, cache);
-}
-
-async function packageTypeForDirectory(
+async function packageScopeForDirectory(
   directory: string,
-  projectRoot: string,
-  cache: Map<string, string | undefined>,
-): Promise<string | undefined> {
-  if (cache.has(directory)) {
-    return cache.get(directory);
-  }
+  cache: Map<string, PackageScopeMetadata>,
+): Promise<PackageScopeMetadata> {
+  const cached = cache.get(directory);
+  if (cached !== undefined) return cached;
 
-  const hint = await loadPackageTypeHint(directory);
-  const packageType =
-    hint === undefined
-      ? await packageTypeForDirectory(dirname(directory), projectRoot, cache)
-      : hint.packageType;
-
-  cache.set(directory, packageType);
-  return packageType;
+  const ownScope = await loadPackageScope(directory);
+  const scope = ownScope ?? (await packageScopeForDirectory(dirname(directory), cache));
+  cache.set(directory, scope);
+  return scope;
 }
 
 /**
