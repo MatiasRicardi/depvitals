@@ -1,5 +1,62 @@
 /** Step 80 review regressions and adjacent controls; source is never evaluated. */
 export const requireParameterReviewCases = [
+  ...['void', 'instanceof', '>'].map((operator) => ({
+    name: `newline runtime callback after ${operator} is not a type method`,
+    fileName: 'case.mjs',
+    source: `const f = load => left < ({value: ${operator === 'void' ? 'void' : `flag ${operator}`}\ncall((require) => { require('fake'); })}) > (0); require('outside');`,
+    expected: ['outside'],
+  })),
+  {
+    name: 'newline runtime async callback keeps regex text inert',
+    fileName: 'case.mjs',
+    source:
+      "const f = load => left < ({value: void\ncall(async () => { await /import('fake')/; })}) > (0); require('outside');",
+    expected: ['outside'],
+  },
+  {
+    name: 'newline type method with a literal parameter annotation remains valid',
+    fileName: 'case.ts',
+    source:
+      "const f = flag ? (require): Result => make<{a(): void\nb(tag: 'literal'): void}, Other>(require('fake')) : () => {}; require('outside');",
+    expected: ['outside'],
+  },
+  ...['\n', '\r\n', ' /*\n*/ ', ';\n'].flatMap((separator) =>
+    (['require', 'load'] as const).map((parameter) => ({
+      name: `newline type method (${parameter}): ${JSON.stringify(separator)}`,
+      fileName: 'case.ts',
+      source: `const f = flag ? (${parameter}): Result => make<{a(): void${separator}b(require: Loader): void}, Other>(require('${parameter === 'require' ? 'fake' : 'real'}')) : () => {}; require('outside');`,
+      expected: parameter === 'require' ? ['outside'] : ['real', 'outside'],
+    })),
+  ),
+  ...['Pair<A, B>', '{value: A}', '(value: A) => B', '`literal`', "'literal'", '123'].flatMap(
+    (returnType) =>
+      (['require', 'load'] as const).map((parameter) => ({
+        name: `newline type method after ${returnType} (${parameter})`,
+        fileName: 'case.ts',
+        source: `const f = flag ? (${parameter}): Result => make<{a(): ${returnType}\nb(): void}, Other>(require('${parameter === 'require' ? 'fake' : 'real'}')) : () => {}; require('outside');`,
+        expected: parameter === 'require' ? ['outside'] : ['real', 'outside'],
+      })),
+  ),
+  {
+    name: 'newline accessor type member',
+    fileName: 'case.ts',
+    source:
+      "const f = flag ? (require): Result => make<{a(): void\nget b(): Result}, Other>(require('fake')) : () => {}; require('outside');",
+    expected: ['outside'],
+  },
+  {
+    name: 'newline type member after a template query preserves the import',
+    fileName: 'case.ts',
+    source:
+      "const f = flag ? (require): Result => make<{a(): `${import('real-type').Name}`\nb(): void}, Other>(require('fake')) : () => {}; require('outside');",
+    expected: ['real-type', 'outside'],
+  },
+  ...['+', '&&'].map((operator) => ({
+    name: `newline runtime operand after ${operator} is not a type member`,
+    fileName: 'case.mjs',
+    source: `const f = load => left < ({value: flag ${operator}\ncall((require) => require('fake'))}) > (0); require('outside');`,
+    expected: ['outside'],
+  })),
   {
     name: 'runtime comparison method bodies keep their own parameter scopes',
     fileName: 'case.mjs',

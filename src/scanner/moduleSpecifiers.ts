@@ -2580,6 +2580,31 @@ function skipTemplateType(
   throw new ModuleSpecifierError('Unterminated template literal', 'invalid-source', start);
 }
 
+/** Only a complete type followed by a line break can begin another bodyless type member. */
+function typeMemberFollowsLineBreak(tokens: readonly Token[], lineBreak: boolean): boolean {
+  const complete = (token: Token | undefined): boolean => {
+    if (token === undefined) return false;
+    if (token.kind === 'identifier') return !TYPE_OPERAND_KEYWORDS.has(token.value);
+    return (
+      token.kind === 'string' ||
+      token.kind === 'number' ||
+      token.kind === 'template' ||
+      (token.kind === 'punct' &&
+        ([')', ']', '}', '>'].includes(token.value) || /^[0-9]$/.test(token.value)))
+    );
+  };
+  let index = tokens.length - 1;
+  if (lineBreak && complete(tokens[index])) return true;
+  // The line break may precede a modifier rather than the method name (e.g. get b()).
+  while (index >= 0) {
+    const token = tokens[index];
+    if (token?.kind !== 'identifier' || !MEMBER_MODIFIERS.has(token.value)) break;
+    if (token.lineBreakBefore === true && complete(tokens[index - 1])) return true;
+    index--;
+  }
+  return false;
+}
+
 /**
  * Lex only the boundaries of a component's type arguments. These tokens preserve literal imports
  * without changing the surrounding JavaScript function/brace state or treating type braces as JSX.
@@ -2628,7 +2653,24 @@ function readJsxTypeArguments(
         }
       }
 
+      if (expressionProbe && ch === '/') {
+        throw new ModuleSpecifierError('Runtime slash in type argument probe', 'invalid-source', i);
+      }
       if (ch === "'" || ch === '"') {
+        const callee = tokens[tokens.length - 2];
+        if (
+          expressionProbe &&
+          isPunct(tokens[tokens.length - 1], '(') &&
+          callee?.kind === 'identifier' &&
+          callee.value !== 'import' &&
+          !TYPE_OPERAND_KEYWORDS.has(callee.value)
+        ) {
+          throw new ModuleSpecifierError(
+            'Literal method parameter in type argument probe',
+            'invalid-source',
+            i,
+          );
+        }
         const { value, next } = readString(source, i);
         tokens.push({
           kind: 'string',
@@ -2643,7 +2685,14 @@ function readJsxTypeArguments(
 
       if (ch === '`') {
         if (expressionProbe) {
-          i = skipTemplateType(source, i, n, bounds);
+          const end = skipTemplateType(source, i, n, bounds);
+          tokens.push({
+            kind: 'template',
+            offset: i,
+            endOffset: end,
+            lineBreakBefore: trivia.lineBreak,
+          });
+          i = end;
           continue;
         }
         throw new ModuleSpecifierError(
@@ -2665,7 +2714,8 @@ function readJsxTypeArguments(
           !(
             closers[closers.length - 1] === '}' &&
             closers.length > 1 &&
-            memberDeclarationHead(tokens, tokens.length, false) !== undefined
+            (memberDeclarationHead(tokens, tokens.length, false) !== undefined ||
+              typeMemberFollowsLineBreak(tokens, trivia.lineBreak))
           )
         ) {
           throw new ModuleSpecifierError(
