@@ -24,8 +24,8 @@
  * - a workspace child manifest and lockfile/package-manager metadata are outside the scanned
  *   project boundary and contribute no evidence in either direction;
  * - the analysis path can reach neither the network nor a process/eval primitive, and the source
- *   surface stays closed to unrequested modules (only the notifier helpers of Steps 63-67, which
- *   live under src/cli/ and are unreachable from the analysis path, may exist);
+ *   surface stays closed to unrequested modules; notifier helpers and the disconnected Step 87
+ *   JSON shape reader are explicitly allowlisted without changing the CLI or result surface;
  * - the analysis result gained no new finding category and `src/index.ts` gained no public entry point.
  *
  * Everything is static and offline: fixtures are read as text, no analyzed project code, script,
@@ -429,7 +429,7 @@ describe('Step 62: workspace children and lockfiles stay outside the project bou
 });
 
 describe('Step 62: the analysis path has no network or execution capability', () => {
-  const ANALYSIS_DIRECTORIES = ['core', 'scanner', 'detectors', 'reporters'];
+  const ANALYSIS_DIRECTORIES = ['config', 'core', 'scanner', 'detectors', 'reporters'];
 
   /** Every module specifier of the analysis path, read with the production lexer. */
   const specifiers: readonly (readonly [string, string])[] = ANALYSIS_DIRECTORIES.flatMap(
@@ -500,6 +500,7 @@ describe('Step 62: the analysis path has no network or execution capability', ()
     // update-version cache, Step 66 only the private bounded registry lookup, and Step 67 only the
     // notification orchestrator plus the stream-injecting entry layer that calls it after the report
     // (both - unlike the analysis path below - confined to src/cli/).
+    // Step 87 adds only the disconnected internal JSON shape reader; its I/O imports are guarded too.
     expect(modules).toEqual([
       'cli/entry.ts',
       'cli/index.ts',
@@ -510,6 +511,7 @@ describe('Step 62: the analysis path has no network or execution capability', ()
       'cli/notifier/versionCompare.ts',
       'cli/parseCliArgs.ts',
       'cli/runCli.ts',
+      'config/readProjectConfig.ts',
       'core/analyzeProject.ts',
       'detectors/eslintManifestConfig.ts',
       'detectors/eslintRcJsonConfig.ts',
