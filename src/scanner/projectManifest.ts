@@ -21,6 +21,10 @@ import { lstat, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import { assertReadableRoot, SourceFilesError } from './sourceFiles.js';
+import {
+  createPackageSelfReferenceScope,
+  type PackageSelfReferenceScope,
+} from './packageSpecifier.js';
 
 /**
  * A dependency section: package name mapped to the version specifier declared for it.
@@ -50,11 +54,18 @@ export type ProjectManifest = {
   scripts: Readonly<Record<string, string>>;
   /** Root package type, used only to classify `.js` top-level await without executing config. */
   packageType: string | undefined;
+  /** Bounded exact exports ownership; never a dependency inventory. */
+  selfReference: PackageSelfReferenceScope;
 };
 
 /** The package-type hint declared by one package scope, or `undefined` when no manifest exists. */
 export type PackageTypeHint = {
   packageType: string | undefined;
+};
+
+/** One existing package scope, including nameless/no-exports scope boundaries. */
+export type PackageScopeMetadata = PackageTypeHint & {
+  selfReference: PackageSelfReferenceScope;
 };
 
 /**
@@ -115,11 +126,19 @@ export async function loadProjectManifest(projectRoot: string): Promise<ProjectM
 /**
  * Read only the static `type` hint from the manifest in `directory`.
  *
- * Source-mode resolution calls this for nested package scopes. A missing manifest means that the
+ * The combined scope reader below supplies analysis with ownership too. A missing manifest means the
  * parent scope remains applicable; an existing manifest with no string `type` starts a new scope
  * whose `.js` files are ambiguous rather than inheriting the parent's explicit module mode.
  */
 export async function loadPackageTypeHint(directory: string): Promise<PackageTypeHint | undefined> {
+  const scope = await loadPackageScope(directory);
+  return scope === undefined ? undefined : { packageType: scope.packageType };
+}
+
+/** Read module mode and bounded ownership together, with the same mandatory manifest guard. */
+export async function loadPackageScope(
+  directory: string,
+): Promise<PackageScopeMetadata | undefined> {
   const packageJsonPath = join(resolve(directory), MANIFEST_FILENAME);
 
   let text: string;
@@ -144,7 +163,10 @@ export async function loadPackageTypeHint(directory: string): Promise<PackageTyp
     );
   }
 
-  return { packageType: readOptionalString(parsed, 'type') };
+  return {
+    packageType: readOptionalString(parsed, 'type'),
+    selfReference: createPackageSelfReferenceScope(parsed),
+  };
 }
 
 /**
@@ -242,6 +264,7 @@ function parseManifest(root: string, packageJsonPath: string, text: string): Pro
     ]),
     scripts,
     packageType,
+    selfReference: createPackageSelfReferenceScope(parsed),
   };
 
   return name === undefined ? manifest : { ...manifest, name };
