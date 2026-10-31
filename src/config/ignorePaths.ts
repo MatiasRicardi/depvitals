@@ -33,6 +33,9 @@ export function normalizeIgnorePaths(
     if (segments.includes('..')) fail('must not contain a .. traversal segment');
     const result = segments.filter((segment) => segment !== '' && segment !== '.').join('/');
     if (result.length === 0) fail('must name a nonempty path, not the project root');
+    // Dot/separator removal can expose whitespace that was interior in the raw spelling.
+    if (result !== result.trim())
+      fail('must not have leading or trailing whitespace after normalization');
     return result;
   });
   return Object.freeze([...new Set(normalized)].sort());

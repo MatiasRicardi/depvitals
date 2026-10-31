@@ -49,6 +49,19 @@ const accepted: readonly (readonly [string, string])[] = [
   ['δοκιμή/例子.js', 'δοκιμή/例子.js'],
 ];
 
+const exposedWhitespace = [
+  './ src',
+  'src /',
+  '.\\ src',
+  'src \\',
+  '././ src//.',
+  'src /./',
+  './\u00a0src',
+  'src\u00a0/.',
+  './\ufeffsrc',
+  'src\ufeff/',
+] as const;
+
 describe('literal ignorePaths normalization', () => {
   it.each(accepted)('normalizes %j to %j without I/O', (rule, expected) => {
     expect(normalizeIgnorePaths([rule], CONFIG)).toEqual([expected]);
@@ -113,6 +126,14 @@ describe('literal ignorePaths normalization', () => {
     const once = normalizeIgnorePaths(['./Src\\gen/', 'src//gen/.', 'a b/c', './a b/c'], CONFIG);
     expect(once).toEqual(['Src/gen', 'a b/c', 'src/gen']);
     expect(normalizeIgnorePaths(once, CONFIG)).toEqual(once);
+    for (const [raw] of accepted) {
+      const normalized = normalizeIgnorePaths([raw], CONFIG);
+      expect(normalizeIgnorePaths(normalized, CONFIG)).toEqual(normalized);
+    }
+    // These spellings must be rejected, rather than return a rule that fails on reuse.
+    for (const raw of exposedWhitespace) {
+      expect(() => normalizeIgnorePaths([raw], CONFIG)).toThrow(ProjectConfigError);
+    }
   });
 
   const invalid: readonly (readonly [string, string])[] = [
@@ -152,6 +173,7 @@ describe('literal ignorePaths normalization', () => {
     ['src\n', 'whitespace'],
     ['\u00a0src', 'whitespace'],
     ['src\ufeff', 'whitespace'],
+    ...exposedWhitespace.map((rule) => [rule, 'whitespace'] as const),
     ['src/zero\u0000.js', 'control'],
     ['src/line\n.js', 'control'],
     ['src/tab\t.js', 'control'],
