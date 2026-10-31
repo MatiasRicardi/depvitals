@@ -846,6 +846,13 @@ function isUnsupportedRegionStart(script: string, index: number): boolean {
  */
 type RegionDelimiter = ')' | '}' | '`' | '"' | "'";
 
+type RegionFrame = {
+  readonly close: RegionDelimiter;
+  readonly group: boolean;
+  wordBoundary: boolean;
+  commandStart: boolean;
+};
+
 /**
  * Skip one unsupported shell region starting at `start`, which must point at `$(`, `${` or a
  * backtick, and return the index just past its matching closing delimiter.
@@ -858,95 +865,161 @@ type RegionDelimiter = ')' | '}' | '`' | '"' | "'";
  * cannot close a region either. A single quote is literal text inside a double-quoted run, which is
  * the one quote form that does not nest.
  *
+ * Inside $(), command-position grouping parentheses own their closers and word-boundary comments
+ * stay inert through LF. Literal here-document boundaries are delegated to the same bounded helper.
+ * Arithmetic, case patterns, function declarations and unprovable group boundaries retain the remainder.
+ *
  * If EOF is reached first the region is unterminated and `script.length` is returned, leaving the
  * current outer segment unsupported. This never interprets shell semantics; it only locates opaque
  * region boundaries safely.
  */
 function skipUnsupportedRegion(script: string, start: number): number {
   const length = script.length;
-  const stack: RegionDelimiter[] = [];
-
+  const stack: RegionFrame[] = [];
+  const push = (close: RegionDelimiter, group = false): void => {
+    stack.push({ close, group, wordBoundary: true, commandStart: true });
+  };
+  const pop = (): void => {
+    const closed = stack.pop();
+    const parent = stack.at(-1);
+    if (parent !== undefined) {
+      parent.wordBoundary = closed?.group === true;
+      parent.commandStart = false;
+    }
+  };
   const first = script[start];
   const second = script[start + 1];
   let i: number;
   if (first === '`') {
-    stack.push('`');
+    push('`');
     i = start + 1;
   } else if (first === '$' && (second === '(' || second === '{')) {
-    stack.push(second === '(' ? ')' : '}');
+    if (second === '(' && script[start + 2] === '(') return length;
+    push(second === '(' ? ')' : '}');
     i = start + 2;
   } else {
-    // Not a region opener; advance by one so a caller can never loop forever.
     return start + 1;
   }
 
   while (i < length && stack.length > 0) {
     const ch = script[i];
-    if (ch === undefined) {
-      break;
-    }
-
     const top = stack.at(-1);
+    if (ch === undefined || top === undefined) break;
 
-    // Inside single quotes everything is literal, so only the closing single quote is special.
-    if (top === "'") {
-      if (ch === "'") {
-        stack.pop();
-      }
-      i += 1;
+    if (top.close === "'") {
+      if (ch === "'") pop();
+      i++;
       continue;
     }
-
-    // A backslash consumes the next character in `$()`, `${}`, backticks and double quotes.
     if (ch === '\\') {
+      // A removed line continuation does not begin a new shell word.
+      if (script[i + 1] !== '\n') {
+        top.wordBoundary = false;
+        top.commandStart = false;
+      }
       i += 2;
       continue;
     }
-
     if (ch === "'" || ch === '"') {
-      // A single quote is literal text inside a double-quoted run, so it must never open a region of
-      // its own. Doing so would keep the outer double quote open until EOF and hide the separators
-      // that follow it.
-      if (ch === "'" && top === '"') {
-        i += 1;
+      if (ch === "'" && top.close === '"') {
+        i++;
         continue;
       }
-      // A double quote closes only the quoted run it opened; any other quote opens a literal run.
-      if (ch === '"' && top === '"') {
-        stack.pop();
-      } else {
-        stack.push(ch);
+      if (ch === '"' && top.close === '"') pop();
+      else {
+        top.wordBoundary = false;
+        top.commandStart = false;
+        push(ch);
       }
-      i += 1;
+      i++;
       continue;
     }
 
     const next = script[i + 1];
     if (ch === '$' && opensExpansion(next)) {
-      stack.push(next === '(' ? ')' : '}');
+      if (next === '(' && script[i + 2] === '(') return length;
+      top.wordBoundary = false;
+      top.commandStart = false;
+      push(next === '(' ? ')' : '}');
       i += 2;
       continue;
     }
-
     if (ch === '`') {
-      if (top === '`') {
-        stack.pop();
-      } else {
-        stack.push('`');
+      if (top.close === '`') pop();
+      else {
+        top.wordBoundary = false;
+        top.commandStart = false;
+        push('`');
       }
-      i += 1;
+      i++;
       continue;
     }
 
-    // `)` and `}` close only a matching region; otherwise they are inert region content.
-    if ((ch === ')' || ch === '}') && ch === top) {
-      stack.pop();
+    if (top.close === ')') {
+      if (ch === '#' && top.wordBoundary) {
+        i = skipCommentToEndOfLine(script, i);
+        continue;
+      }
+      // A standalone pipeline negation leaves the following command in command position.
+      if (ch === '!' && top.commandStart && isRegionWordBoundary(next)) {
+        top.wordBoundary = true;
+        i++;
+        continue;
+      }
+      // These reserved words leave the next word in command position.
+      if (top.commandStart && top.wordBoundary) {
+        const lead = ['if', 'then', 'do', 'else', 'elif', 'while', 'until', 'time', '{'].find(
+          (word) => script.startsWith(word, i) && isRegionWordBoundary(script[i + word.length]),
+        );
+        if (lead !== undefined) {
+          i += lead.length;
+          top.wordBoundary = true;
+          continue;
+        }
+      }
+      // Case patterns and arithmetic/function syntax cannot be balanced as simple groups.
+      if (
+        top.commandStart &&
+        ['case', 'function'].some(
+          (word) => script.startsWith(word, i) && isRegionWordBoundary(script[i + word.length]),
+        )
+      )
+        return length;
+      if (ch === '<' && next === '<') {
+        const after = skipHereDocument(script, i);
+        if (after === undefined) return length;
+        i = after;
+        top.wordBoundary = true;
+        top.commandStart = true;
+        continue;
+      }
+      if (ch === '(') {
+        if (!top.commandStart || next === '(') return length;
+        top.wordBoundary = false;
+        top.commandStart = false;
+        push(')', true);
+        i++;
+        continue;
+      }
+      if (isWhitespace(ch) || ch === '\n' || ch === ';' || ch === '|' || ch === '&') {
+        top.wordBoundary = true;
+        if (ch === '\n' || ch === ';' || ch === '|' || ch === '&') top.commandStart = true;
+      } else {
+        top.wordBoundary = ch === '<' || ch === '>';
+        top.commandStart = false;
+      }
     }
-    i += 1;
+    if ((ch === ')' || ch === '}') && ch === top.close) pop();
+    i++;
   }
 
-  // An empty stack means the outermost region closed just before `i`; otherwise EOF arrived first.
   return stack.length === 0 ? i : length;
+}
+
+function isRegionWordBoundary(ch: string | undefined): boolean {
+  return (
+    ch === undefined || isWhitespace(ch) || ['\n', ';', '|', '&', '(', ')', '<', '>'].includes(ch)
+  );
 }
 
 /**

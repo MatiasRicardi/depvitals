@@ -46,6 +46,30 @@ const SCENARIOS: {
   note: string;
 }[] = [
   {
+    name: 'script-opaque-grouped',
+    result: { unusedDependencies: [], unusedDevDependencies: ['eslint'], missingDependencies: [] },
+    note: 'Unsupported substitutions stay opaque; grouping and comments preserve exterior commands, while unproven boundaries retain no remainder evidence.',
+  },
+  {
+    name: 'script-opaque-comment',
+    result: { unusedDependencies: [], unusedDevDependencies: ['eslint'], missingDependencies: [] },
+    note: 'Unsupported substitutions stay opaque; grouping and comments preserve exterior commands, while unproven boundaries retain no remainder evidence.',
+  },
+  {
+    name: 'script-opaque-undeclared',
+    result: { unusedDependencies: [], unusedDevDependencies: [], missingDependencies: [] },
+    note: 'Unsupported substitutions stay opaque; grouping and comments preserve exterior commands, while unproven boundaries retain no remainder evidence.',
+  },
+  {
+    name: 'script-opaque-unknown',
+    result: {
+      unusedDependencies: [],
+      unusedDevDependencies: ['eslint', 'prettier'],
+      missingDependencies: [],
+    },
+    note: 'Unsupported substitutions stay opaque; grouping and comments preserve exterior commands, while unproven boundaries retain no remainder evidence.',
+  },
+  {
     name: 'script-heredoc-declared',
     result: { unusedDependencies: [], unusedDevDependencies: ['eslint'], missingDependencies: [] },
     note: 'Here-document payloads are opaque; only a proven literal boundary restores command evidence, and scripts never create missing findings.',

@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "check": "echo $( (echo hi); eslint ) && prettier"
+  },
+  "devDependencies": {
+    "eslint": "*",
+    "prettier": "*"
+  }
+}

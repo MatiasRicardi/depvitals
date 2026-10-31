@@ -241,3 +241,5 @@ The `analysis/require-signature-review-declared` and `analysis/require-signature
 - `analysis/require-arrow-method-parameters-{declared,undeclared}` covers arrow and method parameter ownership, ASI and typed returns, inherited nested scopes, computed keys, constructor parameter properties, real imports and exterior global calls. The TypeScript fixture is scanned as text, never executed.
 
 The `analysis/script-heredoc-{declared,undeclared,unsupported,unterminated}` fixtures cover literal here-document payloads, real commands before/after a proven delimiter, unsupported simultaneous headers and missing closing delimiters. Scripts are analyzed without execution; their text never creates missing-dependency findings.
+
+The `analysis/script-opaque-{grouped,comment,undeclared,unknown}` fixtures cover nested subshell groups, POSIX comment text with quotes/closers, restored exterior command evidence and conservative unknown-boundary handling. Scripts remain static text and never create missing-dependency findings.

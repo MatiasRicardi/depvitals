@@ -1,0 +1,10 @@
+{
+  "scripts": {
+    "check": "tsc; echo $(case x in x) eslint;; esac) && prettier"
+  },
+  "devDependencies": {
+    "eslint": "*",
+    "prettier": "*",
+    "typescript": "*"
+  }
+}

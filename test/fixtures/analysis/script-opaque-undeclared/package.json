@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "check": "echo $( (echo hi); eslint ) && prettier\necho $(# \"\necho hi\n) && prettier"
+  },
+  "devDependencies": {}
+}
