@@ -10,6 +10,11 @@ export const opaqueShellCases: readonly OpaqueShellCase[] = [
   ...[
     'echo $( (echo hi); eslint )',
     'echo $(true&&(echo hi); eslint)',
+    'echo $(! (echo hi); eslint)',
+    'echo $(! true; eslint)',
+    'echo $(echo ! case)',
+    'echo $("!" case)',
+    'echo $(!literal case)',
     'echo $(echo word\\\n#literal)',
     'echo $(\\\n# ")\necho hi\n)',
     'echo $(echo \\); eslint)',
@@ -65,6 +70,17 @@ export const opaqueShellCases: readonly OpaqueShellCase[] = [
     script: `before-tool; ${region}`,
     expected: ['before-tool'],
     syntax: false,
+  })),
+  ...[
+    'echo $(! case x in x) :; eslint;; esac) && prettier',
+    'echo $(!\tcase x in x) :; eslint;; esac) && prettier',
+    'echo $(true && ! case x in x) :; eslint;; esac) && prettier',
+    'echo $(echo $(! case x in x) :; eslint;; esac)) && prettier',
+  ].map((region) => ({
+    name: `negated case keeps remainder opaque: ${region}`,
+    script: `before-tool; ${region}`,
+    expected: ['before-tool'],
+    syntax: true,
   })),
   {
     name: 'real mapped command after balanced groups',

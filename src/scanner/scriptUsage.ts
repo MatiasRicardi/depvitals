@@ -960,6 +960,12 @@ function skipUnsupportedRegion(script: string, start: number): number {
         i = skipCommentToEndOfLine(script, i);
         continue;
       }
+      // A standalone pipeline negation leaves the following command in command position.
+      if (ch === '!' && top.commandStart && isRegionWordBoundary(next)) {
+        top.wordBoundary = true;
+        i++;
+        continue;
+      }
       // Case patterns and arithmetic/function syntax cannot be balanced as simple groups.
       if (
         top.commandStart &&
