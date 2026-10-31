@@ -7,6 +7,8 @@
   "dependencies": {
     "arrow-real": "*",
     "audit-self": "*",
+    "cjs-await-real": "*",
+    "cjs-class-real": "*",
     "computed-fake": "*",
     "dynamic-real": "*",
     "eslint-config-prettier": "*",

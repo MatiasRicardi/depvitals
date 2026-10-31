@@ -68,6 +68,8 @@
       "unusedDevDependencies": [],
       "missingDependencies": [
         "arrow-real",
+        "cjs-await-real",
+        "cjs-class-real",
         "duplicate-missing",
         "dynamic-real",
         "function-real",
@@ -83,6 +85,8 @@
       "unusedDevDependencies": [],
       "missingDependencies": [
         "arrow-real",
+        "cjs-await-real",
+        "cjs-class-real",
         "duplicate-missing",
         "dynamic-real",
         "function-real",
@@ -95,7 +99,7 @@
     },
     "cli": {
       "exitCode": 1,
-      "stdout": "DepVitals\n\nMissing dependencies (9)\n  arrow-real\n  duplicate-missing\n  dynamic-real\n  function-real\n  genuine-missing\n  static-real\n  template-real\n  trailing-real\n  workspace-only\n",
+      "stdout": "DepVitals\n\nMissing dependencies (11)\n  arrow-real\n  cjs-await-real\n  cjs-class-real\n  duplicate-missing\n  dynamic-real\n  function-real\n  genuine-missing\n  static-real\n  template-real\n  trailing-real\n  workspace-only\n",
       "stderr": ""
     }
   },
