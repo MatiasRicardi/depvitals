@@ -19,6 +19,7 @@ import { implicitModuleCases } from './helpers/implicitModuleCases.js';
 import { expressionOwnerCases } from './helpers/expressionOwnerCases.js';
 import { arrowAssertionCases } from './helpers/pr76ArrowAssertionCases.js';
 import { assertionBoundaryCases } from './helpers/pr76AssertionBoundaryCases.js';
+import { requireParameterReviewCases } from './helpers/requireParameterReviewCases.js';
 import { remainingParserCases } from './helpers/pr76RemainingCases.js';
 
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
@@ -1493,4 +1494,86 @@ describe('Step 79 review signature boundaries through the compiled CLI', () => {
       ).toEqual(before);
     },
   );
+});
+
+describe('Step 80 arrow and method require ownership through compiled CLI', () => {
+  it.each(['declared', 'undeclared'] as const)('%s ownership preserves exact findings', (mode) => {
+    const project = join(
+      REPO_ROOT,
+      'test',
+      'fixtures',
+      'analysis',
+      `require-arrow-method-parameters-${mode}`,
+    );
+    const before = readdirSync(project).map((name) => [
+      name,
+      readFileSync(join(project, name), 'utf8'),
+    ]);
+    expect(runBuilt(project)).toEqual({
+      status: 1,
+      stdout:
+        mode === 'declared'
+          ? 'DepVitals\n\nUnused dependencies (5)\n  fake-arrow\n  fake-class\n  fake-default\n  fake-inherited\n  fake-method\n'
+          : 'DepVitals\n\nMissing dependencies (9)\n  real-after\n  real-asi\n  real-before\n  real-default\n  real-inside\n  real-key\n  real-key-control\n  real-method-name\n  real-module\n',
+      stderr: '',
+    });
+    expect(
+      readdirSync(project).map((name) => [name, readFileSync(join(project, name), 'utf8')]),
+    ).toEqual(before);
+  });
+  it.each([
+    "const f = (require) => require('unterminated",
+    "const o = { run(require) { require('unterminated",
+  ])('does not return a partial report for shadowed malformed source: %s', (source) => {
+    const result = runProject({}, { 'index.cjs': source });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Unterminated string');
+  });
+});
+
+describe('Step 80 review through analyzer and compiled CLI', () => {
+  it.each(
+    requireParameterReviewCases.flatMap((scenario) =>
+      (['declared', 'undeclared'] as const).map((mode) => ({ ...scenario, mode })),
+    ),
+  )('$name ($mode)', async ({ source, fileName, expected, mode }) => {
+    const project = mkdtempSync(join(tmpdir(), 'depvitals-step80-review-'));
+    try {
+      const real = [...new Set(expected)].sort();
+      const manifest = JSON.stringify({
+        type: 'module',
+        ...(mode === 'declared'
+          ? { dependencies: Object.fromEntries([...real, 'fake'].map((name) => [name, '*'])) }
+          : {}),
+      });
+      writeFileSync(join(project, 'package.json'), manifest);
+      writeFileSync(join(project, fileName), source);
+      expect(await analyzeProject(project)).toEqual({
+        projectRoot: project,
+        unusedDependencies: mode === 'declared' ? ['fake'] : [],
+        unusedDevDependencies: [],
+        missingDependencies: mode === 'undeclared' ? real : [],
+      });
+      expect(runBuilt(project)).toEqual({
+        status: 1,
+        stdout:
+          mode === 'declared'
+            ? 'DepVitals\n\nUnused dependencies (1)\n  fake\n'
+            : `DepVitals\n\nMissing dependencies (${String(real.length)})\n${real.map((name) => `  ${name}\n`).join('')}`,
+        stderr: '',
+      });
+      expect(readdirSync(project).sort()).toEqual([fileName, 'package.json'].sort());
+      expect(readFileSync(join(project, fileName), 'utf8')).toBe(source);
+      expect(readFileSync(join(project, 'package.json'), 'utf8')).toBe(manifest);
+    } finally {
+      rmSync(project, { recursive: true, force: true });
+    }
+  });
+  it('keeps malformed JSX defaults fatal', () => {
+    const result = runProject({}, { 'index.tsx': "const f = (value = <p>don't (" });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Unterminated JSX');
+  });
 });

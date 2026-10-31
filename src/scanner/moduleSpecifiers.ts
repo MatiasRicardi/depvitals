@@ -104,6 +104,7 @@ type RequireScope = {
 };
 
 type Token = {
+  readonly signatureContext?: FuncContext;
   readonly requireScope?: RequireScope;
   readonly parameterFrame?: number;
   readonly parameterType?: boolean;
@@ -254,7 +255,8 @@ type PendingClassContext = LexicalDepth & {
 // A brace owns its closing action. In particular an initializer's object/function cannot close
 // the enclosing class member, and only a function body restores the nearest function grammar.
 type BraceContext =
-  | { readonly role: 'object' | 'block' }
+  | { readonly role: 'object'; readonly depth: LexicalDepth }
+  | { readonly role: 'block' }
   | { readonly role: 'class'; readonly state: ClassContext; readonly isExpression: boolean }
   | { readonly role: 'static-block'; readonly owner: ClassContext }
   | { readonly role: 'function'; readonly context: FuncContext; readonly owner?: ClassContext };
@@ -295,6 +297,7 @@ function tokenize(
   detectModule = false,
 ): readonly Token[] {
   const tokens: Token[] = [];
+  const typeArgumentBounds = new Map<number, number | null>();
   const n = source.length;
   let i = 0;
   // Whether the previous identifier token is an expression-starting keyword (return, typeof, ...).
@@ -414,6 +417,12 @@ function tokenize(
   const insideObjectLiteral = (): boolean =>
     braceContexts[braceContexts.length - 1]?.role === 'object';
   const insideClassBody = (): boolean => braceContexts[braceContexts.length - 1]?.role === 'class';
+  const atMethodContainer = (): boolean => {
+    const brace = braceContexts[braceContexts.length - 1];
+    return brace?.role === 'object'
+      ? atLexicalDepth(brace.depth)
+      : brace?.role === 'class' && atLexicalDepth(brace.state);
+  };
   const currentClass = (): ClassContext | undefined => {
     const brace = braceContexts[braceContexts.length - 1];
     return brace?.role === 'class' ? brace.state : undefined;
@@ -686,6 +695,38 @@ function tokenize(
       typeAnnotation = undefined;
       inType = false;
     }
+    const expressionOwner = expressionFunctionContexts[expressionFunctionContexts.length - 1];
+    if (
+      typeAnnotation === undefined &&
+      ch === '<' &&
+      prevKind === 'identifier' &&
+      expressionOwner !== undefined &&
+      atLexicalDepth(expressionOwner)
+    ) {
+      const end = expressionTypeArgumentEnd(source, i, n, typeArgumentBounds);
+      if (end !== undefined) {
+        // Use the ordinary type overlay: it preserves template imports and lexical scopes.
+        typeAnnotation = {
+          role: 'assertion',
+          conditionalDepth: 0,
+          conditionalOperand: false,
+          importCallPending: false,
+          owner: {
+            parenDepth,
+            bracketDepth,
+            braceDepth: braceContexts.length,
+            frameDepth: frames.length,
+          },
+          parenDepth: 0,
+          bracketDepth: 0,
+          braceDepth: 0,
+          angleDepth: 0,
+          typeOperandExpected: true,
+        };
+        inType = true;
+      }
+    }
+
     // An assertion must release its type context before the same runtime delimiter can retire
     // an enclosing arrow. Consume the delimiter only after restoring the nearest function grammar.
     let expressionFunctionContext =
@@ -707,7 +748,7 @@ function tokenize(
         expressionFunctionContext,
       )
     ) {
-      expressionFunctionContexts.pop();
+      closeRequireScope(expressionFunctionContexts.pop()?.requireScope);
       expressionFunctionContext = expressionFunctionContexts[expressionFunctionContexts.length - 1];
     }
 
@@ -717,11 +758,17 @@ function tokenize(
       atLexicalDepth(typeAnnotation.signature.owner) &&
       atTypeRoot(typeAnnotation) &&
       !typeAnnotation.typeOperandExpected &&
-      identifier !== undefined &&
-      (!TYPE_OPERAND_KEYWORDS.has(identifier.value) || identifier.value === 'const')
+      ((identifier !== undefined &&
+        (!TYPE_OPERAND_KEYWORDS.has(identifier.value) || identifier.value === 'const')) ||
+        (ch === '[' &&
+          typeAnnotation.signature.context.isClassMember === true &&
+          computedMethodFollows(source, i, n)))
     ) {
       const signature = typeAnnotation.signature;
-      if (pendingFunctionContexts[pendingFunctionContexts.length - 1] === signature.context) {
+      if (
+        pendingFunctionContexts[pendingFunctionContexts.length - 1]?.requireScope ===
+        signature.context.requireScope
+      ) {
         closeRequireScope(pendingFunctionContexts.pop()?.requireScope);
       }
       if (classState !== undefined && signature.context.isClassMember === true) {
@@ -732,14 +779,16 @@ function tokenize(
     }
     const pendingBodylessSignature = pendingFunctionContexts[pendingFunctionContexts.length - 1];
     if (
-      typeAnnotation === undefined &&
-      tokenLineBreakBefore &&
-      ch !== '{' &&
-      ch !== ':' &&
       pendingBodylessSignature?.phase === 'awaiting-body' &&
-      atLexicalDepth(pendingBodylessSignature)
+      atLexicalDepth(pendingBodylessSignature) &&
+      ((typeAnnotation === undefined && tokenLineBreakBefore && ch !== '{' && ch !== ':') ||
+        (ch === '}' &&
+          (typeAnnotation === undefined ||
+            (typeAnnotation.role === 'return' && atTypeRoot(typeAnnotation)))))
     ) {
       closeRequireScope(pendingFunctionContexts.pop()?.requireScope);
+      typeAnnotation = undefined;
+      inType = false;
       resetExpressionState();
     }
     if (
@@ -798,7 +847,7 @@ function tokenize(
           context,
         )
       ) {
-        expressionFunctionContexts.pop();
+        closeRequireScope(expressionFunctionContexts.pop()?.requireScope);
         context = expressionFunctionContexts[expressionFunctionContexts.length - 1];
       }
 
@@ -958,7 +1007,11 @@ function tokenize(
         inType = false;
         lineTerminatorSinceLastToken = false;
 
-        if (!annotation.signature.isFunctionKeyword) {
+        if (
+          !annotation.signature.isFunctionKeyword &&
+          pendingFunctionContexts[pendingFunctionContexts.length - 1]?.requireScope !==
+            annotation.signature.context.requireScope
+        ) {
           pendingFunctionContexts.push({
             ...annotation.signature.context,
             ...annotation.signature.owner,
@@ -971,7 +1024,12 @@ function tokenize(
         atRoot &&
         annotation.role === 'return' &&
         annotation.signature.isArrowSignature &&
-        !functionTypeArrowContinues(source, i, n)
+        !functionTypeArrowContinues(
+          source,
+          i,
+          n,
+          conditional !== undefined && atLexicalDepth(conditional),
+        )
       ) {
         // The signature's own `=>`: everything after it is the body, not the return type.
         typedArrowContext = annotation.signature.context;
@@ -1198,7 +1256,7 @@ function tokenize(
           (value === 'export' && atRoot && exportSignalsModule(source, i)));
       const classMemberName =
         value === 'class' &&
-        (insideObjectLiteral() || insideClassBody()) &&
+        atMethodContainer() &&
         memberDeclarationHead(
           tokens,
           tokens.length,
@@ -1312,7 +1370,7 @@ function tokenize(
       // when a following `*` is seen). The context is consumed at the body `{`.
       const methodName =
         value === 'function' &&
-        (insideObjectLiteral() || insideClassBody()) &&
+        atMethodContainer() &&
         memberDeclarationHead(
           tokens,
           tokens.length,
@@ -1347,10 +1405,32 @@ function tokenize(
           phase: 'awaiting-parameters',
         });
       }
+      // A bare arrow parameter has no opening parenthesis to own its binding range.
+      const next = !inType && !isMemberName ? skipTrivia(source, i, n) : n;
+      const singleArrowContext: FuncContext | undefined =
+        source[next] === '=' && source[next + 1] === '>'
+          ? {
+              async:
+                prevKind === 'identifier' &&
+                previousIdentifier === 'async' &&
+                !tokenLineBreakBefore,
+              generator: false,
+              isExpression: false,
+              requireScope: {
+                parent: requireScopes[requireScopes.length - 1],
+                bindings: [{ start: tokens.length, end: tokens.length + 1 }],
+                inParameters: false,
+              },
+            }
+          : undefined;
+      if (singleArrowContext?.requireScope !== undefined) {
+        requireScopes.push(singleArrowContext.requireScope);
+      }
       emit({
         kind: 'identifier',
         value,
         offset: start,
+        ...(singleArrowContext === undefined ? {} : { signatureContext: singleArrowContext }),
         endOffset: i,
         ...(value === 'require' && requireScopes.length > 0
           ? { requireScope: requireScopes[requireScopes.length - 1] }
@@ -1575,7 +1655,19 @@ function tokenize(
       } else if (isStaticBlock && owner !== undefined) {
         braceContexts.push({ role: 'static-block', owner });
       } else {
-        braceContexts.push({ role: isObject ? 'object' : 'block' });
+        braceContexts.push(
+          isObject
+            ? {
+                role: 'object',
+                depth: {
+                  parenDepth,
+                  bracketDepth,
+                  braceDepth: braceContexts.length + 1,
+                  frameDepth: frames.length,
+                },
+              }
+            : { role: 'block' },
+        );
       }
 
       // Count the brace inside the innermost open `${...}` or JSX `{...}` expression so its closing
@@ -1587,25 +1679,43 @@ function tokenize(
       // A `(` after a control keyword opens a control head; only its matching `)` may then be
       // followed by a regex literal, so the nesting depth of every `(` has to be tracked.
       const pending = pendingFunctionContexts[pendingFunctionContexts.length - 1];
-      const previousToken = tokens[tokens.length - 1];
-      const arrowBodyParenthesis =
-        previousToken?.kind === 'punct' &&
-        previousToken.value === '>' &&
-        isArrowHead(tokens[tokens.length - 2], previousToken.offset);
-      const signatureCandidate = arrowBodyParenthesis
-        ? undefined
-        : parameterSignatureContext(
-            tokens,
-            pending !== undefined && atLexicalDepth(pending) ? pending : undefined,
-            insideObjectLiteral() || insideClassBody(),
-            insideClassBody(),
-            tokenLineBreakBefore,
-            currentClass()?.member?.start,
-          );
-      const signature =
-        signatureCandidate?.isArrowSignature === true && !arrowFollowsParametersSafely(source, i, n)
+      const signatureCandidate = parameterSignatureContext(
+        tokens,
+        pending !== undefined && atLexicalDepth(pending) ? pending : undefined,
+        atMethodContainer(),
+        insideClassBody(),
+        tokenLineBreakBefore,
+        currentClass()?.member?.start,
+      );
+      // A ternary's alternate may itself be an arrow. Its => is not proof that
+      // the consequent's parentheses were parameters: a typed arrow must still
+      // leave the enclosing conditional's colon after its own body.
+      const needsConditionalEnd = conditional !== undefined && atLexicalDepth(conditional);
+      const selectedSignature =
+        signatureCandidate?.isArrowSignature === true &&
+        !arrowFollowsParametersSafely(source, i, n, jsx, needsConditionalEnd)
           ? undefined
           : signatureCandidate;
+      const signature =
+        selectedSignature === undefined
+          ? undefined
+          : {
+              ...selectedSignature,
+              context:
+                selectedSignature.context.requireScope !== undefined
+                  ? selectedSignature.context
+                  : {
+                      ...selectedSignature.context,
+                      requireScope: {
+                        parent: requireScopes[requireScopes.length - 1],
+                        bindings: [],
+                        inParameters: true,
+                      },
+                    },
+            };
+      if (signature?.context.requireScope !== undefined) {
+        requireScopes.push(signature.context.requireScope);
+      }
       parameterContexts.push({
         openIndex: tokens.length,
         bindingStart: tokens.length + 1,
@@ -1641,9 +1751,6 @@ function tokenize(
         atLexicalDepth(pending) &&
         signature?.isFunctionKeyword === true
       ) {
-        if (pending.requireScope !== undefined) {
-          requireScopes.push(pending.requireScope);
-        }
         pending.parameterDepth = parenDepth + 1;
         pending.phase = 'parameters';
       }
@@ -1668,7 +1775,7 @@ function tokenize(
       }
 
       const parameters = parameterContexts.pop();
-      if (parameters?.signature?.isFunctionKeyword === true) {
+      if (parameters?.signature !== undefined) {
         recordRequireBinding(parameters, tokens.length);
         const scope = parameters.signature.context.requireScope;
         if (scope !== undefined) {
@@ -1677,6 +1784,18 @@ function tokenize(
       }
       matchingOpen = parameters?.openIndex;
       closedParameterSignature = parameters?.signature;
+      if (
+        closedParameterSignature !== undefined &&
+        !closedParameterSignature.isFunctionKeyword &&
+        !closedParameterSignature.isArrowSignature
+      ) {
+        pendingFunctionContexts.push({
+          ...closedParameterSignature.context,
+          ...closedParameterSignature.owner,
+          parameterDepth: undefined,
+          phase: 'awaiting-body',
+        });
+      }
       afterControlHead = parameters?.control === true;
 
       if (parenDepth > 0) {
@@ -1716,17 +1835,15 @@ function tokenize(
 
       if (context !== undefined) {
         if (source[next] === '{') {
-          if (typedArrowContext !== undefined) {
-            pendingFunctionContexts.push({
-              ...typedArrowContext,
-              parenDepth,
-              bracketDepth,
-              braceDepth: braceContexts.length,
-              frameDepth: frames.length,
-              parameterDepth: undefined,
-              phase: 'awaiting-body',
-            });
-          }
+          pendingFunctionContexts.push({
+            ...context,
+            parenDepth,
+            bracketDepth,
+            braceDepth: braceContexts.length,
+            frameDepth: frames.length,
+            parameterDepth: undefined,
+            phase: 'awaiting-body',
+          });
         } else {
           const parameterOwner = nearestFunctionParameter(parameterContexts);
           const classMemberOwner = nearestClassField(braceContexts);
@@ -1794,6 +1911,8 @@ function tokenize(
     }
 
     const previousToken = tokens[tokens.length - 1];
+    const openingSignature =
+      ch === '(' ? parameterContexts[parameterContexts.length - 1]?.signature?.context : undefined;
     emit({
       kind: 'punct',
       value: ch,
@@ -1807,6 +1926,7 @@ function tokenize(
         ? { expressionEnd: true }
         : {}),
       ...equalsOperator,
+      ...(openingSignature === undefined ? {} : { signatureContext: openingSignature }),
       ...(matchingOpen !== undefined ? { matchingOpen } : {}),
       ...(closedClassMemberBoundary || opensClassMemberBoundary || (ch === ';' && insideClassBody())
         ? { memberSeparator: true }
@@ -1947,19 +2067,172 @@ function jsxTagIsGeneric(source: string, i: number, n: number): boolean {
 // because a template literal is a single argument value, so its internal parentheses never shape
 // the parameter list. Regex-vs-division tracking mirrors the main tokenizer so a regex default
 // (for example `= /a/)`) is skipped instead of read as division.
-function arrowFollowsParameters(source: string, open: number, n: number): boolean {
+function arrowFollowsParameters(
+  source: string,
+  open: number,
+  n: number,
+  jsx = false,
+  needsConditionalEnd = false,
+  mode: 'parameters' | 'conditional-body' = 'parameters',
+): boolean {
   let depth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
+  let conditionalDepth = 0;
+  let assertionOwner: { paren: number; bracket: number; brace: number; frame: number } | undefined;
   let prevKind: PrevKind = 'start';
   let prevPunct: string | undefined;
 
   let k = open;
+  const jsxFrames: Frame[] = [];
+  const typeArgumentBounds = new Map<number, number | null>();
 
   while (k < n) {
-    k = skipTrivia(source, k, n);
-    const ch = source[k];
-
+    let ch = source[k];
+    const frame = jsxFrames[jsxFrames.length - 1];
+    if (frame?.kind === 'jsx-text') {
+      if (ch === '{') {
+        jsxFrames.push({ kind: 'jsx-expr', depth: 0, offset: k });
+        prevKind = 'start';
+        prevPunct = undefined;
+        k++;
+        continue;
+      }
+      if (ch === '<' && source[k + 1] === '/') {
+        const end = source.indexOf('>', k + 2);
+        if (end < 0) {
+          return false;
+        }
+        jsxFrames.pop();
+        prevKind = 'template';
+        prevPunct = undefined;
+        k = end + 1;
+        continue;
+      }
+      // Quotes, parentheses, backticks and comment markers in children are inert.
+      if (ch !== '<') {
+        k++;
+        continue;
+      }
+    } else if (frame?.kind === 'jsx-tag') {
+      if (ch === '<' && skipTrivia(source, frame.nameEnd, n) === k) {
+        k = readJsxTypeArguments(source, k, n, []);
+      } else if (ch === '{') {
+        jsxFrames.push({ kind: 'jsx-expr', depth: 0, offset: k });
+        prevKind = 'start';
+        prevPunct = undefined;
+        k++;
+      } else if (ch === '"' || ch === "'") {
+        k = skipJsxAttributeValue(source, k, n);
+      } else if (ch === '/' && source[k + 1] === '>') {
+        jsxFrames.pop();
+        prevKind = 'template';
+        prevPunct = undefined;
+        k += 2;
+      } else if (ch === '>') {
+        jsxFrames.pop();
+        jsxFrames.push({ kind: 'jsx-text', name: frame.name, offset: frame.offset });
+        k++;
+      } else {
+        k++;
+      }
+      continue;
+    } else {
+      k = skipTrivia(source, k, n);
+      ch = source[k];
+    }
     if (ch === undefined) {
       break;
+    }
+    if (
+      jsx &&
+      ch === '<' &&
+      (frame?.kind === 'jsx-text' || isRegexStart(prevKind, prevPunct, false, false, false))
+    ) {
+      if (source[k + 1] === '>') {
+        jsxFrames.push({ kind: 'jsx-text', name: null, offset: k });
+        k += 2;
+        continue;
+      }
+      if (
+        isIdentifierStartAt(source, k + 1) &&
+        (frame?.kind === 'jsx-text' || !jsxTagIsGeneric(source, k + 1, n))
+      ) {
+        const tag = readJsxTagName(source, k + 1, n);
+        jsxFrames.push({ kind: 'jsx-tag', name: tag.name, offset: k, nameEnd: tag.end });
+        k = tag.end;
+        continue;
+      }
+    }
+    if (frame?.kind === 'jsx-text') {
+      k++;
+      continue;
+    }
+    if (frame?.kind === 'jsx-expr') {
+      if (ch === '}') {
+        if (frame.depth === 0) {
+          jsxFrames.pop();
+          prevKind = 'template';
+          prevPunct = undefined;
+          k++;
+          continue;
+        }
+        frame.depth--;
+      } else if (ch === '{') {
+        frame.depth++;
+      }
+    }
+
+    if (mode === 'conditional-body' && ch === '<' && prevKind === 'identifier') {
+      const inAssertion =
+        assertionOwner?.paren === depth &&
+        assertionOwner.bracket === bracketDepth &&
+        assertionOwner.brace === braceDepth &&
+        assertionOwner.frame === jsxFrames.length;
+      const end = expressionTypeArgumentEnd(source, k, n, typeArgumentBounds, inAssertion);
+      if (end !== undefined) {
+        k = end;
+        prevKind = 'identifier';
+        prevPunct = undefined;
+        continue;
+      }
+    }
+
+    if (
+      assertionOwner?.paren === depth &&
+      assertionOwner.bracket === bracketDepth &&
+      assertionOwner.brace === braceDepth &&
+      assertionOwner.frame === jsxFrames.length &&
+      ['+', '-', '*', '/', '%', '=', '?', '!'].includes(ch)
+    ) {
+      assertionOwner = undefined;
+    }
+
+    // Reuse the same opaque regions to confirm a typed nested arrow in a ternary.
+    // Colons in JSX, object literals, nested delimiters or inner conditionals do not
+    // close the enclosing conditional. Stop at this expression's own boundary.
+    if (mode === 'conditional-body') {
+      if (jsxFrames.length === 0 && depth === 0 && bracketDepth === 0 && braceDepth === 0) {
+        if (ch === ':') {
+          if (conditionalDepth === 0) {
+            return true;
+          }
+          conditionalDepth--;
+        } else if (
+          ch === '?' &&
+          source[k + 1] !== '?' &&
+          source[k - 1] !== '?' &&
+          source[k + 1] !== '.'
+        ) {
+          conditionalDepth++;
+        } else if ([';', ',', ')', ']', '}'].includes(ch)) {
+          return false;
+        }
+      }
+      if (ch === '[') bracketDepth++;
+      else if (ch === ']') bracketDepth--;
+      else if (ch === '{') braceDepth++;
+      else if (ch === '}') braceDepth--;
     }
 
     // String literals: their brackets and slashes are inert text, so skip the whole value.
@@ -1994,16 +2267,33 @@ function arrowFollowsParameters(source: string, open: number, n: number): boolea
       prevKind = 'punct';
       prevPunct = ')';
 
-      if (depth === 0) {
+      if (depth === 0 && mode === 'parameters') {
         const j = skipTrivia(source, k + 1, n);
-
+        if (source[j] === '=' && source[j + 1] === '>') {
+          return true;
+        }
+        const arrow = source[j] === ':' ? arrowAfterReturnType(source, j + 1, n) : undefined;
         return (
-          (source[j] === '=' && source[j + 1] === '>') ||
-          (source[j] === ':' && arrowFollowsReturnType(source, j + 1, n))
+          arrow !== undefined &&
+          (!needsConditionalEnd ||
+            arrowFollowsParameters(source, arrow + 2, n, jsx, false, 'conditional-body'))
         );
       }
     } else if (isIdentifierStartAt(source, k)) {
       const identifier = readIdentifier(source, k);
+      if (
+        mode === 'conditional-body' &&
+        ['as', 'satisfies'].includes(identifier.value) &&
+        prevKind !== 'start' &&
+        !(prevKind === 'punct' && prevPunct === '.')
+      ) {
+        assertionOwner = {
+          paren: depth,
+          bracket: bracketDepth,
+          brace: braceDepth,
+          frame: jsxFrames.length,
+        };
+      }
       k = identifier.end - 1;
       prevKind = 'identifier';
       prevPunct = undefined;
@@ -2018,7 +2308,86 @@ function arrowFollowsParameters(source: string, open: number, n: number): boolea
   return false;
 }
 
-function arrowFollowsReturnType(source: string, start: number, n: number): boolean {
+/** Skip a balanced type-argument list only when its suffix can continue an expression. */
+function expressionTypeArgumentEnd(
+  source: string,
+  open: number,
+  n: number,
+  bounds: Map<number, number | null>,
+  typeAssertion = false,
+): number | undefined {
+  let end = bounds.get(open);
+  if (end === undefined) {
+    try {
+      end = readJsxTypeArguments(source, open, n, [], true, bounds);
+    } catch (error) {
+      if (error instanceof ModuleSpecifierError) {
+        bounds.set(open, null);
+        return undefined;
+      }
+      throw error;
+    }
+  }
+  if (end === null) return undefined;
+  const next = skipTrivia(source, end, n);
+  const ch = source[next];
+  if (!typeAssertion) return ch === '(' ? end : undefined;
+  if (isIdentifierStartAt(source, next) || isUnicodeEscapeStart(source, next)) {
+    return ['as', 'satisfies', 'in', 'instanceof'].includes(readIdentifier(source, next).value)
+      ? end
+      : undefined;
+  }
+  return ch !== undefined && (isNumberStart(ch) || ch === '"' || ch === "'") ? undefined : end;
+}
+
+/** A newline computed method head ends a complete bodyless member return annotation. */
+function computedMethodFollows(source: string, start: number, n: number): boolean {
+  let depth = 0;
+  let index = start;
+  let previous: PrevKind = 'start';
+  let punct: string | undefined;
+  while (index < n) {
+    index = skipTrivia(source, index, n);
+    const ch = source[index];
+    if (ch === undefined) {
+      break;
+    }
+    if (ch === "'" || ch === '"') {
+      index = readString(source, index).next;
+      previous = 'string';
+      continue;
+    }
+    if (ch === '`') {
+      index = skipTemplateLiteral(source, index);
+      previous = 'template';
+      continue;
+    }
+    if (ch === '/' && isRegexStart(previous, punct, false, false, false)) {
+      index = skipRegex(source, index);
+      previous = 'regex';
+      continue;
+    }
+    if (ch === '[') {
+      depth++;
+    } else if (ch === ']') {
+      depth--;
+      if (depth === 0) {
+        return source[skipTrivia(source, index + 1, n)] === '(';
+      }
+    }
+    if (isIdentifierStartAt(source, index) || isUnicodeEscapeStart(source, index)) {
+      index = readIdentifier(source, index).end;
+      previous = 'identifier';
+    } else {
+      previous = isNumberStart(ch) ? 'number' : 'punct';
+      punct = ch;
+      index++;
+    }
+  }
+  return false;
+}
+
+function arrowAfterReturnType(source: string, start: number, n: number): number | undefined {
   let parenDepth = 0;
   let bracketDepth = 0;
   let braceDepth = 0;
@@ -2029,7 +2398,7 @@ function arrowFollowsReturnType(source: string, start: number, n: number): boole
     index = skipTrivia(source, index, n);
     const ch = source[index];
     if (ch === undefined) {
-      return false;
+      return undefined;
     }
 
     if (ch === "'" || ch === '"') {
@@ -2042,9 +2411,31 @@ function arrowFollowsReturnType(source: string, start: number, n: number): boole
     }
     if (ch === '=' && source[index + 1] === '>') {
       if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0 && angleDepth === 0) {
-        return true;
+        return index;
       }
       index += 2;
+      continue;
+    }
+
+    if (
+      parenDepth === 0 &&
+      bracketDepth === 0 &&
+      braceDepth === 0 &&
+      angleDepth === 0 &&
+      (isIdentifierStartAt(source, index) || isUnicodeEscapeStart(source, index))
+    ) {
+      const identifier = readIdentifier(source, index);
+      const next = skipTrivia(source, identifier.end, n);
+      // An operand followed by a call is runtime code (not a return type). In particular,
+      // a conditional's `: async () =>` must not claim the preceding sequence expression.
+      if (
+        source[next] === '(' &&
+        identifier.value !== 'import' &&
+        !TYPE_OPERAND_KEYWORDS.has(identifier.value)
+      ) {
+        return undefined;
+      }
+      index = identifier.end;
       continue;
     }
 
@@ -2052,28 +2443,28 @@ function arrowFollowsReturnType(source: string, start: number, n: number): boole
       parenDepth++;
     } else if (ch === ')') {
       if (parenDepth === 0) {
-        return false;
+        return undefined;
       }
       parenDepth--;
     } else if (ch === '[') {
       bracketDepth++;
     } else if (ch === ']') {
       if (bracketDepth === 0) {
-        return false;
+        return undefined;
       }
       bracketDepth--;
     } else if (ch === '{') {
       braceDepth++;
     } else if (ch === '}') {
       if (braceDepth === 0) {
-        return false;
+        return undefined;
       }
       braceDepth--;
     } else if (ch === '<') {
       angleDepth++;
     } else if (ch === '>') {
       if (angleDepth === 0) {
-        return false;
+        return undefined;
       }
       angleDepth--;
     } else if (
@@ -2083,18 +2474,24 @@ function arrowFollowsReturnType(source: string, start: number, n: number): boole
       angleDepth === 0 &&
       (ch === ';' || ch === ',')
     ) {
-      return false;
+      return undefined;
     }
 
     index++;
   }
 
-  return false;
+  return undefined;
 }
 
-function arrowFollowsParametersSafely(source: string, open: number, n: number): boolean {
+function arrowFollowsParametersSafely(
+  source: string,
+  open: number,
+  n: number,
+  jsx = false,
+  needsConditionalEnd = false,
+): boolean {
   try {
-    return arrowFollowsParameters(source, open, n);
+    return arrowFollowsParameters(source, open, n, jsx, needsConditionalEnd);
   } catch (error) {
     if (error instanceof ModuleSpecifierError) {
       return false;
@@ -2165,79 +2562,218 @@ function skipTemplateLiteral(source: string, start: number): number {
   throw new ModuleSpecifierError('Unterminated template literal', 'invalid-source', start);
 }
 
+/** Probe template types with the same type boundaries as their interpolated operands. */
+function skipTemplateType(
+  source: string,
+  start: number,
+  n: number,
+  bounds?: Map<number, number | null>,
+): number {
+  let i = start + 1;
+  while (i < n) {
+    if (source[i] === '\\') i += 2;
+    else if (source[i] === '`') return i + 1;
+    else if (source[i] === '$' && source[i + 1] === '{') {
+      i = readJsxTypeArguments(source, i + 1, n, [], true, bounds, '}');
+    } else i++;
+  }
+  throw new ModuleSpecifierError('Unterminated template literal', 'invalid-source', start);
+}
+
+/** Only a complete type followed by a line break can begin another bodyless type member. */
+function typeMemberFollowsLineBreak(tokens: readonly Token[], lineBreak: boolean): boolean {
+  const complete = (token: Token | undefined): boolean => {
+    if (token === undefined) return false;
+    if (token.kind === 'identifier') return !TYPE_OPERAND_KEYWORDS.has(token.value);
+    return (
+      token.kind === 'string' ||
+      token.kind === 'number' ||
+      token.kind === 'template' ||
+      (token.kind === 'punct' &&
+        ([')', ']', '}', '>'].includes(token.value) || /^[0-9]$/.test(token.value)))
+    );
+  };
+  let index = tokens.length - 1;
+  if (lineBreak && complete(tokens[index])) return true;
+  // The line break may precede a modifier rather than the method name (e.g. get b()).
+  while (index >= 0) {
+    const token = tokens[index];
+    if (token?.kind !== 'identifier' || !MEMBER_MODIFIERS.has(token.value)) break;
+    if (token.lineBreakBefore === true && complete(tokens[index - 1])) return true;
+    index--;
+  }
+  return false;
+}
+
 /**
  * Lex only the boundaries of a component's type arguments. These tokens preserve literal imports
  * without changing the surrounding JavaScript function/brace state or treating type braces as JSX.
  */
-function readJsxTypeArguments(source: string, open: number, n: number, tokens: Token[]): number {
-  const closers = ['>'];
+function readJsxTypeArguments(
+  source: string,
+  open: number,
+  n: number,
+  tokens: Token[],
+  expressionProbe = false,
+  bounds?: Map<number, number | null>,
+  rootClose: '>' | '}' = '>',
+): number {
+  const closers: string[] = [rootClose];
+  const opens = [open];
+  const conditions = [0];
   let i = open + 1;
 
-  while (i < n) {
-    const trivia = readTrivia(source, i, n);
-    i = trivia.end;
-    const ch = source[i];
+  try {
+    while (i < n) {
+      const trivia = readTrivia(source, i, n);
+      i = trivia.end;
+      const ch = source[i];
 
-    if (ch === undefined) {
-      break;
-    }
+      if (ch === undefined) {
+        break;
+      }
 
-    if (ch === "'" || ch === '"') {
-      const { value, next } = readString(source, i);
+      // A speculative expression probe must not borrow a > from a later statement
+      // or conditional branch. Colons in conditional types still belong to the list.
+      if (
+        expressionProbe &&
+        (closers[closers.length - 1] === '>' || (rootClose === '}' && closers.length === 1))
+      ) {
+        const level = conditions.length - 1;
+        if (ch === '?') conditions[level] = (conditions[level] ?? 0) + 1;
+        else if (ch === ':' && (conditions[level] ?? 0) > 0)
+          conditions[level] = (conditions[level] ?? 0) - 1;
+        else if (
+          ch === ';' ||
+          ch === ':' ||
+          (ch === '=' && source[i + 1] !== '>') ||
+          ([')', ']', '}'].includes(ch) && ch !== closers[closers.length - 1])
+        ) {
+          throw new ModuleSpecifierError('Invalid type argument boundary', 'invalid-source', i);
+        }
+      }
+
+      if (expressionProbe && ch === '/') {
+        throw new ModuleSpecifierError('Runtime slash in type argument probe', 'invalid-source', i);
+      }
+      if (ch === "'" || ch === '"') {
+        const callee = tokens[tokens.length - 2];
+        if (
+          expressionProbe &&
+          isPunct(tokens[tokens.length - 1], '(') &&
+          callee?.kind === 'identifier' &&
+          callee.value !== 'import' &&
+          !TYPE_OPERAND_KEYWORDS.has(callee.value)
+        ) {
+          throw new ModuleSpecifierError(
+            'Literal method parameter in type argument probe',
+            'invalid-source',
+            i,
+          );
+        }
+        const { value, next } = readString(source, i);
+        tokens.push({
+          kind: 'string',
+          value,
+          offset: i,
+          endOffset: next,
+          lineBreakBefore: trivia.lineBreak,
+        });
+        i = next;
+        continue;
+      }
+
+      if (ch === '`') {
+        if (expressionProbe) {
+          const end = skipTemplateType(source, i, n, bounds);
+          tokens.push({
+            kind: 'template',
+            offset: i,
+            endOffset: end,
+            lineBreakBefore: trivia.lineBreak,
+          });
+          i = end;
+          continue;
+        }
+        throw new ModuleSpecifierError(
+          'Template literal types in JSX type arguments are not supported',
+          'invalid-source',
+          i,
+        );
+      }
+
+      if (isIdentifierStartAt(source, i)) {
+        const start = i;
+        const identifier = readIdentifier(source, i);
+        const next = skipTrivia(source, identifier.end, n);
+        if (
+          expressionProbe &&
+          source[next] === '(' &&
+          identifier.value !== 'import' &&
+          !TYPE_OPERAND_KEYWORDS.has(identifier.value) &&
+          !(
+            closers[closers.length - 1] === '}' &&
+            closers.length > 1 &&
+            (memberDeclarationHead(tokens, tokens.length, false) !== undefined ||
+              typeMemberFollowsLineBreak(tokens, trivia.lineBreak))
+          )
+        ) {
+          throw new ModuleSpecifierError(
+            'Runtime call in type argument probe',
+            'invalid-source',
+            i,
+          );
+        }
+        i = identifier.end;
+        tokens.push({
+          kind: 'identifier',
+          value: identifier.value,
+          offset: start,
+          endOffset: i,
+          lineBreakBefore: trivia.lineBreak,
+        });
+        continue;
+      }
+
+      if (expressionProbe && ch === '{' && isPunct(tokens[tokens.length - 1], ')')) {
+        throw new ModuleSpecifierError('Runtime body in type argument probe', 'invalid-source', i);
+      }
+      if (ch === '<' || ch === '(' || ch === '{' || ch === '[') {
+        closers.push(ch === '<' ? '>' : ch === '(' ? ')' : ch === '{' ? '}' : ']');
+        opens.push(i);
+        conditions.push(0);
+      } else if (ch === closers[closers.length - 1] && !(ch === '>' && source[i - 1] === '=')) {
+        closers.pop();
+        const opened = opens.pop();
+        conditions.pop();
+        if (expressionProbe && ch === '>' && opened !== undefined) bounds?.set(opened, i + 1);
+        if (closers.length === 0) {
+          return i + 1;
+        }
+      }
+
       tokens.push({
-        kind: 'string',
-        value,
+        kind: 'punct',
+        value: ch,
         offset: i,
-        endOffset: next,
+        endOffset: i + 1,
         lineBreakBefore: trivia.lineBreak,
+        ...(ch === '=' ? classifyEquals(source, i, true) : {}),
       });
-      i = next;
-      continue;
+      i++;
     }
 
-    if (ch === '`') {
-      throw new ModuleSpecifierError(
-        'Template literal types in JSX type arguments are not supported',
-        'invalid-source',
-        i,
-      );
-    }
-
-    if (isIdentifierStartAt(source, i)) {
-      const start = i;
-      const identifier = readIdentifier(source, i);
-      i = identifier.end;
-      tokens.push({
-        kind: 'identifier',
-        value: identifier.value,
-        offset: start,
-        endOffset: i,
-        lineBreakBefore: trivia.lineBreak,
-      });
-      continue;
-    }
-
-    if (ch === '<' || ch === '(' || ch === '{' || ch === '[') {
-      closers.push(ch === '<' ? '>' : ch === '(' ? ')' : ch === '{' ? '}' : ']');
-    } else if (ch === closers[closers.length - 1] && !(ch === '>' && source[i - 1] === '=')) {
-      closers.pop();
-      if (closers.length === 0) {
-        return i + 1;
+    throw new ModuleSpecifierError('Unterminated JSX type arguments', 'invalid-source', open);
+  } catch (error) {
+    if (expressionProbe && bounds !== undefined) {
+      // One failed walk classifies every still-open angle encountered along the way.
+      for (let level = 0; level < closers.length; level++) {
+        const opened = opens[level];
+        if (closers[level] === '>' && opened !== undefined) bounds.set(opened, null);
       }
     }
-
-    tokens.push({
-      kind: 'punct',
-      value: ch,
-      offset: i,
-      endOffset: i + 1,
-      lineBreakBefore: trivia.lineBreak,
-      ...(ch === '=' ? classifyEquals(source, i, true) : {}),
-    });
-    i++;
+    throw error;
   }
-
-  throw new ModuleSpecifierError('Unterminated JSX type arguments', 'invalid-source', open);
 }
 
 /**
@@ -2317,7 +2853,12 @@ const TYPE_OPERAND_KEYWORDS: ReadonlySet<string> = new Set([
  * (`(): (x: number) => void => {}`); once the return type is over, the next significant token is the
  * body (`{`), a statement terminator or a delimiter that closes the surrounding code.
  */
-function functionTypeArrowContinues(source: string, arrowEnd: number, n: number): boolean {
+function functionTypeArrowContinues(
+  source: string,
+  arrowEnd: number,
+  n: number,
+  conditionalEnd = false,
+): boolean {
   let depth = 0;
 
   for (let i = arrowEnd + 1; i < n; i++) {
@@ -2334,7 +2875,7 @@ function functionTypeArrowContinues(source: string, arrowEnd: number, n: number)
 
       depth--;
     } else if (depth === 0) {
-      if (ch === '{' || ch === ';' || ch === ',') {
+      if (ch === '{' || ch === ';' || ch === ',' || (conditionalEnd && ch === ':')) {
         return false;
       }
 
@@ -2831,11 +3372,31 @@ function inferArrowContext(tokens: readonly Token[], arrowIndex: number): FuncCo
     markerToken.value === 'async' &&
     asyncModifierIsContinuous(tokens, markerIndex, parametersIndex);
 
-  return {
-    async,
-    generator: false,
-    isExpression: false,
-  };
+  return (
+    parametersStart.signatureContext ?? {
+      async,
+      generator: false,
+      isExpression: false,
+    }
+  );
+}
+
+/** Parameter lists can start at expression/statement boundaries, never after a call's name. */
+function arrowParameterPrefix(token: Token | undefined): boolean {
+  if (token === undefined) {
+    return true;
+  }
+  if (token.kind === 'punct') {
+    return (
+      EXPRESSION_BEFORE_BRACE.has(token.value) || [':', '>', ';', '{', '/'].includes(token.value)
+    );
+  }
+  return (
+    token.kind === 'identifier' &&
+    ['return', 'throw', 'yield', 'await', 'void', 'typeof', 'delete', 'default'].includes(
+      token.value,
+    )
+  );
 }
 
 function parameterSignatureContext(
@@ -2873,12 +3434,7 @@ function parameterSignatureContext(
   const marker = tokens[nameIndex - 1];
   // A generic signature has no name of its own before `(` when it is anonymous (`async <T,>(v: T) => {}`).
   const startsArrowParameters =
-    openIndex === 0 ||
-    (isIdentifier(name, 'async') &&
-      (openIndex === 1 ||
-        (marker?.kind === 'punct' && ['=', '(', '[', ',', ':'].includes(marker.value)) ||
-        isIdentifier(marker, 'return'))) ||
-    (name?.kind === 'punct' && ['=', '(', '[', ',', ':'].includes(name.value));
+    arrowParameterPrefix(name) || (isIdentifier(name, 'async') && arrowParameterPrefix(marker));
 
   if (startsArrowParameters) {
     const asyncToken = name?.kind === 'identifier' && name.value === 'async' ? name : undefined;
@@ -3813,6 +4369,16 @@ function bindingHasRequire(
       break;
     }
     let index = bindingAfterRest(tokens, target.start);
+    // Constructor parameter properties prefix the binding, rather than naming it.
+    let modifier = tokens[index];
+    while (
+      index + 1 < target.end &&
+      modifier?.kind === 'identifier' &&
+      ['public', 'private', 'protected', 'readonly', 'override'].includes(modifier.value)
+    ) {
+      index++;
+      modifier = tokens[index];
+    }
     const token = tokens[index];
     if (token?.kind === 'identifier') {
       const next = tokens[index + 1];
