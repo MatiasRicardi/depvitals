@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "check": "tsc; cat <<'EOF'\neslint\nnpx eslint\nEOF\nprettier"
+  },
+  "devDependencies": {}
+}

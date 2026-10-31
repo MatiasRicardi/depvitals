@@ -45,6 +45,34 @@ const SCENARIOS: {
   result: Omit<AnalysisResult, 'projectRoot'>;
   note: string;
 }[] = [
+  {
+    name: 'script-heredoc-declared',
+    result: { unusedDependencies: [], unusedDevDependencies: ['eslint'], missingDependencies: [] },
+    note: 'Here-document payloads are opaque; only a proven literal boundary restores command evidence, and scripts never create missing findings.',
+  },
+  {
+    name: 'script-heredoc-undeclared',
+    result: { unusedDependencies: [], unusedDevDependencies: [], missingDependencies: [] },
+    note: 'Here-document payloads are opaque; only a proven literal boundary restores command evidence, and scripts never create missing findings.',
+  },
+  {
+    name: 'script-heredoc-unsupported',
+    result: {
+      unusedDependencies: [],
+      unusedDevDependencies: ['eslint', 'prettier'],
+      missingDependencies: [],
+    },
+    note: 'Here-document payloads are opaque; only a proven literal boundary restores command evidence, and scripts never create missing findings.',
+  },
+  {
+    name: 'script-heredoc-unterminated',
+    result: {
+      unusedDependencies: [],
+      unusedDevDependencies: ['eslint', 'prettier'],
+      missingDependencies: [],
+    },
+    note: 'Here-document payloads are opaque; only a proven literal boundary restores command evidence, and scripts never create missing findings.',
+  },
   ...(['declared', 'undeclared'] as const).map((mode) => ({
     name: `require-arrow-method-parameters-${mode}`,
     result: {

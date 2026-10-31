@@ -4,6 +4,9 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { spawnSync } from 'node:child_process';
+import { hereDocumentCases, hereDocumentDeclaredNames } from '../../helpers/hereDocumentCases.js';
+
 import { findPackageScriptUsage } from '../../../src/scanner/scriptUsage.js';
 
 describe('findPackageScriptUsage', () => {
@@ -2263,5 +2266,24 @@ describe('findPackageScriptUsage', () => {
         findPackageScriptUsage({ build: 'tsc # trailing comment at EOF' }, new Set(['typescript'])),
       ).toEqual(new Set(['typescript']));
     });
+  });
+});
+
+describe('Step 81 here-document payload boundaries', () => {
+  it.each(hereDocumentCases)('$name', ({ script, expected, syntax }) => {
+    const scripts = Object.freeze({ check: script });
+    const declared = new Set(hereDocumentDeclaredNames);
+    expect([...findPackageScriptUsage(scripts, declared)]).toEqual(expected);
+    expect([...declared]).toEqual(hereDocumentDeclaredNames);
+    expect(scripts.check).toBe(script);
+    if (syntax && process.platform === 'linux') {
+      const checked = spawnSync('bash', ['-n'], {
+        input: script,
+        encoding: 'utf8',
+        timeout: 10_000,
+      });
+      expect(checked.error).toBeUndefined();
+      expect(checked.status, checked.stderr).toBe(0);
+    }
   });
 });

@@ -38,7 +38,8 @@
  * that is still open at the end of the script. Each such region is consumed as an opaque block, so a
  * separator inside it never delimits the surrounding script. An invalidated segment yields no
  * evidence at all, while the neighbouring segments delimited by real supported separators are still
- * analyzed normally.
+ * analyzed normally. Here-document payloads stay opaque; scanning resumes only after a proven
+ * literal closing delimiter. Unknown headers discard the unproven remainder.
  */
 
 import { classifyPackageSpecifier } from './packageSpecifier.js';
@@ -517,7 +518,8 @@ function matchRunnerPackage(significant: readonly Token[]): string | undefined {
  * (Step 68.1). Unsupported constructs (single `&`, redirection, `$(...)`, `${...}`, quotes left open
  * at the end of the script) mark the current segment as unsupported instead of guessing tokens from
  * inside it. The marker is reset by the next real separator, so invalidation stays local to the
- * affected segment.
+ * affected segment. Here-document payloads are the exception: a literal closing delimiter must be
+ * proven before scanning resumes; unknown headers discard the unproven remainder.
  */
 function splitSegments(script: string): readonly Segment[] {
   const segments: Segment[] = [];
@@ -555,6 +557,17 @@ function splitSegments(script: string): readonly Segment[] {
     // as an unsupported expansion by `scanToken` before the `#` could be seen at the loop boundary.
     if (ch === '#') {
       i = skipCommentToEndOfLine(script, i);
+      continue;
+    }
+
+    // A here-document owns its entire payload, including apparent commands and quotes.
+    // Only the bounded literal header can establish a trusted resumption point.
+    if (ch === '<' && script[i + 1] === '<') {
+      const next = unsupported ? undefined : skipHereDocument(script, i);
+      unsupported = true;
+      if (next === undefined) break;
+      i = next;
+      flush();
       continue;
     }
 
@@ -599,6 +612,51 @@ function splitSegments(script: string): readonly Segment[] {
 
   segments.push({ tokens, unsupported });
   return segments;
+}
+
+/** Locate a single literal << / <<- payload without interpreting or expanding any of it. */
+function skipHereDocument(script: string, start: number): number | undefined {
+  let i = start + 2;
+  const stripTabs = script[i] === '-';
+  if (stripTabs) i++;
+  while (script[i] === ' ' || script[i] === '\t') i++;
+  const quote = script[i] === "'" || script[i] === '"' ? script[i++] : undefined;
+  const delimiterStart = i;
+  while (i < script.length && /[A-Za-z0-9_]/.test(script[i] ?? '')) i++;
+  if (i === delimiterStart) return undefined;
+  const delimiter = script.slice(delimiterStart, i);
+  if (quote !== undefined) {
+    if (script[i] !== quote) return undefined;
+    i++;
+  }
+  const delimiterEnd = i;
+  while (script[i] === ' ' || script[i] === '\t') i++;
+  // An adjacent # is part of the delimiter word, not a shell comment.
+  if (i > delimiterEnd && script[i] === '#') i = skipCommentToEndOfLine(script, i);
+  if (script[i] === '\r' && script[i + 1] === '\n') i++;
+  if (script[i] !== '\n') return undefined;
+  i++;
+
+  while (i < script.length) {
+    const newline = script.indexOf('\n', i);
+    let end = newline < 0 ? script.length : newline;
+    if (newline >= 0 && script[end - 1] === '\r') end--;
+    if (quote === undefined && newline >= 0) {
+      // Unquoted payloads remove an unescaped backslash-newline before delimiter matching.
+      // Logical-line reconstruction is outside the resume subset: do not trust the remainder.
+      let escapeStart = end;
+      while (escapeStart > i && script[escapeStart - 1] === '\\') escapeStart--;
+      if ((end - escapeStart) % 2 === 1) return undefined;
+    }
+    let content = i;
+    if (stripTabs) while (script[content] === '\t') content++;
+    if (script.slice(content, end) === delimiter) {
+      return newline < 0 ? script.length : newline + 1;
+    }
+    if (newline < 0) return undefined;
+    i = newline + 1;
+  }
+  return undefined;
 }
 
 /**
@@ -650,6 +708,9 @@ function scanToken(script: string, start: number): ScannedToken {
     if (isWhitespace(ch) || ch === ';' || ch === '\n' || ch === '|' || ch === '&') {
       break;
     }
+
+    // Let the outer scanner consume a here-document even when it is attached to a word.
+    if (ch === '<' && script[i + 1] === '<') break;
 
     // Redirection is not parsed in v0.1.0; its presence alone invalidates the segment.
     if (ch === '<' || ch === '>') {

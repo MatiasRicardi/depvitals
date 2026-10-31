@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "check": "cat <<EOF\neslint\nprettier"
+  },
+  "devDependencies": {
+    "eslint": "*",
+    "prettier": "*"
+  }
+}
