@@ -32,10 +32,15 @@
  * shared by both legacy readers, so the two sources obey exactly one set of rules.
  */
 
-import { readFile, readdir } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { loadProjectManifest, ProjectManifestError } from '../scanner/projectManifest.js';
+import {
+  loadProjectManifest,
+  ProjectManifestError,
+  readManifestText,
+} from '../scanner/projectManifest.js';
+import { assertReadableRoot, SourceFilesError } from '../scanner/sourceFiles.js';
 
 /**
  * The legacy `extends` values recognized by this release and the package each one refers to.
@@ -160,6 +165,7 @@ export async function readLegacyEslintPrecedence(
 
   let entries: string[];
   try {
+    await assertReadableRoot(root);
     entries = await readdir(root);
   } catch {
     return {
@@ -259,7 +265,7 @@ export async function findEslintManifestUsage(projectRoot: string): Promise<Read
     packageJsonPath = manifest.packageJsonPath;
     declaredPackageNames = manifest.declaredDependencyNames;
   } catch (error) {
-    if (error instanceof ProjectManifestError) {
+    if (error instanceof ProjectManifestError || error instanceof SourceFilesError) {
       return new Set<string>();
     }
 
@@ -295,6 +301,7 @@ function hasFlatConfigEntryEntries(entries: readonly string[]): boolean {
 export async function hasFlatConfigEntry(projectRoot: string): Promise<boolean> {
   let entries: string[];
   try {
+    await assertReadableRoot(resolve(projectRoot));
     entries = await readdir(resolve(projectRoot));
   } catch {
     return false;
@@ -314,7 +321,7 @@ async function readEslintConfigValue(packageJsonPath: string): Promise<unknown> 
   let text: string;
 
   try {
-    text = await readFile(packageJsonPath, 'utf8');
+    text = await readManifestText(packageJsonPath);
   } catch {
     return undefined;
   }

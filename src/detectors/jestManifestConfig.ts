@@ -37,10 +37,15 @@
  * duplicate the manifest loader.
  */
 
-import { readFile, readdir } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { loadProjectManifest, ProjectManifestError } from '../scanner/projectManifest.js';
+import {
+  loadProjectManifest,
+  ProjectManifestError,
+  readManifestText,
+} from '../scanner/projectManifest.js';
+import { assertReadableRoot, SourceFilesError } from '../scanner/sourceFiles.js';
 import { classifyPackageSpecifier } from '../scanner/packageSpecifier.js';
 
 /**
@@ -169,7 +174,7 @@ export async function findJestManifestUsage(projectRoot: string): Promise<Readon
     packageJsonPath = manifest.packageJsonPath;
     declaredPackageNames = manifest.declaredDependencyNames;
   } catch (error) {
-    if (error instanceof ProjectManifestError) {
+    if (error instanceof ProjectManifestError || error instanceof SourceFilesError) {
       return new Set<string>();
     }
 
@@ -191,6 +196,7 @@ export async function hasRootJestConfigEntry(root: string): Promise<boolean> {
   let entries: string[];
 
   try {
+    await assertReadableRoot(root);
     entries = await readdir(root);
   } catch {
     return false;
@@ -210,7 +216,7 @@ async function readJestConfigValue(packageJsonPath: string): Promise<unknown> {
   let text: string;
 
   try {
-    text = await readFile(packageJsonPath, 'utf8');
+    text = await readManifestText(packageJsonPath);
   } catch {
     return undefined;
   }

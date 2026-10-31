@@ -123,7 +123,7 @@ export async function discoverSourceFiles(
  * symlinked root is rejected instead of being traversed, keeping the "never follow symlinks"
  * contract consistent from the entry point down.
  */
-async function assertReadableRoot(root: string): Promise<void> {
+export async function assertReadableRoot(root: string): Promise<void> {
   try {
     const info = await lstat(root);
 

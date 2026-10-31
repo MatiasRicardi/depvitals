@@ -23,7 +23,7 @@ import { findEslintManifestUsage } from '../detectors/eslintManifestConfig.js';
 import { EslintRcJsonError, findEslintRcJsonUsage } from '../detectors/eslintRcJsonConfig.js';
 import { findJestManifestUsage } from '../detectors/jestManifestConfig.js';
 import { formatTerminalReport, hasDependencyIssues } from '../reporters/terminalReporter.js';
-import { ProjectManifestError } from '../scanner/projectManifest.js';
+import { loadProjectManifest, ProjectManifestError } from '../scanner/projectManifest.js';
 import { SourceFilesError } from '../scanner/sourceFiles.js';
 
 import { parseCliArgs } from './parseCliArgs.js';
@@ -97,6 +97,9 @@ async function runScan(projectPath: string): Promise<CliResult> {
   let result: AnalysisResult;
 
   try {
+    // Required root metadata is validated before any optional detector reads.
+    await loadProjectManifest(projectPath);
+
     // Legacy ESLint configuration contributes configuration-only names. They are passed through the
     // analyzer's config handoff, which merges them into `usedNames` only, so they can suppress an
     // unused finding and can never create a missing one.

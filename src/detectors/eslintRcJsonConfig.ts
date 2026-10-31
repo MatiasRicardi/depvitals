@@ -51,6 +51,7 @@ import { lstat, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import { loadProjectManifest, ProjectManifestError } from '../scanner/projectManifest.js';
+import { SourceFilesError } from '../scanner/sourceFiles.js';
 import { findEslintConfigUsage, readLegacyEslintPrecedence } from './eslintManifestConfig.js';
 
 /**
@@ -121,7 +122,7 @@ export async function findEslintRcJsonUsage(projectRoot: string): Promise<Readon
 
     declaredPackageNames = manifest.declaredDependencyNames;
   } catch (error) {
-    if (error instanceof ProjectManifestError) {
+    if (error instanceof ProjectManifestError || error instanceof SourceFilesError) {
       // Manifest failures stay with the manifest loader and the analyzer, which report them as they
       // always have; this detector never duplicates that diagnosis.
       return new Set<string>();

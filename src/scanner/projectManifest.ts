@@ -17,8 +17,10 @@
  * as invalid instead of being silently normalized.
  */
 
-import { readFile } from 'node:fs/promises';
+import { lstat, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+
+import { assertReadableRoot, SourceFilesError } from './sourceFiles.js';
 
 /**
  * A dependency section: package name mapped to the version specifier declared for it.
@@ -59,7 +61,7 @@ export type PackageTypeHint = {
  * Why a manifest could not be turned into a {@link ProjectManifest}.
  *
  * - `missing`: no `package.json` exists at the expected path.
- * - `unreadable`: the file exists but could not be read (permissions, not a directory, ...).
+ * - `unreadable`: the entry is linked/non-regular, or a present file could not be read.
  * - `invalid-json`: the file content is not valid JSON.
  * - `invalid-shape`: the JSON is valid but its structure is not what the model requires.
  */
@@ -89,17 +91,23 @@ export class ProjectManifestError extends Error {
  *
  * @throws {ProjectManifestError} when the manifest is missing, unreadable, invalid JSON, or has an
  * unexpected structure.
+ * @throws {SourceFilesError} when the selected root is linked or is not a directory.
  */
 export async function loadProjectManifest(projectRoot: string): Promise<ProjectManifest> {
   const root = resolve(projectRoot);
   const packageJsonPath = join(root, MANIFEST_FILENAME);
 
-  let text: string;
   try {
-    text = await readFile(packageJsonPath, 'utf8');
+    await assertReadableRoot(root);
   } catch (error) {
-    throw toReadError(packageJsonPath, error);
+    // Preserve manifest-loader diagnostics for missing/unreadable roots, but reject linked roots
+    // with the same typed root error as source discovery before any target input is consulted.
+    if (error instanceof SourceFilesError && error.code !== 'not-a-directory') {
+      throw toReadError(packageJsonPath, error.cause ?? error);
+    }
+    throw error;
   }
+  const text = await readManifestText(packageJsonPath);
 
   return parseManifest(root, packageJsonPath, text);
 }
@@ -116,17 +124,10 @@ export async function loadPackageTypeHint(directory: string): Promise<PackageTyp
 
   let text: string;
   try {
-    text = await readFile(packageJsonPath, 'utf8');
+    text = await readManifestText(packageJsonPath);
   } catch (error) {
-    if (isNotFoundError(error)) {
-      return undefined;
-    }
-
-    throw new ProjectManifestError(
-      `Could not read ${MANIFEST_FILENAME} at ${packageJsonPath}`,
-      'unreadable',
-      error,
-    );
+    if (error instanceof ProjectManifestError && error.code === 'missing') return undefined;
+    throw error;
   }
 
   let parsed: unknown;
@@ -147,8 +148,37 @@ export async function loadPackageTypeHint(directory: string): Promise<PackageTyp
 }
 
 /**
+ * Read mandatory manifest text only from a non-linked regular file. Only absence at lstat means
+ * no scope; a present entry that cannot be read (including disappearance after lstat) is an error.
+ * This checks stable filesystem entries, not adversarial replacement between calls.
+ */
+export async function readManifestText(packageJsonPath: string): Promise<string> {
+  let info;
+  try {
+    info = await lstat(packageJsonPath);
+  } catch (error) {
+    throw toReadError(packageJsonPath, error);
+  }
+  if (!info.isFile()) {
+    throw new ProjectManifestError(
+      `${packageJsonPath} must be a regular file; symlinks and non-regular entries are not read`,
+      'unreadable',
+    );
+  }
+  try {
+    return await readFile(packageJsonPath, 'utf8');
+  } catch (error) {
+    throw new ProjectManifestError(
+      `Could not read ${MANIFEST_FILENAME} at ${packageJsonPath}`,
+      'unreadable',
+      error,
+    );
+  }
+}
+
+/**
  * Classify a filesystem failure: a missing manifest is expected and reported separately from any
- * other I/O problem. A root that turns out to be a file surfaces as `ENOTDIR` and stays unreadable.
+ * other I/O problem. Missing nested scopes may inherit only when the entry was absent at lstat.
  */
 function toReadError(packageJsonPath: string, error: unknown): ProjectManifestError {
   if (isNotFoundError(error)) {
