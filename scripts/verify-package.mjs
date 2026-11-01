@@ -630,7 +630,28 @@ require('real');`,
       join(invalidTemplateDir, 'index.ts'),
       'require("real"); function f(x: { tag: `x${string',
     );
+    const configuredDir = join(consumerDir, 'configured-project');
+    mkdirSync(configuredDir);
+    writeFileSync(
+      join(configuredDir, 'package.json'),
+      JSON.stringify({ dependencies: { selected: '*' } }),
+    );
+    writeFileSync(join(configuredDir, 'index.cjs'), "require('selected-missing');");
+    writeFileSync(join(configuredDir, 'generated.ts'), "import 'unterminated");
+    writeFileSync(
+      join(configuredDir, 'depvitals.config.json'),
+      JSON.stringify({
+        ignorePaths: ['generated.ts'],
+        ignoreDependencies: ['selected', 'selected-missing'],
+      }),
+    );
+    const invalidConfigDir = join(consumerDir, 'invalid-config-project');
+    mkdirSync(invalidConfigDir);
+    writeFileSync(join(invalidConfigDir, 'package.json'), '{}');
+    writeFileSync(join(invalidConfigDir, 'depvitals.config.json'), '{invalid config JSON');
     const fixtureDirs = [
+      configuredDir,
+      invalidConfigDir,
       cleanDir,
       findingsDir,
       ...structuralDirs,
@@ -753,6 +774,31 @@ require('real');`,
     check(
       'unknown option prints a useful stderr message',
       unknown.stderr.includes('Unknown option') && unknown.stderr.includes('depvitals --help'),
+    );
+
+    // Both policy types work in the installed artifact, while broken config stays operational.
+    const configured = runInstalledCli(binPath, consumerDir, [configuredDir]);
+    check('configured installed scan exits 0', configured.status === 0);
+    check(
+      'configured installed scan renders the ordinary clean report',
+      configured.stdout === 'DepVitals\n\nNo dependency issues found.\n',
+    );
+    check('configured installed scan leaves stderr empty', configured.stderr === '');
+    const invalidConfig = runInstalledCli(binPath, consumerDir, [invalidConfigDir]);
+    check('invalid config exits 1', invalidConfig.status === 1);
+    check('invalid config leaves stdout empty', invalidConfig.stdout === '');
+    check(
+      'invalid config identifies the configuration file',
+      invalidConfig.stderr.includes(join(invalidConfigDir, 'depvitals.config.json')) &&
+        invalidConfig.stderr.includes('not valid JSON'),
+    );
+    check(
+      'help bypasses invalid config',
+      runInstalledCli(binPath, invalidConfigDir, ['--help']).status === 0,
+    );
+    check(
+      'version bypasses invalid config',
+      runInstalledCli(binPath, invalidConfigDir, ['--version']).status === 0,
     );
 
     // Capture the fixtures again after every scan, then compare the complete before-and-after

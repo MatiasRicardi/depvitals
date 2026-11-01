@@ -1,6 +1,6 @@
 /**
- * Internal, root-only JSON configuration readers. Deliberately disconnected from the CLI until
- * integration is complete. Only readProjectConfig returns semantically validated rules.
+ * Internal, root-only JSON configuration readers. The CLI loads readProjectConfig on scans only;
+ * only that reader returns semantically validated rules.
  */
 import { lstat, readFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
