@@ -1,4 +1,4 @@
-/** Exact identifier validation only; finding exclusions are applied in a later step. */
+/** Exact identifier validation; analysis applies validated names only to final findings. */
 import { ProjectConfigError } from './projectConfigError.js';
 
 const COMPONENT = '[A-Za-z0-9][A-Za-z0-9._-]*';

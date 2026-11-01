@@ -110,6 +110,8 @@ export type AnalysisOptions = {
   readonly configUsedNames?: ConfigUsageHints | undefined;
   /** Validated, normalized literal paths excluded from source discovery only; omitted is empty. */
   readonly ignorePaths?: readonly string[] | undefined;
+  /** Validated exact package roots omitted from final findings only; never usage evidence. */
+  readonly ignoreDependencies?: readonly string[] | undefined;
 };
 
 /**
@@ -206,11 +208,15 @@ export async function analyzeProject(
   // Peer/optional declarations therefore suppress false missing results.
   const missingDependencies = declaredMinus([...sourceUsedNames], manifest.declaredDependencyNames);
 
+  // Exclusions are policy, not evidence: classify against the complete inventory first so script
+  // collisions and all other packages keep their ordinary meaning. Retained sources must already
+  // have been read and parsed successfully before any finding can be suppressed.
+  const ignoredDependencies = new Set(options.ignoreDependencies ?? []);
   return {
     projectRoot: manifest.root,
-    unusedDependencies,
-    unusedDevDependencies,
-    missingDependencies,
+    unusedDependencies: unusedDependencies.filter((name) => !ignoredDependencies.has(name)),
+    unusedDevDependencies: unusedDevDependencies.filter((name) => !ignoredDependencies.has(name)),
+    missingDependencies: missingDependencies.filter((name) => !ignoredDependencies.has(name)),
   };
 }
 
