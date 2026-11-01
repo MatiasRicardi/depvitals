@@ -15,7 +15,11 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { ProjectConfigError, readRawProjectConfig } from '../../../src/config/readProjectConfig.js';
+import {
+  ProjectConfigError,
+  readProjectConfig,
+  readRawProjectConfig,
+} from '../../../src/config/readProjectConfig.js';
 import { runCli } from '../../../src/cli/runCli.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -65,7 +69,7 @@ async function expectConfigError(
 ): Promise<ProjectConfigError> {
   let failure: unknown;
   try {
-    await readRawProjectConfig(root);
+    await readProjectConfig(root);
   } catch (error) {
     failure = error;
   }
@@ -405,3 +409,78 @@ for (const config of [
     });
   });
 }
+
+describe('readProjectConfig semantic validation', () => {
+  it('returns frozen validated defaults for absent and empty configuration', async () => {
+    await withRoot(async (root) => {
+      for (const text of [undefined, '{}', '{"ignorePaths":[],"ignoreDependencies":[]}']) {
+        if (text !== undefined) writeFileSync(join(root, FILENAME), text);
+        const result = await readProjectConfig(root);
+        expect(result).toEqual(EMPTY);
+        expect(Object.isFrozen(result)).toBe(true);
+        expect(Object.isFrozen(result.ignorePaths)).toBe(true);
+        expect(Object.isFrozen(result.ignoreDependencies)).toBe(true);
+      }
+    });
+  });
+  it('validates both fields after one guarded read, without reading rule destinations', async () => {
+    await withRoot(async (root) => {
+      const text = JSON.stringify({
+        ignorePaths: ['./missing//generated/', 'missing/generated', 'A'],
+        ignoreDependencies: ['foo', 'LegacyPkg', '@scope/foo', 'fs', 'foo', 'pkg_'],
+      });
+      const path = join(root, FILENAME);
+      writeFileSync(path, text);
+      const reads = vi.mocked(fs.readFile).mock.calls.length;
+      const stats = vi.mocked(fs.lstat).mock.calls.length;
+      expect(await readProjectConfig(root)).toEqual({
+        ignorePaths: ['A', 'missing/generated'],
+        ignoreDependencies: ['@scope/foo', 'LegacyPkg', 'foo', 'fs', 'pkg_'],
+      });
+      expect(vi.mocked(fs.readFile).mock.calls.slice(reads)).toEqual([[path, 'utf8']]);
+      expect(
+        vi
+          .mocked(fs.lstat)
+          .mock.calls.slice(stats)
+          .map(([file]) => file),
+      ).toEqual([root, path]);
+      expect(readFileSync(path, 'utf8')).toBe(text);
+      expect(readdirSync(root)).toEqual([FILENAME]);
+    });
+  });
+  for (const [field, rule] of [
+    ['ignorePaths', '../outside'],
+    ['ignorePaths', './ src'],
+    ['ignorePaths', 'src /'],
+    ['ignoreDependencies', '@scope/pkg/subpath'],
+    ['ignoreDependencies', 'pkg@1'],
+    ['ignoreDependencies', '_'],
+    ['ignoreDependencies', '!pkg'],
+  ] as const) {
+    it(`rejects ${field} semantic error at its original index: ${rule}`, async () => {
+      await withRoot(async (root) => {
+        writeFileSync(
+          join(root, FILENAME),
+          JSON.stringify({
+            ignorePaths: ['valid'],
+            ignoreDependencies: ['valid'],
+            [field]: ['valid', 'valid', rule],
+          }),
+        );
+        await expectConfigError(root, 'invalid-shape', `${field}[2]`);
+      });
+    });
+  }
+  it('rejects invalid paths before dependency semantics regardless of JSON key order', async () => {
+    await withRoot(async (root) => {
+      writeFileSync(
+        join(root, FILENAME),
+        JSON.stringify({
+          ignoreDependencies: ['pkg/subpath'],
+          ignorePaths: ['valid', '../bad'],
+        }),
+      );
+      await expectConfigError(root, 'invalid-shape', 'ignorePaths[1]');
+    });
+  });
+});
