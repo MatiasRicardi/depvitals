@@ -1,5 +1,5 @@
 /** Literal path policy only; discovery/CLI activation belongs to later integration steps. */
-import { ProjectConfigError } from './readProjectConfig.js';
+import { ProjectConfigError } from './projectConfigError.js';
 
 /**
  * Validate every raw rule before returning a normalized, sorted, deduplicated snapshot. Both slash

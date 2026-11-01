@@ -1,29 +1,21 @@
 /**
- * Internal, root-only JSON shape reader. Deliberately disconnected from the CLI until path/name
- * semantics and integration are complete. This raw model is not safe to apply as exclusions yet.
+ * Internal, root-only JSON configuration readers. Deliberately disconnected from the CLI until
+ * integration is complete. Only readProjectConfig returns semantically validated rules.
  */
 import { lstat, readFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import { assertReadableRoot } from '../scanner/sourceFiles.js';
+import { normalizeIgnoreDependencies } from './ignoreDependencies.js';
+import { normalizeIgnorePaths } from './ignorePaths.js';
+import { ProjectConfigError } from './projectConfigError.js';
 
 export type RawProjectConfig = {
   readonly ignorePaths: readonly string[];
   readonly ignoreDependencies: readonly string[];
 };
 
-export type ProjectConfigErrorCode = 'unreadable' | 'invalid-json' | 'invalid-shape';
-
-/** Operational configuration failure; broken present data must never become empty defaults. */
-export class ProjectConfigError extends Error {
-  readonly code: ProjectConfigErrorCode;
-
-  constructor(message: string, code: ProjectConfigErrorCode, cause?: unknown) {
-    super(message, cause === undefined ? undefined : { cause });
-    this.name = 'ProjectConfigError';
-    this.code = code;
-  }
-}
+export { ProjectConfigError, type ProjectConfigErrorCode } from './projectConfigError.js';
 
 const CONFIG_FILENAME = 'depvitals.config.json';
 
@@ -130,4 +122,20 @@ function unreadable(path: string, cause: unknown): ProjectConfigError {
     'unreadable',
     cause,
   );
+}
+
+/** Validated internal snapshot; no policy is applied to discovery or findings here. */
+export type ProjectConfig = {
+  readonly ignorePaths: readonly string[];
+  readonly ignoreDependencies: readonly string[];
+};
+
+/** Read once, validate all path/name rules, and return no partial configuration on failure. */
+export async function readProjectConfig(projectRoot: string): Promise<ProjectConfig> {
+  const raw = await readRawProjectConfig(projectRoot);
+  const path = join(resolve(projectRoot), CONFIG_FILENAME);
+  return Object.freeze({
+    ignorePaths: normalizeIgnorePaths(raw.ignorePaths, path),
+    ignoreDependencies: normalizeIgnoreDependencies(raw.ignoreDependencies, path),
+  });
 }
