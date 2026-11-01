@@ -1,5 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -31,7 +39,9 @@ async function project(
   files: Readonly<Record<string, string>>,
   run: (root: string, sandbox: string) => Promise<void>,
 ): Promise<void> {
-  const sandbox = mkdtempSync(join(tmpdir(), 'depvitals-config-cli-'));
+  // A spawned process reports its physical cwd (e.g. macOS /private/var rather than /var).
+  // Use that same spelling for injected cwd and expected diagnostic paths.
+  const sandbox = realpathSync(mkdtempSync(join(tmpdir(), 'depvitals-config-cli-')));
   const root = join(sandbox, 'selected project');
   const inputs = { 'package.json': '{}', ...files };
   try {
