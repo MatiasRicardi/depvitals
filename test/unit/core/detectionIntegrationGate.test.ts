@@ -500,7 +500,7 @@ describe('Step 62: the analysis path has no network or execution capability', ()
     // update-version cache, Step 66 only the private bounded registry lookup, and Step 67 only the
     // notification orchestrator plus the stream-injecting entry layer that calls it after the report
     // (both - unlike the analysis path below - confined to src/cli/).
-    // Step 87 adds only the disconnected internal JSON shape reader; its I/O imports are guarded too.
+    // Step 87 adds the disconnected JSON shape reader; Step 88 adds only its pure path policy.
     expect(modules).toEqual([
       'cli/entry.ts',
       'cli/index.ts',
@@ -511,6 +511,7 @@ describe('Step 62: the analysis path has no network or execution capability', ()
       'cli/notifier/versionCompare.ts',
       'cli/parseCliArgs.ts',
       'cli/runCli.ts',
+      'config/ignorePaths.ts',
       'config/readProjectConfig.ts',
       'core/analyzeProject.ts',
       'detectors/eslintManifestConfig.ts',
