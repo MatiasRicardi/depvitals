@@ -8,7 +8,7 @@
  * It deliberately does not:
  * - read, parse or execute any discovered file (that belongs to the analyzers / specifier extractor);
  * - decide whether anything is used, unused or missing;
- * - parse `.gitignore` or honor custom ignore configuration (`v0.1.0` uses a fixed built-in set);
+ * - parse `.gitignore` or load user configuration (callers supply validated literal rules);
  * - follow symlinks, which avoids cycles and scanning content outside the intended project tree;
  * - mutate the analyzed project.
  *
@@ -19,6 +19,8 @@
 
 import { lstat, readdir } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
+
+import { matchesIgnoredPath } from '../config/ignorePaths.js';
 
 /**
  * The supported source and declaration extensions for `v0.1.0`.
@@ -63,6 +65,11 @@ const IGNORED_DIRECTORY_NAMES = new Set([
  */
 export type DiscoveredSourceFile = string;
 
+/** Internal discovery inputs; callers supply normalized, validated project-relative rules. */
+export type SourceDiscoveryOptions = {
+  readonly ignorePaths?: readonly string[] | undefined;
+};
+
 /**
  * Why source discovery could not run.
  *
@@ -100,12 +107,13 @@ export class SourceFilesError extends Error {
  */
 export async function discoverSourceFiles(
   projectRoot: string,
+  options: SourceDiscoveryOptions = {},
 ): Promise<readonly DiscoveredSourceFile[]> {
   const root = resolve(projectRoot);
   await assertReadableRoot(root);
 
   const files: string[] = [];
-  await walk(root, files);
+  await walk(root, '', files, options.ignorePaths ?? []);
 
   // Sort the final result so the contract is explicitly deterministic regardless of filesystem
   // enumeration order.
@@ -153,7 +161,12 @@ export async function assertReadableRoot(root: string): Promise<void> {
  * Recursively collect supported files under `directory`, pruning ignored directories and skipping
  * symlinks before descending.
  */
-async function walk(directory: string, files: string[]): Promise<void> {
+async function walk(
+  directory: string,
+  relativeDirectory: string,
+  files: string[],
+  ignorePaths: readonly string[],
+): Promise<void> {
   let entries;
 
   try {
@@ -172,6 +185,12 @@ async function walk(directory: string, files: string[]): Promise<void> {
       continue;
     }
 
+    // Build the portable matching path from directory entries, preserving literal backslashes on
+    // POSIX. Only traversal separators become '/', independently of the host's native separator.
+    const relativePath =
+      relativeDirectory === '' ? entry.name : `${relativeDirectory}/${entry.name}`;
+    if (matchesIgnoredPath(relativePath, ignorePaths)) continue;
+
     const fullPath = join(directory, entry.name);
 
     if (entry.isDirectory()) {
@@ -180,7 +199,7 @@ async function walk(directory: string, files: string[]): Promise<void> {
         continue;
       }
 
-      await walk(fullPath, files);
+      await walk(fullPath, relativePath, files, ignorePaths);
       continue;
     }
 

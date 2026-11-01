@@ -108,6 +108,8 @@ export type AnalysisOptions = {
    * rule is active yet, so the default keeps every report byte-for-byte identical.
    */
   readonly configUsedNames?: ConfigUsageHints | undefined;
+  /** Validated, normalized literal paths excluded from source discovery only; omitted is empty. */
+  readonly ignorePaths?: readonly string[] | undefined;
 };
 
 /**
@@ -145,7 +147,7 @@ export class AnalysisError extends Error {
  * project is never written to.
  *
  * @param projectRoot - Directory to analyze.
- * @param options - Optional {@link ConfigUsageHints}; an omitted or empty set changes nothing.
+ * @param options - Optional static tool hints and validated source exclusions; omitted inputs change nothing.
  * @throws {AnalysisError} when a discovered source file cannot be read or cannot be safely analyzed.
  * @throws {ProjectManifestError} when the manifest is missing, unreadable, invalid or malformed.
  * @throws {SourceFilesError} when the root is missing, is not a directory, or cannot be read.
@@ -156,7 +158,9 @@ export async function analyzeProject(
 ): Promise<AnalysisResult> {
   const manifest = await loadProjectManifest(projectRoot);
 
-  const sourceFiles = await discoverSourceFiles(manifest.root);
+  const sourceFiles = await discoverSourceFiles(manifest.root, {
+    ignorePaths: options.ignorePaths,
+  });
 
   // External package roots referenced by source files, collapsed to their package root.
   const sourceUsedNames = new Set<string>();
