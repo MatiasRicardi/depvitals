@@ -24,7 +24,7 @@
  * - a workspace child manifest and lockfile/package-manager metadata are outside the scanned
  *   project boundary and contribute no evidence in either direction;
  * - the analysis path can reach neither the network nor a process/eval primitive, and the source
- *   surface stays closed to unrequested modules; notifier helpers and the disconnected Step 87
+ *   surface stays closed to unrequested modules; notifier helpers and the root-only Step 87
  *   JSON shape reader are explicitly allowlisted without changing the CLI or result surface;
  * - the analysis result gained no new finding category and `src/index.ts` gained no public entry point.
  *
@@ -500,7 +500,7 @@ describe('Step 62: the analysis path has no network or execution capability', ()
     // update-version cache, Step 66 only the private bounded registry lookup, and Step 67 only the
     // notification orchestrator plus the stream-injecting entry layer that calls it after the report
     // (both - unlike the analysis path below - confined to src/cli/).
-    // Steps 87–89 add the disconnected config readers, pure path/name policies and shared error.
+    // Steps 87–89 add the config readers, pure path/name policies and shared error; Step92 loads them in the CLI.
     expect(modules).toEqual([
       'cli/entry.ts',
       'cli/index.ts',

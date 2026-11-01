@@ -18,6 +18,7 @@
  * `src/core`, and the reporter stays in `src/reporters`.
  */
 
+import { readProjectConfig, ProjectConfigError } from '../config/readProjectConfig.js';
 import { AnalysisError, type AnalysisResult, analyzeProject } from '../core/analyzeProject.js';
 import { findEslintManifestUsage } from '../detectors/eslintManifestConfig.js';
 import { EslintRcJsonError, findEslintRcJsonUsage } from '../detectors/eslintRcJsonConfig.js';
@@ -97,15 +98,16 @@ async function runScan(projectPath: string): Promise<CliResult> {
   let result: AnalysisResult;
 
   try {
-    // Required root metadata is validated before any optional detector reads.
+    // Validate mandatory root metadata, then the selected-root policy, before detector reads.
     await loadProjectManifest(projectPath);
+    const config = await readProjectConfig(projectPath);
 
     // Legacy ESLint configuration contributes configuration-only names. They are passed through the
     // analyzer's config handoff, which merges them into `usedNames` only, so they can suppress an
     // unused finding and can never create a missing one.
     const configUsedNames = await collectConfigUsedNames(projectPath);
 
-    result = await analyzeProject(projectPath, { configUsedNames });
+    result = await analyzeProject(projectPath, { ...config, configUsedNames });
   } catch (error) {
     if (isOperationalError(error)) {
       return { exitCode: 1, stdout: '', stderr: `${error.message}\n` };
@@ -143,17 +145,19 @@ async function collectConfigUsedNames(projectPath: string): Promise<ReadonlySet<
 
 /**
  * Whether the thrown value is a scanner error the CLI knows how to render. Only the existing typed
- * error classes plus the unusable-`.eslintrc.json` error count; everything else is treated as an
+ * error classes plus configuration errors count; everything else is treated as an
  * unexpected internal failure.
  */
 function isOperationalError(
   error: unknown,
-): error is ProjectManifestError | SourceFilesError | AnalysisError | EslintRcJsonError {
+): error is
+  ProjectManifestError | SourceFilesError | AnalysisError | EslintRcJsonError | ProjectConfigError {
   return (
     error instanceof ProjectManifestError ||
     error instanceof SourceFilesError ||
     error instanceof AnalysisError ||
-    error instanceof EslintRcJsonError
+    error instanceof EslintRcJsonError ||
+    error instanceof ProjectConfigError
   );
 }
 

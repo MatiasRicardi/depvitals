@@ -375,26 +375,24 @@ for (const config of [
   '{invalid JSON',
   '{"ignorePaths":["index.cjs"],"ignoreDependencies":["unused","real-missing"]}',
 ]) {
-  it(`keeps CLI behavior disconnected from the prepared reader: ${config}`, async () => {
+  it(`activates validated configuration during CLI scans: ${config}`, async () => {
     await withRoot(async (root) => {
       writeFileSync(join(root, 'package.json'), '{"dependencies":{"unused":"*"}}');
       writeFileSync(join(root, 'index.cjs'), "require('real-missing');");
       writeFileSync(join(root, FILENAME), config);
       const options = { cwd: root, version: '0.2.0' };
-      const expected = {
-        exitCode: 1,
-        stdout:
-          'DepVitals\n\nUnused dependencies (1)\n  unused\n\nMissing dependencies (1)\n  real-missing\n',
-        stderr: '',
-      };
+      const expected =
+        config === '{invalid JSON'
+          ? { exitCode: 1, stdout: '', stderr: `${join(root, FILENAME)} is not valid JSON\n` }
+          : { exitCode: 0, stdout: 'DepVitals\n\nNo dependency issues found.\n', stderr: '' };
       const start = vi.mocked(fs.readFile).mock.calls.length;
       expect(await runCli([root], options)).toEqual(expected);
       expect(
         vi
           .mocked(fs.readFile)
           .mock.calls.slice(start)
-          .map(([path]) => path),
-      ).not.toContain(join(root, FILENAME));
+          .filter(([path]) => path === join(root, FILENAME)),
+      ).toHaveLength(1);
       const result = spawnSync(process.execPath, [ENTRY, root], {
         encoding: 'utf8',
         timeout: 10_000,
