@@ -1,4 +1,4 @@
-/** Literal path policy only; discovery/CLI activation belongs to later integration steps. */
+/** Literal path policy shared by config validation and discovery; CLI loading is integrated later. */
 import { ProjectConfigError } from './projectConfigError.js';
 
 /**
