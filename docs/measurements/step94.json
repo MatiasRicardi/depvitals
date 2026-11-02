@@ -1,0 +1,2624 @@
+{
+  "methodology": {
+    "warmups": 3,
+    "repeats": 7,
+    "gcBeforeAndAfterEachSample": true,
+    "scanBoundary": "In-process static detector collection plus analyzeProject; excludes process startup, config-file loading, report rendering, setup, expected-finding comparisons and explicit GC; includes a root-identity sanity check.",
+    "memoryBoundary": "Whole-process observations at sample boundaries, not allocation totals or in-scan peaks. Heap deltas may be negative due to automatic GC. maxRSS is cumulative for this generator, including setup.",
+    "noTimingThreshold": true
+  },
+  "environment": {
+    "node": "v26.6.0",
+    "platform": "linux",
+    "arch": "x64",
+    "kernel": "7.3.0-4-cachyos",
+    "cpu": "Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz",
+    "logicalCpus": 8
+  },
+  "identity": {
+    "sourceHead": "a3096adb34585cf940040357ae73b465e2fb47d4",
+    "packageVersion": "0.2.0",
+    "packageManager": "pnpm@11.28.3",
+    "lockSha256": "f073b50d0ce1e1fd13385c662833f661b86febec0754ca31ce9304b25c254a3f",
+    "helperSha256": "9cffc6f5340ec180e81e9e7193d4c5fbd03c18a21bf086c3e562b1797c5973d2",
+    "identityHelperSha256": "d37622649c0ff3a47f8c9be5008932e82ff8cd6ec562df1e3155b12f68a23531",
+    "corpusManifestSha256": "fabdffb29ea43cbab505753f0b90ee39b9c7bb0ce0545545747272fba9346cb8",
+    "buildSha256": "b64e37062bce8c728185d1ba92fe799632fb49297b3c568f48327cfda77c8650",
+    "build": [
+      {
+        "path": "dist/cli/entry.d.ts",
+        "sha256": "d6fc45458d13067e83a5a04c7757bad692a1778f41a619147643619de4931fd4"
+      },
+      {
+        "path": "dist/cli/entry.d.ts.map",
+        "sha256": "d6d046ff5fc9b5dc847813470ad9de49b8fbea26ffec926cf7e8993fbdf3f358"
+      },
+      {
+        "path": "dist/cli/entry.js",
+        "sha256": "f2c1481b49f1367dd6e79f5c7c038fd3d958a5a71ae26481f6fb2df8b95a2ed8"
+      },
+      {
+        "path": "dist/cli/entry.js.map",
+        "sha256": "7fe1ea3b947e285208049b313e1aa095eead8a7694333103cc16a5d02dd3119b"
+      },
+      {
+        "path": "dist/cli/index.d.ts",
+        "sha256": "28f6febb9b51e593316bd49c125cf3170875188867bb71d4d4a43f01b274b964"
+      },
+      {
+        "path": "dist/cli/index.d.ts.map",
+        "sha256": "fa44f4c3088d63297f3619d28c974fa34c8335030186d819e84f99a505473fb6"
+      },
+      {
+        "path": "dist/cli/index.js",
+        "sha256": "5298f50c83c293f7d68382237b7d9eddceb21ec332e7c4f0e2c154fe32d888be"
+      },
+      {
+        "path": "dist/cli/index.js.map",
+        "sha256": "91319e86974e6efa50ada3bff77810ac1e5a1d94040a615d8cfa26cbd553722b"
+      },
+      {
+        "path": "dist/cli/notifier/eligibility.d.ts",
+        "sha256": "ad81af290ff300745c96918b681397e3b4de4a0c04478cdff3f2bebfb0a6f977"
+      },
+      {
+        "path": "dist/cli/notifier/eligibility.d.ts.map",
+        "sha256": "b21dc5227143719d0f901f3a7dce759a91e751478b8c29ca0101c116271b06cf"
+      },
+      {
+        "path": "dist/cli/notifier/eligibility.js",
+        "sha256": "849896522831c895542f651a70611a2e8ceb7c6a863acd689220c28472c1638f"
+      },
+      {
+        "path": "dist/cli/notifier/eligibility.js.map",
+        "sha256": "46cbc21bdaa5f72d0e27cacf789d41f468fa36b246261b93a4ca3fbbc9dcf560"
+      },
+      {
+        "path": "dist/cli/notifier/registryLookup.d.ts",
+        "sha256": "9f459e7992ee63d1c521542dedc3dfabd760b9f8a86c87cf90c93fdee8b9cd35"
+      },
+      {
+        "path": "dist/cli/notifier/registryLookup.d.ts.map",
+        "sha256": "ef58b3a9d1864918d972dba58d0e7193ad6f92d18e83bbe14ee48c589e5f5c6d"
+      },
+      {
+        "path": "dist/cli/notifier/registryLookup.js",
+        "sha256": "2067be9df4ec18c6b2fb7a0216ea7701751ea7a378d57b6ebd3106ee5972995f"
+      },
+      {
+        "path": "dist/cli/notifier/registryLookup.js.map",
+        "sha256": "e8296e666e5d81d6f5a3705863995a592feb79cfdd90897423fb0c0e540fa9d9"
+      },
+      {
+        "path": "dist/cli/notifier/updateCache.d.ts",
+        "sha256": "ca284f2c05d49d772586754afe160652cd31a6af78c0d8b310dde598308a31c0"
+      },
+      {
+        "path": "dist/cli/notifier/updateCache.d.ts.map",
+        "sha256": "c2e68147997aef7274ed26ae318aef74659c8c1f647d2d4ccedf6af29060b0cb"
+      },
+      {
+        "path": "dist/cli/notifier/updateCache.js",
+        "sha256": "08edca35324c2f4a3c455283eebb8e3b25effaf032b108572fc88d485991959e"
+      },
+      {
+        "path": "dist/cli/notifier/updateCache.js.map",
+        "sha256": "0849fd08b6e0178db397d5d566f954e79df6a4f2b00d853a1ac161e068cb1d9c"
+      },
+      {
+        "path": "dist/cli/notifier/updateCheck.d.ts",
+        "sha256": "fdd748f58aa6916ec17fd75cee14291971d84c6404d60a57e69a61a827fe5fb0"
+      },
+      {
+        "path": "dist/cli/notifier/updateCheck.d.ts.map",
+        "sha256": "edd17c6338bd255da7599465355b92b59a00641e3e47a6cd3998b3672e93ee1a"
+      },
+      {
+        "path": "dist/cli/notifier/updateCheck.js",
+        "sha256": "4e4dc421dffcd4572715795460667d2581a2052249ab96cd3f77d43bffccc1d2"
+      },
+      {
+        "path": "dist/cli/notifier/updateCheck.js.map",
+        "sha256": "3619ab248b0d6dbb145bfccc843d69a2e2e09e4a3406ca855756ad3239a1a78c"
+      },
+      {
+        "path": "dist/cli/notifier/versionCompare.d.ts",
+        "sha256": "527d532a8be1ff6f60c16758f03034c37f3389bd4a9ce1f93107cdfed99258f9"
+      },
+      {
+        "path": "dist/cli/notifier/versionCompare.d.ts.map",
+        "sha256": "a76436ec7868938e1a18532bf0b346b9f579dd72a8c48275ed5a3f2e2d234495"
+      },
+      {
+        "path": "dist/cli/notifier/versionCompare.js",
+        "sha256": "54e229e6b24f9e77a57d5383f12e1ed95efb65533f85b5cb90e9c66f5dbf1502"
+      },
+      {
+        "path": "dist/cli/notifier/versionCompare.js.map",
+        "sha256": "d368c0eb381e7216b2445f0fa85d9eb7043025afccfe9f9e7ada379be44e81ea"
+      },
+      {
+        "path": "dist/cli/parseCliArgs.d.ts",
+        "sha256": "673e81b842028077acc0104d9706686dcc064f482b35b987cbebef20b2a59a35"
+      },
+      {
+        "path": "dist/cli/parseCliArgs.d.ts.map",
+        "sha256": "ce3f2d977daa5dcc80bd88f19acbba2175fde9c6dcbd643de47795fe6875894a"
+      },
+      {
+        "path": "dist/cli/parseCliArgs.js",
+        "sha256": "54c858bf2bdf53b6bd8208cca74c4cffe95631872130063afccca446a7aba76b"
+      },
+      {
+        "path": "dist/cli/parseCliArgs.js.map",
+        "sha256": "485b48dc17c143176d45ae2a7e350a9a75e50e251dc905c926e3c1b138e765a3"
+      },
+      {
+        "path": "dist/cli/runCli.d.ts",
+        "sha256": "de4253c766eb3dc2cf393986f0b7e63c111767f78ac00106e69841865f2bcf4f"
+      },
+      {
+        "path": "dist/cli/runCli.d.ts.map",
+        "sha256": "864e79d70d085a485635b03ce45263fc6656452d9b336a7b68c608f463143983"
+      },
+      {
+        "path": "dist/cli/runCli.js",
+        "sha256": "1f23c1c7718a99c8f450664d606447667e62c7241bb79d88e0c304578481001e"
+      },
+      {
+        "path": "dist/cli/runCli.js.map",
+        "sha256": "d0fe4072652c91573d5927504617f989760b7351003e7df9ca5f6426e8801a73"
+      },
+      {
+        "path": "dist/config/ignoreDependencies.d.ts",
+        "sha256": "ed65cf0495277ed0a69e5473d1224cbf0d781fa44f3840c718439e2d2d099168"
+      },
+      {
+        "path": "dist/config/ignoreDependencies.d.ts.map",
+        "sha256": "b3df1080da0caf7eddd3d2c1493a8b9e311bbb126b09c6b0d452c70e37cb376d"
+      },
+      {
+        "path": "dist/config/ignoreDependencies.js",
+        "sha256": "0ae3f7b5675b5f0c354f9f684106b92ac9d708e2c2b81675c9fbc8439b8fcb6c"
+      },
+      {
+        "path": "dist/config/ignoreDependencies.js.map",
+        "sha256": "3225674bea4680ff66ecb2a18e4be8fd76a77baa8e4cc4df7d7d542811196830"
+      },
+      {
+        "path": "dist/config/ignorePaths.d.ts",
+        "sha256": "a9747017a4915328e1152282f1f012e507b07dc385c64d8801d3e8ecb16300b5"
+      },
+      {
+        "path": "dist/config/ignorePaths.d.ts.map",
+        "sha256": "7f39d6d06eaff991fc51947e23468f4bca5ce6e68127803a656c97476c3c5bda"
+      },
+      {
+        "path": "dist/config/ignorePaths.js",
+        "sha256": "81705d2f49945b0022d6e38af78fbbc72f17cc736768127748267d2566b8a2e3"
+      },
+      {
+        "path": "dist/config/ignorePaths.js.map",
+        "sha256": "44803ac646d29272bf64840dc6b47a61e2277909a40f292e151918436c44f6e4"
+      },
+      {
+        "path": "dist/config/projectConfigError.d.ts",
+        "sha256": "e0909f2fc6427287df0b78972a827a78839b4c99dda515d4fe244ca8638f98a3"
+      },
+      {
+        "path": "dist/config/projectConfigError.d.ts.map",
+        "sha256": "4a8b8f142cbb82b41441f89e025a76c62da6adb7931b97e6cfd75fe65eee87cf"
+      },
+      {
+        "path": "dist/config/projectConfigError.js",
+        "sha256": "449737ca55e557a11eabad91eca9c484137ab51c6c2c066e899d2f6178f03bea"
+      },
+      {
+        "path": "dist/config/projectConfigError.js.map",
+        "sha256": "e246bd959c9c4dd66a9b1a96d497e6c0949e6ad0b8ad75c20e8bf52604aa60bd"
+      },
+      {
+        "path": "dist/config/readProjectConfig.d.ts",
+        "sha256": "dbcc972e7bfa9c2db0eeca8eb6f0825a52c64131aaf303a3e9af3530717cd534"
+      },
+      {
+        "path": "dist/config/readProjectConfig.d.ts.map",
+        "sha256": "73c270cb7913bf13e15d116c7502f4020b762a2ba42b367ce11c0920c53cd7b1"
+      },
+      {
+        "path": "dist/config/readProjectConfig.js",
+        "sha256": "779e3842b3a0fe99bd8b41288ec0819ec81156f51670dc4e80a985948942e9e3"
+      },
+      {
+        "path": "dist/config/readProjectConfig.js.map",
+        "sha256": "4cab4fdd6ad4ecacb93fac56edd7649fb0ea845b47cc56a7d18091e1538cdd0b"
+      },
+      {
+        "path": "dist/core/analyzeProject.d.ts",
+        "sha256": "32e0ca82228e1ad1be0271a1adc8d4d2d7cd07852e2c4d8e72a474a7a528743b"
+      },
+      {
+        "path": "dist/core/analyzeProject.d.ts.map",
+        "sha256": "3db61bf58fba2665325edcf65894206bcf06e8f78e25b89345952fe97b350ec5"
+      },
+      {
+        "path": "dist/core/analyzeProject.js",
+        "sha256": "dcda56914fd129f52724b35afa4ccedd6a86ad50da69701e928da9813b4dd8f1"
+      },
+      {
+        "path": "dist/core/analyzeProject.js.map",
+        "sha256": "42d6fe70453cd5b7eef5ddb17569958e0f409dfcf0fd8966edff69fd7475e35e"
+      },
+      {
+        "path": "dist/detectors/eslintManifestConfig.d.ts",
+        "sha256": "d5d23509cad1e01f4fa5e27ceab35645199fc2203a5970aca4b810af25922fbd"
+      },
+      {
+        "path": "dist/detectors/eslintManifestConfig.d.ts.map",
+        "sha256": "0609224539a4ed39089a41684043a937eb5f37cf6e6d9f8e92292bb2c66add63"
+      },
+      {
+        "path": "dist/detectors/eslintManifestConfig.js",
+        "sha256": "22233b1abc27dc5132ec3e95fdb44e6d4e3f46f2968c2e52662e68fda7d5b683"
+      },
+      {
+        "path": "dist/detectors/eslintManifestConfig.js.map",
+        "sha256": "28f2219d1fdba7fc6a9ee5dccfde791e6ebf41fd18e9259baa75560e3594c799"
+      },
+      {
+        "path": "dist/detectors/eslintRcJsonConfig.d.ts",
+        "sha256": "348c606c2ec3f3ca9dbcb152ec7dc6811ae4f71239680f2086214fbe8de741a2"
+      },
+      {
+        "path": "dist/detectors/eslintRcJsonConfig.d.ts.map",
+        "sha256": "34f22e75592634193132bb10411eb99e906800227f2200eac6bd4f8f9f2612c8"
+      },
+      {
+        "path": "dist/detectors/eslintRcJsonConfig.js",
+        "sha256": "56fd591b561a6d3bcd178d43b69f940239d34f9b5bcfbd1c94d0d7ac2f245162"
+      },
+      {
+        "path": "dist/detectors/eslintRcJsonConfig.js.map",
+        "sha256": "33f8f4d85d3f633cd9c42ff9ce131411e42dd18e48d691871e1b85933762fb78"
+      },
+      {
+        "path": "dist/detectors/jestManifestConfig.d.ts",
+        "sha256": "032f29b87693d86e7101260f93ddb571ee0f006a5518c4d81e451a92e9751556"
+      },
+      {
+        "path": "dist/detectors/jestManifestConfig.d.ts.map",
+        "sha256": "9b0a73802bff4e4cf9aa98505e95308dde23f99a5dc1e22cc01ef85eaacdf247"
+      },
+      {
+        "path": "dist/detectors/jestManifestConfig.js",
+        "sha256": "f9c7619bb5fd0c1032ca03bcb57993325f98d2949777bd3c11ea76957bf7a7f2"
+      },
+      {
+        "path": "dist/detectors/jestManifestConfig.js.map",
+        "sha256": "f2527d8069ba92e8d923861768851514356af13894511572b6e684e0b0fcaa79"
+      },
+      {
+        "path": "dist/index.d.ts",
+        "sha256": "4385ff59efae377df0dc17a045f538d0b7177e83b829d9b10906541fb91caa49"
+      },
+      {
+        "path": "dist/index.d.ts.map",
+        "sha256": "5fb7f58462f83b9c256f5a9a00af7a35bc94d362d5625f39e0d6bb9ea6a81246"
+      },
+      {
+        "path": "dist/index.js",
+        "sha256": "013b93faa0890feb7469eda3d8859637a45963dea7d7954b53ac211b33ebfb1a"
+      },
+      {
+        "path": "dist/index.js.map",
+        "sha256": "b2c0548a31fc479589cb09405cbafa486913c6c881cc175f36f3f802593646f6"
+      },
+      {
+        "path": "dist/reporters/terminalReporter.d.ts",
+        "sha256": "11e0af3aaa606f28be5c8b65c2b38c15d9cfe7fde6bc291f332e6b6af14c45f8"
+      },
+      {
+        "path": "dist/reporters/terminalReporter.d.ts.map",
+        "sha256": "8d355355aee982344038d2135b910234f1c48450cc796d31cf707f3bea18aff0"
+      },
+      {
+        "path": "dist/reporters/terminalReporter.js",
+        "sha256": "08c92d6eec56ef67e8a02fadcb5f11da57d5c77feff4f46212aa1e98fadd7b73"
+      },
+      {
+        "path": "dist/reporters/terminalReporter.js.map",
+        "sha256": "f23cc46062bc7e71035ebb8fe02400786449b13247729f618dac9f37c9bee814"
+      },
+      {
+        "path": "dist/scanner/moduleSpecifiers.d.ts",
+        "sha256": "fe00f68610f02b13d07ae442654ae3f935a8d756ee5dbce94fbb9cb66cbb4149"
+      },
+      {
+        "path": "dist/scanner/moduleSpecifiers.d.ts.map",
+        "sha256": "17a6a256d0dc2f5582d8dff5393ff5f7dd44c99f2d9c6beb94c858146284e7be"
+      },
+      {
+        "path": "dist/scanner/moduleSpecifiers.js",
+        "sha256": "1d750b2bbb9b49f65c1f25215cfd6dfece8bc7c4d5471495a208a6e434091a4f"
+      },
+      {
+        "path": "dist/scanner/moduleSpecifiers.js.map",
+        "sha256": "64cd781a64c5c041df3cf9ae9f7ff11240dab7ae77eda5384c95196d13ea2c24"
+      },
+      {
+        "path": "dist/scanner/packageSpecifier.d.ts",
+        "sha256": "5d0588e8b98cadda1d2ea5425bfe0f311bc5d2980d112630de0950658e446867"
+      },
+      {
+        "path": "dist/scanner/packageSpecifier.d.ts.map",
+        "sha256": "3cbe89cc2aec8cf674d65e7ce6ff46b8237cd292c42668ef3703fecc08c1948f"
+      },
+      {
+        "path": "dist/scanner/packageSpecifier.js",
+        "sha256": "7ed52e23a4f8b058b470524479ab4b2cf3c7a95f165e8b63c52d013f02bc2725"
+      },
+      {
+        "path": "dist/scanner/packageSpecifier.js.map",
+        "sha256": "229e5088ddae19c2e95ccd7adcf580a76f9e53fb5a684f6844fa13fe89841b29"
+      },
+      {
+        "path": "dist/scanner/projectManifest.d.ts",
+        "sha256": "e5a71f73d127f5981b8e1f6dec99f94238610c8617a86e6b620e4a893d8018e7"
+      },
+      {
+        "path": "dist/scanner/projectManifest.d.ts.map",
+        "sha256": "5193098dd43cad57c7e578cd8a82ef5672e829f12e7d29bff45127ebce39db11"
+      },
+      {
+        "path": "dist/scanner/projectManifest.js",
+        "sha256": "67d353d4c68fa37c792acd941c7bd72bfb0043328d2b72ecfca982e4ebdb64c8"
+      },
+      {
+        "path": "dist/scanner/projectManifest.js.map",
+        "sha256": "dac6a2ba655079e25f828501dd4586f2ecbdecc5846db0d6157169bc0ae068c9"
+      },
+      {
+        "path": "dist/scanner/scriptUsage.d.ts",
+        "sha256": "ad35280c438f72d186828c9fbd157a2d0aae8d8cd3eb7d980f33adb6067aa132"
+      },
+      {
+        "path": "dist/scanner/scriptUsage.d.ts.map",
+        "sha256": "8c8430a71c96c5d5bb5ae4cb11b7675e9044d08acc363ecb8700c383fd7cd0a8"
+      },
+      {
+        "path": "dist/scanner/scriptUsage.js",
+        "sha256": "825c63358a3f2b3e10f9ac1119827b12189a3626e69adf7105278b814eecfc00"
+      },
+      {
+        "path": "dist/scanner/scriptUsage.js.map",
+        "sha256": "8f5f423628a444d8a8df86efe630391ee2da6ba8d63b9704fa607b667c23a2f3"
+      },
+      {
+        "path": "dist/scanner/sourceFiles.d.ts",
+        "sha256": "895a98b41d2b49a8294e777f56fa6e812601202fcd64703fad5b0f38c15defd4"
+      },
+      {
+        "path": "dist/scanner/sourceFiles.d.ts.map",
+        "sha256": "35b51a2ead344fb3244f951ed18ee75ccc92a5413daa6984b2dc0dae97805cde"
+      },
+      {
+        "path": "dist/scanner/sourceFiles.js",
+        "sha256": "9608bea4cad858d048d8b318f79fa184ad559372b973d4f0a84120e3c14f4f6b"
+      },
+      {
+        "path": "dist/scanner/sourceFiles.js.map",
+        "sha256": "68fca9af94c14c8b7e20db8ff7280704b801623780f16eae741e922a8b7e6540"
+      }
+    ]
+  },
+  "corpus": [
+    {
+      "id": "node-esm",
+      "root": "test/fixtures/measurement-corpus/node-esm",
+      "scope": {
+        "ignorePaths": [],
+        "ignoreDependencies": []
+      },
+      "scopeExceptionCount": 0,
+      "sourceFileCount": 2,
+      "sourceBytes": 245,
+      "inputs": {
+        "sha256": "22b074c20d815262a8a6f8720ea29f764c43fcb1d4c71543849b683e4c2aa547",
+        "rootEntries": ["main.mjs", "package.json", "routes.cjs"],
+        "files": [
+          {
+            "path": "main.mjs",
+            "sha256": "231130039daa13e26dbb0522a2eb812c4899497f268482a61bf7367c0a2ab277",
+            "bytes": 175
+          },
+          {
+            "path": "package.json",
+            "sha256": "075bbf6594384f19c376b061569a3169dc7d2a93c57eb94cece02c3247071092",
+            "bytes": 353
+          },
+          {
+            "path": "routes.cjs",
+            "sha256": "59a0d8c66a9fe8217865f8a2ce67103b25ebede2b5dedae65d750b16f8a3ce19",
+            "bytes": 70
+          }
+        ]
+      },
+      "expected": {
+        "unusedDependencies": ["node-regex-decoy"],
+        "unusedDevDependencies": ["node-payload-decoy"],
+        "missingDependencies": ["node-missing"]
+      },
+      "observation": {
+        "medianMs": 4.005809999999997,
+        "minMs": 3.0710750000000075,
+        "maxMs": 4.363219999999984,
+        "samples": [
+          {
+            "ms": 3.0710750000000075,
+            "heapBeforeBytes": 6491936,
+            "heapAfterBytes": 6807584,
+            "heapDeltaBytes": 315648,
+            "heapAfterGcBytes": 6523800,
+            "rssBeforeBytes": 73695232,
+            "rssAfterBytes": 72933376
+          },
+          {
+            "ms": 3.777983000000006,
+            "heapBeforeBytes": 6512952,
+            "heapAfterBytes": 7210096,
+            "heapDeltaBytes": 697144,
+            "heapAfterGcBytes": 6556240,
+            "rssBeforeBytes": 72933376,
+            "rssAfterBytes": 72933376
+          },
+          {
+            "ms": 4.1326779999999985,
+            "heapBeforeBytes": 6548272,
+            "heapAfterBytes": 6855064,
+            "heapDeltaBytes": 306792,
+            "heapAfterGcBytes": 6559104,
+            "rssBeforeBytes": 72933376,
+            "rssAfterBytes": 72933376
+          },
+          {
+            "ms": 4.363219999999984,
+            "heapBeforeBytes": 6559416,
+            "heapAfterBytes": 6864656,
+            "heapDeltaBytes": 305240,
+            "heapAfterGcBytes": 6571976,
+            "rssBeforeBytes": 72933376,
+            "rssAfterBytes": 72933376
+          },
+          {
+            "ms": 4.005809999999997,
+            "heapBeforeBytes": 6567792,
+            "heapAfterBytes": 6881248,
+            "heapDeltaBytes": 313456,
+            "heapAfterGcBytes": 6590160,
+            "rssBeforeBytes": 72933376,
+            "rssAfterBytes": 72933376
+          },
+          {
+            "ms": 3.081162000000006,
+            "heapBeforeBytes": 6586008,
+            "heapAfterBytes": 6919520,
+            "heapDeltaBytes": 333512,
+            "heapAfterGcBytes": 6634896,
+            "rssBeforeBytes": 72933376,
+            "rssAfterBytes": 72933376
+          },
+          {
+            "ms": 4.056419000000005,
+            "heapBeforeBytes": 6639424,
+            "heapAfterBytes": 6950680,
+            "heapDeltaBytes": 311256,
+            "heapAfterGcBytes": 6657896,
+            "rssBeforeBytes": 72933376,
+            "rssAfterBytes": 72933376
+          }
+        ]
+      }
+    },
+    {
+      "id": "typescript-tooling",
+      "root": "test/fixtures/measurement-corpus/typescript-tooling",
+      "scope": {
+        "ignorePaths": [],
+        "ignoreDependencies": []
+      },
+      "scopeExceptionCount": 0,
+      "sourceFileCount": 3,
+      "sourceBytes": 244,
+      "inputs": {
+        "sha256": "cb7f216799a7edf1a55638cd0379c36a58ead0614bc08a5e549dc2a08f8989b4",
+        "rootEntries": ["package.json", "src", "types"],
+        "files": [
+          {
+            "path": "package.json",
+            "sha256": "43d3718dee0cbb94152dbdc8132d8a68a5380814c056b5276e1aa20809cb4417",
+            "bytes": 360
+          },
+          {
+            "path": "src/index.ts",
+            "sha256": "3e1e72dab2491758db7fbfe0aae234a843fc8f35cbd8e43e5c5adaa8ec9a29b6",
+            "bytes": 139
+          },
+          {
+            "path": "src/runtime.ts",
+            "sha256": "1cd2dbf6fe841fec899cfe96cbbeb16dc82b42ff26923cf24ba66d2d8c33b662",
+            "bytes": 52
+          },
+          {
+            "path": "types/api.d.ts",
+            "sha256": "1786e1760055651049d7fbe456a26fcbafecb9dabede508bff6a467f5b0c2320",
+            "bytes": 53
+          }
+        ]
+      },
+      "expected": {
+        "unusedDependencies": ["ts-shadow-decoy"],
+        "unusedDevDependencies": ["@types/node"],
+        "missingDependencies": []
+      },
+      "observation": {
+        "medianMs": 3.9807159999999726,
+        "minMs": 2.8572849999999903,
+        "maxMs": 5.014337000000012,
+        "samples": [
+          {
+            "ms": 2.8572849999999903,
+            "heapBeforeBytes": 6716000,
+            "heapAfterBytes": 7059344,
+            "heapDeltaBytes": 343344,
+            "heapAfterGcBytes": 6716872,
+            "rssBeforeBytes": 72933376,
+            "rssAfterBytes": 72933376
+          },
+          {
+            "ms": 3.0467070000000263,
+            "heapBeforeBytes": 6718448,
+            "heapAfterBytes": 7065848,
+            "heapDeltaBytes": 347400,
+            "heapAfterGcBytes": 6724224,
+            "rssBeforeBytes": 72933376,
+            "rssAfterBytes": 72933376
+          },
+          {
+            "ms": 3.558875999999998,
+            "heapBeforeBytes": 6729256,
+            "heapAfterBytes": 7077864,
+            "heapDeltaBytes": 348608,
+            "heapAfterGcBytes": 6734752,
+            "rssBeforeBytes": 72933376,
+            "rssAfterBytes": 72933376
+          },
+          {
+            "ms": 4.818748000000028,
+            "heapBeforeBytes": 6733912,
+            "heapAfterBytes": 7094072,
+            "heapDeltaBytes": 360160,
+            "heapAfterGcBytes": 6752224,
+            "rssBeforeBytes": 72933376,
+            "rssAfterBytes": 73457664
+          },
+          {
+            "ms": 3.9807159999999726,
+            "heapBeforeBytes": 6751352,
+            "heapAfterBytes": 7103424,
+            "heapDeltaBytes": 352072,
+            "heapAfterGcBytes": 6762576,
+            "rssBeforeBytes": 73457664,
+            "rssAfterBytes": 73457664
+          },
+          {
+            "ms": 5.014337000000012,
+            "heapBeforeBytes": 6761704,
+            "heapAfterBytes": 7117328,
+            "heapDeltaBytes": 355624,
+            "heapAfterGcBytes": 6776456,
+            "rssBeforeBytes": 73457664,
+            "rssAfterBytes": 73457664
+          },
+          {
+            "ms": 4.82552800000002,
+            "heapBeforeBytes": 6775584,
+            "heapAfterBytes": 7122648,
+            "heapDeltaBytes": 347064,
+            "heapAfterGcBytes": 6776992,
+            "rssBeforeBytes": 73457664,
+            "rssAfterBytes": 73457664
+          }
+        ]
+      }
+    },
+    {
+      "id": "jsx-tsx",
+      "root": "test/fixtures/measurement-corpus/jsx-tsx",
+      "scope": {
+        "ignorePaths": [],
+        "ignoreDependencies": []
+      },
+      "scopeExceptionCount": 0,
+      "sourceFileCount": 2,
+      "sourceBytes": 327,
+      "inputs": {
+        "sha256": "ba4fc23085e5183353827da6d5b3c196b73998fa4f60cfc2ddd753ebc4fad83e",
+        "rootEntries": ["package.json", "view.jsx", "widget.tsx"],
+        "files": [
+          {
+            "path": "package.json",
+            "sha256": "9a762f4db0161de720644cc73a7fd17ec615f2ab4ca8b27814d180e949bb5577",
+            "bytes": 203
+          },
+          {
+            "path": "view.jsx",
+            "sha256": "c52adfbb396b627bb301bb8825c2319093647dd9d16ce9a82f0730789a52d436",
+            "bytes": 122
+          },
+          {
+            "path": "widget.tsx",
+            "sha256": "95c4dbb29cdca1d56f727b63540b6e40f6e9c2d2eac1e4893eb3856b71a3145e",
+            "bytes": 205
+          }
+        ]
+      },
+      "expected": {
+        "unusedDependencies": ["jsx-text-decoy"],
+        "unusedDevDependencies": [],
+        "missingDependencies": ["tsx-missing"]
+      },
+      "observation": {
+        "medianMs": 3.5002659999999537,
+        "minMs": 2.276430000000005,
+        "maxMs": 3.7925920000000133,
+        "samples": [
+          {
+            "ms": 2.276430000000005,
+            "heapBeforeBytes": 6813856,
+            "heapAfterBytes": 7094496,
+            "heapDeltaBytes": 280640,
+            "heapAfterGcBytes": 6814712,
+            "rssBeforeBytes": 73588736,
+            "rssAfterBytes": 73588736
+          },
+          {
+            "ms": 3.3949929999999995,
+            "heapBeforeBytes": 6814288,
+            "heapAfterBytes": 7097136,
+            "heapDeltaBytes": 282848,
+            "heapAfterGcBytes": 6817656,
+            "rssBeforeBytes": 73588736,
+            "rssAfterBytes": 73588736
+          },
+          {
+            "ms": 3.402516999999989,
+            "heapBeforeBytes": 6817080,
+            "heapAfterBytes": 7097328,
+            "heapDeltaBytes": 280248,
+            "heapAfterGcBytes": 6817848,
+            "rssBeforeBytes": 73588736,
+            "rssAfterBytes": 73588736
+          },
+          {
+            "ms": 3.7925920000000133,
+            "heapBeforeBytes": 6817272,
+            "heapAfterBytes": 7097520,
+            "heapDeltaBytes": 280248,
+            "heapAfterGcBytes": 6818040,
+            "rssBeforeBytes": 73588736,
+            "rssAfterBytes": 73588736
+          },
+          {
+            "ms": 3.59207600000002,
+            "heapBeforeBytes": 6817464,
+            "heapAfterBytes": 7100336,
+            "heapDeltaBytes": 282872,
+            "heapAfterGcBytes": 6819256,
+            "rssBeforeBytes": 73588736,
+            "rssAfterBytes": 73588736
+          },
+          {
+            "ms": 3.5002659999999537,
+            "heapBeforeBytes": 6821296,
+            "heapAfterBytes": 7108936,
+            "heapDeltaBytes": 287640,
+            "heapAfterGcBytes": 6828176,
+            "rssBeforeBytes": 73588736,
+            "rssAfterBytes": 73588736
+          },
+          {
+            "ms": 3.577077000000031,
+            "heapBeforeBytes": 6827600,
+            "heapAfterBytes": 7107848,
+            "heapDeltaBytes": 280248,
+            "heapAfterGcBytes": 6830296,
+            "rssBeforeBytes": 73588736,
+            "rssAfterBytes": 73588736
+          }
+        ]
+      }
+    },
+    {
+      "id": "depvitals-self",
+      "root": ".",
+      "scope": {
+        "ignorePaths": ["instructions", "test/fixtures"],
+        "ignoreDependencies": []
+      },
+      "scopeExceptionCount": 2,
+      "sourceFileCount": 100,
+      "sourceBytes": 1444872,
+      "inputs": {
+        "sha256": "d9544b8ab15de1bd123624fee95fc7a4bdb03a824c8b91ea8d8a1e8d3e987a04",
+        "rootEntries": [
+          ".agents",
+          ".aws",
+          ".codex",
+          ".editorconfig",
+          ".git",
+          ".gitattributes",
+          ".github",
+          ".gitignore",
+          ".npmrc",
+          ".prettierignore",
+          ".prettierrc.json",
+          ".vscode",
+          "AGENTS.md",
+          "CHANGELOG.md",
+          "CONTRIBUTING.md",
+          "LICENSE",
+          "README.md",
+          "coverage",
+          "dist",
+          "docs",
+          "eslint.config.js",
+          "instructions",
+          "node_modules",
+          "package.json",
+          "pnpm-lock.yaml",
+          "pnpm-workspace.yaml",
+          "scripts",
+          "src",
+          "test",
+          "tsconfig.build.json",
+          "tsconfig.json",
+          "vitest.config.ts"
+        ],
+        "files": [
+          {
+            "path": "eslint.config.js",
+            "sha256": "9682d0b6b68b3ce092e748a025a70e73e0e60df7f5c4fd58d7ee3029e4b3435d",
+            "bytes": 1949
+          },
+          {
+            "path": "package.json",
+            "sha256": "b7a36f022671229a2528676ad2e8a4c260c132947ee6afe87291cf01fe188ffb",
+            "bytes": 1969
+          },
+          {
+            "path": "scripts/measure-scanning.mjs",
+            "sha256": "9cffc6f5340ec180e81e9e7193d4c5fbd03c18a21bf086c3e562b1797c5973d2",
+            "bytes": 9516
+          },
+          {
+            "path": "scripts/measurementIdentity.mjs",
+            "sha256": "d37622649c0ff3a47f8c9be5008932e82ff8cd6ec562df1e3155b12f68a23531",
+            "bytes": 7064
+          },
+          {
+            "path": "scripts/productionImports.mjs",
+            "sha256": "8a99214fa7b229e1b4e9bb2cb2ceb6227588fdb55810ccdb5eeddb7f909a983e",
+            "bytes": 724
+          },
+          {
+            "path": "scripts/verify-package.mjs",
+            "sha256": "1faa5980c5bb154ffccaad3ffbb5de807af63fae45a5fadd9efb2a6786432138",
+            "bytes": 27881
+          },
+          {
+            "path": "src/cli/entry.ts",
+            "sha256": "055c91f7e1060c507ed30786d00d4b3ae7817124dc9e19d0d80cbb152741bc8c",
+            "bytes": 5884
+          },
+          {
+            "path": "src/cli/index.ts",
+            "sha256": "20d0e62d117a9d9dfc715cd1c992335d48fc3130e08cfd41f460bb710795f45e",
+            "bytes": 1321
+          },
+          {
+            "path": "src/cli/notifier/eligibility.ts",
+            "sha256": "b8b95639c17acb1c0b37db04812eba3e5e156fbe6b3e9b2afc79e146100df1e7",
+            "bytes": 6847
+          },
+          {
+            "path": "src/cli/notifier/registryLookup.ts",
+            "sha256": "3b5e4ee8c1929ab71bf8c0d8427075b1d191f7a811dc55cfeb8ce2834fa8f670",
+            "bytes": 11351
+          },
+          {
+            "path": "src/cli/notifier/updateCache.ts",
+            "sha256": "509a9b0952da0ce813786737753bce27de7faf68f43b76622c2f7fc81f4b1e74",
+            "bytes": 17551
+          },
+          {
+            "path": "src/cli/notifier/updateCheck.ts",
+            "sha256": "25c3874cdd040f778a2f4a2fb080b6b23f1695a5694a7253f30bf9d33a54a97a",
+            "bytes": 10174
+          },
+          {
+            "path": "src/cli/notifier/versionCompare.ts",
+            "sha256": "89f6ad8c91cf54e214ff3395a8094be29ab05b95ee0390c1308cf036a5e5d857",
+            "bytes": 4448
+          },
+          {
+            "path": "src/cli/parseCliArgs.ts",
+            "sha256": "40fb73c6e3eaf3667e940f4bf40b60c60fcee650496c4718e0e6f009e1c43e94",
+            "bytes": 4147
+          },
+          {
+            "path": "src/cli/runCli.ts",
+            "sha256": "4781dc02dfb633848e9dee955847de003000cba229765c1d92ddd2db92cfae03",
+            "bytes": 7167
+          },
+          {
+            "path": "src/config/ignoreDependencies.ts",
+            "sha256": "39d053dd8388770c21070b2808e17e5e0a7f59e00b1deb6b1aa3ecb24d060617",
+            "bytes": 1202
+          },
+          {
+            "path": "src/config/ignorePaths.ts",
+            "sha256": "dee5777124300c87da4f845d29ee7783728ef5723cb145606d097293002eb0a4",
+            "bytes": 2665
+          },
+          {
+            "path": "src/config/projectConfigError.ts",
+            "sha256": "382f7f01f366c9ee73a53c3791efe52b884e876cb06e5cda16a174f513b98f39",
+            "bytes": 484
+          },
+          {
+            "path": "src/config/readProjectConfig.ts",
+            "sha256": "357cc5d000dbc1a95ea7ee0da1e770a7dd5c478985bd4794859b43f22a0db991",
+            "bytes": 5128
+          },
+          {
+            "path": "src/core/analyzeProject.ts",
+            "sha256": "6f7a71f0b0827352fc59f746920c93122f9ab5a047f267df853216479999bd4a",
+            "bytes": 16648
+          },
+          {
+            "path": "src/detectors/eslintManifestConfig.ts",
+            "sha256": "d5af1f2150297377cc68644f0e171183b1bf6ac482f988e2664f5248dfc61411",
+            "bytes": 17327
+          },
+          {
+            "path": "src/detectors/eslintRcJsonConfig.ts",
+            "sha256": "87c1d89864ed94cf1dbc2159079cbf77f4aa85951ad1afab1a9964221705d9ab",
+            "bytes": 10801
+          },
+          {
+            "path": "src/detectors/jestManifestConfig.ts",
+            "sha256": "3ab0cc2faf335f99141814b269cd94c8c251b848e51fb88bd590616823abdc56",
+            "bytes": 15037
+          },
+          {
+            "path": "src/index.ts",
+            "sha256": "024412175261c0eb3b300aab01ca46359e0dcf85703803395988e4c388c6b66e",
+            "bytes": 353
+          },
+          {
+            "path": "src/reporters/terminalReporter.ts",
+            "sha256": "862ab9790528fabb6816680b21632de0ccdc81c4d6ca25c5cc09f3a53434da82",
+            "bytes": 6017
+          },
+          {
+            "path": "src/scanner/moduleSpecifiers.ts",
+            "sha256": "d468b1377b2158f964b3a213570815fcaabbc1daa30885bbf37ef87834cc4bcc",
+            "bytes": 162645
+          },
+          {
+            "path": "src/scanner/packageSpecifier.ts",
+            "sha256": "fe8f2cadcdafc7618359269359c0c003e567b9cc28d2b45363e05bc3ee6d312e",
+            "bytes": 8409
+          },
+          {
+            "path": "src/scanner/projectManifest.ts",
+            "sha256": "9f870454bfe8c4156c54b6f709dc116b12916c4bd5e6cb3ce269b1ae425ff723",
+            "bytes": 12740
+          },
+          {
+            "path": "src/scanner/scriptUsage.ts",
+            "sha256": "549ff68a69fe5271ba2a64b85263c535df52d1d5baf9d6190d602ca403d70b6a",
+            "bytes": 47220
+          },
+          {
+            "path": "src/scanner/sourceFiles.ts",
+            "sha256": "3ecfb218e7c8b60ce91a0b14b80d6dcbe763667e487419fcea451084603f5e92",
+            "bytes": 7948
+          },
+          {
+            "path": "test/auditFixIntegrationGate.test.ts",
+            "sha256": "b8fb61861ffe1859b39fa9e8af0c6e55c3da6d6c2d335cc2613f49793eeb7960",
+            "bytes": 7159
+          },
+          {
+            "path": "test/bootstrap.test.ts",
+            "sha256": "e596125fa2c639d4f64394735d90a6a84fffa276d60ff69a5e5f4c4f6a9c9923",
+            "bytes": 2267
+          },
+          {
+            "path": "test/cli.test.ts",
+            "sha256": "2e190c29ece619e55099f1eb8a057d3f0d3ea83bdefa6169151ee1f7a0953707",
+            "bytes": 15373
+          },
+          {
+            "path": "test/cliGate.test.ts",
+            "sha256": "dbd959f7a543fbcd0955342c34d579adacabc239f9b01b4684af0eaa302f3777",
+            "bytes": 23891
+          },
+          {
+            "path": "test/configurationCli.test.ts",
+            "sha256": "61d3e428f7ffe1e18da312b8ccdc545b3b170e9e927883431356d91f66e3380a",
+            "bytes": 13767
+          },
+          {
+            "path": "test/configurationCompositionGate.test.ts",
+            "sha256": "7b341c6466ae9622d647280722ac0ee581f26ea4617b656896c6ae4b7297b520",
+            "bytes": 12850
+          },
+          {
+            "path": "test/functionContextCliGate.test.ts",
+            "sha256": "56e4d28443e9c821b8dd8e1e20b11e9ffd9e060c753e2a306bd30a695ada90e1",
+            "bytes": 54303
+          },
+          {
+            "path": "test/globalSetup.ts",
+            "sha256": "70169a16271a1c7d16567ada5c14b0522e3b3f314096692b18d96165717978b9",
+            "bytes": 2281
+          },
+          {
+            "path": "test/helpers/expressionOwnerCases.ts",
+            "sha256": "66ac596352e51d62aa081fdc6ecd2588c8390df2d89bc5750a2e84ed46428a87",
+            "bytes": 3952
+          },
+          {
+            "path": "test/helpers/hereDocumentCases.ts",
+            "sha256": "81d3b9ea30f789f512486ed4bf656b7a9ce96e63ec3cd156d5056e65c5d81b9a",
+            "bytes": 5956
+          },
+          {
+            "path": "test/helpers/implicitModuleCases.ts",
+            "sha256": "bc7c10ba34ea3b1ab425ae8315f5d583519eceac68ed3dfde5953bb15746e84e",
+            "bytes": 5691
+          },
+          {
+            "path": "test/helpers/mappingCatalog.ts",
+            "sha256": "223d7d6c30abab78fb403c06fdfafb20d3d6ce1ec8bfaf02ee24786a72a000f7",
+            "bytes": 6486
+          },
+          {
+            "path": "test/helpers/notifierFetchProbe.mjs",
+            "sha256": "98bc9eea20d1dd8582bd5b681e466a0382874cddeb4793fae908ab32284522ec",
+            "bytes": 3221
+          },
+          {
+            "path": "test/helpers/opaqueShellCases.ts",
+            "sha256": "86edbd5605521282bafc5ffc01de5aca9933dc5e3b78254168961467e4996eaa",
+            "bytes": 4406
+          },
+          {
+            "path": "test/helpers/pr76ArrowAssertionCases.ts",
+            "sha256": "2524fc780d25f54b8c40ce63f0d86a11d2f12361c077b8b323f4d3765be5e6f6",
+            "bytes": 2613
+          },
+          {
+            "path": "test/helpers/pr76AssertionBoundaryCases.ts",
+            "sha256": "98f52655803229da4b8b2170b95aca49960863b2fed93da3c83066a2b00acdc2",
+            "bytes": 2663
+          },
+          {
+            "path": "test/helpers/pr76RemainingCases.ts",
+            "sha256": "7dc3816c42c0906316cad748c094e75e063162bbfeec0f17ce699a9e7a3f54b4",
+            "bytes": 1765
+          },
+          {
+            "path": "test/helpers/requireArrowMethodParameterCases.ts",
+            "sha256": "8caca028ff07a2a2de314e377fab2b38f0a636d24af4accde90faf4ef3c12c23",
+            "bytes": 9953
+          },
+          {
+            "path": "test/helpers/requireFunctionParameterCases.ts",
+            "sha256": "bfb8019d27270f47de7c42d8329336c2568a22ae051e6e5167d4a6b428882c42",
+            "bytes": 8324
+          },
+          {
+            "path": "test/helpers/requireParameterReviewCases.ts",
+            "sha256": "3b3a67fb615d601ff8f48bb409b70b2ecdd260fc553e0d8ae40f3615dabc104b",
+            "bytes": 12190
+          },
+          {
+            "path": "test/jsxAndRegexRegression.test.ts",
+            "sha256": "2e0443a6c0d0560de681ac0c82c4afe71e259832356804078b458bbc60e53d40",
+            "bytes": 8290
+          },
+          {
+            "path": "test/manifestBoundaries.test.ts",
+            "sha256": "75dfd1c562a94bd2e05b60239504dffc75e8a5e1db6e1dc57ad959156567369e",
+            "bytes": 10442
+          },
+          {
+            "path": "test/measurementIdentity.test.ts",
+            "sha256": "72ef1425baa43d32d979e8673cf14b19d8986300dd3d7ef003c19bd796826457",
+            "bytes": 11268
+          },
+          {
+            "path": "test/notifierCliGate.test.ts",
+            "sha256": "7c071744701d45fa82f77c199213697525c8f805fa3774fdadb3356eb7a24994",
+            "bytes": 20792
+          },
+          {
+            "path": "test/notifierStallGate.test.ts",
+            "sha256": "d749f38041e6181afbe5d93e1a11f7da4a83ae775a037ea543bb62389783325f",
+            "bytes": 14258
+          },
+          {
+            "path": "test/productionImports.test.ts",
+            "sha256": "81ff0ff31f6fde88e916c0619b9b10d97d7e1040860c13fe7befae27c59a0ecf",
+            "bytes": 3524
+          },
+          {
+            "path": "test/scriptHereDocumentCliGate.test.ts",
+            "sha256": "882fe16e898fd58b8ed7700d8ae3651dab4df7cddb0205d896f40b1545678a83",
+            "bytes": 2890
+          },
+          {
+            "path": "test/scriptOpaqueRegionCliGate.test.ts",
+            "sha256": "0a22d106d11a4cfef379ad57b1424472de4af80533a2d6ee2dc3718a5ef170f1",
+            "bytes": 2889
+          },
+          {
+            "path": "test/selfReferenceScopeCliGate.test.ts",
+            "sha256": "deb5656edc2157be1d9cb104c6bfba11cc3b36298813a48084ddb8996bbc662d",
+            "bytes": 12052
+          },
+          {
+            "path": "test/tsxGenericsRegression.test.ts",
+            "sha256": "63e3aeb037d0eb67f345926c548f5d74f6ede6acaecffae6dd63f6fa4d88d90d",
+            "bytes": 10948
+          },
+          {
+            "path": "test/unit/ciWorkflow.test.ts",
+            "sha256": "c1d863be2601d367b547a83ef366ad9acc330e9f3d384339d1526d34358b91bd",
+            "bytes": 584
+          },
+          {
+            "path": "test/unit/cli/eligibility.test.ts",
+            "sha256": "22444718f261c5bf6764500202eb9a9fec65eb45cf20b965939c30fc716fd19d",
+            "bytes": 15141
+          },
+          {
+            "path": "test/unit/cli/entry.test.ts",
+            "sha256": "34cfc52537b8981d2a6672487936fa2197a8566babe11b6799d56df5dfe2ee83",
+            "bytes": 17155
+          },
+          {
+            "path": "test/unit/cli/registryLookup.test.ts",
+            "sha256": "b8942473fa9d5f752b7bac380963dfb493410737d8c1b64dbfe926ea6965eaf4",
+            "bytes": 20613
+          },
+          {
+            "path": "test/unit/cli/updateCache.test.ts",
+            "sha256": "615d87a9ef04113fd51bba82105e5cb2bacfb3ef4b3e452542111f018905f9bb",
+            "bytes": 30996
+          },
+          {
+            "path": "test/unit/cli/updateCheck.test.ts",
+            "sha256": "25d9495ec47c921f81c1fe2465e7e5e54a455cea71a60261cf73feb29318b48d",
+            "bytes": 19948
+          },
+          {
+            "path": "test/unit/cli/versionCompare.test.ts",
+            "sha256": "871487515911848f8b87c9e4d198678e6af84865bc93b1900dd5f6b635b9d696",
+            "bytes": 6324
+          },
+          {
+            "path": "test/unit/config/ignoreDependencies.test.ts",
+            "sha256": "43cb0fc9666378fcdb151006c026b7c7bc8738948f1b07b811671ae6acb21307",
+            "bytes": 3730
+          },
+          {
+            "path": "test/unit/config/ignorePaths.test.ts",
+            "sha256": "f3c5133571a5a259d02dc803da88ba2b72be147134010a5476a21f4719d04ec2",
+            "bytes": 8513
+          },
+          {
+            "path": "test/unit/config/readProjectConfig.test.ts",
+            "sha256": "9f727424e4a715082f865a3d0be2e1fb24d2f42d91add4a9814d9dffd9da01fc",
+            "bytes": 17708
+          },
+          {
+            "path": "test/unit/core/analysisFixtures.test.ts",
+            "sha256": "95244323e4217be67009929489623b207e1ac4b21306451a37a140a1eb44d5f5",
+            "bytes": 13382
+          },
+          {
+            "path": "test/unit/core/analyzeProject.test.ts",
+            "sha256": "e5838a5b2da859e3030aff4cd6fbfb7a13073ebd6966db0df4fc87b1366b132e",
+            "bytes": 22637
+          },
+          {
+            "path": "test/unit/core/configUsageHandoff.test.ts",
+            "sha256": "c478f70683d41354d20211fffd97f98a2289458ac4a148de7659876697366d06",
+            "bytes": 10047
+          },
+          {
+            "path": "test/unit/core/dependencyExclusions.test.ts",
+            "sha256": "7b3f27ac97e1cf6f3c1b1d8409d28dc38d6f683a733d51061f041dcaf4cec86d",
+            "bytes": 9928
+          },
+          {
+            "path": "test/unit/core/detectionIntegrationGate.test.ts",
+            "sha256": "637de68176edd126626295062472bd208f7301834ba643c9a04f6ca8679d73dc",
+            "bytes": 25199
+          },
+          {
+            "path": "test/unit/core/mappingCatalog.test.ts",
+            "sha256": "ee141f8afbe1f87a3bd07815c68296364f224e609219c093edae1c5b9a0f0e86",
+            "bytes": 7978
+          },
+          {
+            "path": "test/unit/core/mappingIntegration.test.ts",
+            "sha256": "c5723d4531aded7f2e41efacc9f2b6da88dc2d6cc5286720d1fd184e9998b14c",
+            "bytes": 6596
+          },
+          {
+            "path": "test/unit/core/mappingMatrix.test.ts",
+            "sha256": "fd4d80b0013e57bfa7263cdf5cde3a4a09f424a96538fab99f003435383d5fa3",
+            "bytes": 4707
+          },
+          {
+            "path": "test/unit/core/sourceExclusions.test.ts",
+            "sha256": "d6837c5cbf50f66daf068738912add0da0625247b1a8248fa544718f4e088f8e",
+            "bytes": 11542
+          },
+          {
+            "path": "test/unit/core/typescriptLimits.test.ts",
+            "sha256": "c03fabf9ebfc166dded59025c45d5076bc121399985abf8a99ef2ed7a102a415",
+            "bytes": 7781
+          },
+          {
+            "path": "test/unit/core/v020Regression.test.ts",
+            "sha256": "64995c9d447bffbe02e83c023b937ed0ca8884faa37f29bc72bcfd3897321e4e",
+            "bytes": 61513
+          },
+          {
+            "path": "test/unit/detectors/eslintManifestConfig.test.ts",
+            "sha256": "4f0a5a9be6ada4bd98c7e51f4291afc036fe6856d2045682b54c71dec3fbf785",
+            "bytes": 22814
+          },
+          {
+            "path": "test/unit/detectors/eslintRcJsonConfig.test.ts",
+            "sha256": "ae8f62fb5056921724236c1ecfbeb58a17e9492294186162eb541730c93496cc",
+            "bytes": 27508
+          },
+          {
+            "path": "test/unit/detectors/jestManifestConfig.test.ts",
+            "sha256": "655d16e256fb505f8af5bfc5c7d1013adebd3df106c9a2cec8a1e8c1a66e0bc7",
+            "bytes": 21035
+          },
+          {
+            "path": "test/unit/detectors/jestTransformConfig.test.ts",
+            "sha256": "3cd98f6d591a9e330250b5540b928bb8ef329aaa4bdc3fcba7fe31f3bb97b870",
+            "bytes": 17843
+          },
+          {
+            "path": "test/unit/reporters/terminalReporter.test.ts",
+            "sha256": "7c614ed117a0d96ba2f072b71d593b3026f44bba89d859419b03ea0abbd1aa79",
+            "bytes": 9207
+          },
+          {
+            "path": "test/unit/scanner/moduleSpecifiers.test.ts",
+            "sha256": "d8a6745749e03e90dd15b898cf5a47865af88e3d5648554c2f3ce235f0b4f535",
+            "bytes": 90816
+          },
+          {
+            "path": "test/unit/scanner/packageSelfReference.test.ts",
+            "sha256": "deb573a30ff88f654e83f194ce146c06a59509c7daaecd7b20e6fa11bf662a91",
+            "bytes": 6527
+          },
+          {
+            "path": "test/unit/scanner/packageSpecifier.test.ts",
+            "sha256": "0a2d04f3b523ce64401cc3375c37804db066e878d3cd3b4a87c8a32cbb4078ed",
+            "bytes": 4396
+          },
+          {
+            "path": "test/unit/scanner/pr76ArrowAssertions.test.ts",
+            "sha256": "7ca292c1f59e875c02b4d5a763bfe674f9b89c90dc14ce5d13973de94a2c8c2f",
+            "bytes": 4337
+          },
+          {
+            "path": "test/unit/scanner/pr76AssertionBoundaries.test.ts",
+            "sha256": "881f2629e33bdcb72cb844254fa7548e3c0b4ba4295b45f07b7e4aa97ebb9f36",
+            "bytes": 8772
+          },
+          {
+            "path": "test/unit/scanner/pr76RemainingFamilies.test.ts",
+            "sha256": "99c3ada8e6f4250982a57e38538f40d815ce13519601f8829ec4139959e891ad",
+            "bytes": 11605
+          },
+          {
+            "path": "test/unit/scanner/pr76TwentyFamilies.test.ts",
+            "sha256": "ea75edfed6eb944bc92dff1284821e11527419392e92bc9344f2d82727ced9bd",
+            "bytes": 24717
+          },
+          {
+            "path": "test/unit/scanner/projectManifest.test.ts",
+            "sha256": "49525b6b15a4eaa6d23efeb403a08ae38ee90434f6fd8dfb2e87de8422e230ca",
+            "bytes": 8748
+          },
+          {
+            "path": "test/unit/scanner/requireParameterReview.test.ts",
+            "sha256": "8bb1cd6c25a1ffa281a701ee0576711f9074ee851f2a2d655f4f3abcafabeb6e",
+            "bytes": 1310
+          },
+          {
+            "path": "test/unit/scanner/requireProbeGrowth.test.ts",
+            "sha256": "97352f50764e0fbd375057c20913b222e4d9dd818b645588623ffb3a7b446be0",
+            "bytes": 1509
+          },
+          {
+            "path": "test/unit/scanner/reviewStructuralContexts.test.ts",
+            "sha256": "165c3f89254286d65fb8e0d47c369e8c56da537f9bfeb4118f96ba08c2dbc16d",
+            "bytes": 10776
+          },
+          {
+            "path": "test/unit/scanner/scriptUsage.test.ts",
+            "sha256": "a051300ff4094405cf50acd6fe4695ee52f740a091d2c34c94fb906c58c0999c",
+            "bytes": 94863
+          },
+          {
+            "path": "test/unit/scanner/sourceFiles.test.ts",
+            "sha256": "5886853855a19f1e731c1077eb1816ac7413b3ad456486aea3df3bef4523b4db",
+            "bytes": 8742
+          },
+          {
+            "path": "test/unit/scanner/structuralContexts.test.ts",
+            "sha256": "e8db8a05d211705361dfab923fa8ec71f879052f701b12570b66754591504ed6",
+            "bytes": 19696
+          },
+          {
+            "path": "vitest.config.ts",
+            "sha256": "551c3e7ab79dc70bea890bd4b302e22654250ddf7a48ba6f126c1edd9958b35e",
+            "bytes": 517
+          }
+        ]
+      },
+      "expected": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["@types/node", "@vitest/coverage-v8"],
+        "missingDependencies": []
+      },
+      "observation": {
+        "medianMs": 480.2264730000006,
+        "minMs": 465.01228100000026,
+        "maxMs": 1442.858018,
+        "samples": [
+          {
+            "ms": 466.53587500000003,
+            "heapBeforeBytes": 7715696,
+            "heapAfterBytes": 14475568,
+            "heapDeltaBytes": 6759872,
+            "heapAfterGcBytes": 7708160,
+            "rssBeforeBytes": 204857344,
+            "rssAfterBytes": 205250560
+          },
+          {
+            "ms": 1442.858018,
+            "heapBeforeBytes": 7694536,
+            "heapAfterBytes": 12157824,
+            "heapDeltaBytes": 4463288,
+            "heapAfterGcBytes": 7329776,
+            "rssBeforeBytes": 195866624,
+            "rssAfterBytes": 209203200
+          },
+          {
+            "ms": 635.8698109999996,
+            "heapBeforeBytes": 7329480,
+            "heapAfterBytes": 9930576,
+            "heapDeltaBytes": 2601096,
+            "heapAfterGcBytes": 7649272,
+            "rssBeforeBytes": 203427840,
+            "rssAfterBytes": 222625792
+          },
+          {
+            "ms": 475.9632069999998,
+            "heapBeforeBytes": 7648760,
+            "heapAfterBytes": 23713960,
+            "heapDeltaBytes": 16065200,
+            "heapAfterGcBytes": 7644296,
+            "rssBeforeBytes": 222478336,
+            "rssAfterBytes": 223940608
+          },
+          {
+            "ms": 668.9354069999999,
+            "heapBeforeBytes": 7290808,
+            "heapAfterBytes": 29992920,
+            "heapDeltaBytes": 22702112,
+            "heapAfterGcBytes": 7360968,
+            "rssBeforeBytes": 223629312,
+            "rssAfterBytes": 233811968
+          },
+          {
+            "ms": 465.01228100000026,
+            "heapBeforeBytes": 7360696,
+            "heapAfterBytes": 23650144,
+            "heapDeltaBytes": 16289448,
+            "heapAfterGcBytes": 7685064,
+            "rssBeforeBytes": 232095744,
+            "rssAfterBytes": 226353152
+          },
+          {
+            "ms": 480.2264730000006,
+            "heapBeforeBytes": 7684824,
+            "heapAfterBytes": 25833400,
+            "heapDeltaBytes": 18148576,
+            "heapAfterGcBytes": 7670592,
+            "rssBeforeBytes": 225574912,
+            "rssAfterBytes": 226631680
+          }
+        ]
+      }
+    }
+  ],
+  "properties": [
+    {
+      "count": 500,
+      "property": "import",
+      "bytes": 6516,
+      "sourceSha256": "750026a6013e44c29889b295254ea14bf65762854d4b172643f2409c639b8d6b",
+      "observation": {
+        "medianMs": 10.126374000000396,
+        "minMs": 9.141535999999178,
+        "maxMs": 13.930229000000509,
+        "samples": [
+          {
+            "ms": 13.930229000000509,
+            "heapBeforeBytes": 7366472,
+            "heapAfterBytes": 9766984,
+            "heapDeltaBytes": 2400512,
+            "heapAfterGcBytes": 7367080,
+            "rssBeforeBytes": 229421056,
+            "rssAfterBytes": 229421056
+          },
+          {
+            "ms": 13.77825600000051,
+            "heapBeforeBytes": 7367128,
+            "heapAfterBytes": 9760896,
+            "heapDeltaBytes": 2393768,
+            "heapAfterGcBytes": 7365848,
+            "rssBeforeBytes": 221941760,
+            "rssAfterBytes": 221941760
+          },
+          {
+            "ms": 13.57287400000041,
+            "heapBeforeBytes": 7365896,
+            "heapAfterBytes": 10144528,
+            "heapDeltaBytes": 2778632,
+            "heapAfterGcBytes": 7632384,
+            "rssBeforeBytes": 221941760,
+            "rssAfterBytes": 222072832
+          },
+          {
+            "ms": 9.459539999999834,
+            "heapBeforeBytes": 7640568,
+            "heapAfterBytes": 9962424,
+            "heapDeltaBytes": 2321856,
+            "heapAfterGcBytes": 7632576,
+            "rssBeforeBytes": 222072832,
+            "rssAfterBytes": 222072832
+          },
+          {
+            "ms": 9.45860300000004,
+            "heapBeforeBytes": 7640856,
+            "heapAfterBytes": 9962696,
+            "heapDeltaBytes": 2321840,
+            "heapAfterGcBytes": 8049968,
+            "rssBeforeBytes": 222072832,
+            "rssAfterBytes": 222072832
+          },
+          {
+            "ms": 9.141535999999178,
+            "heapBeforeBytes": 8054840,
+            "heapAfterBytes": 10387368,
+            "heapDeltaBytes": 2332528,
+            "heapAfterGcBytes": 7633360,
+            "rssBeforeBytes": 222072832,
+            "rssAfterBytes": 222072832
+          },
+          {
+            "ms": 10.126374000000396,
+            "heapBeforeBytes": 7633408,
+            "heapAfterBytes": 9957008,
+            "heapDeltaBytes": 2323600,
+            "heapAfterGcBytes": 7633512,
+            "rssBeforeBytes": 222072832,
+            "rssAfterBytes": 222072832
+          }
+        ]
+      }
+    },
+    {
+      "count": 500,
+      "property": "other",
+      "bytes": 6016,
+      "sourceSha256": "fa885cab999736ece761e96d4f73918ad0889c9c772740f650f26aabfe5e721a",
+      "observation": {
+        "medianMs": 9.542388999999275,
+        "minMs": 9.319145999999819,
+        "maxMs": 9.908100999999988,
+        "samples": [
+          {
+            "ms": 9.908100999999988,
+            "heapBeforeBytes": 7633584,
+            "heapAfterBytes": 9931416,
+            "heapDeltaBytes": 2297832,
+            "heapAfterGcBytes": 7634288,
+            "rssBeforeBytes": 222072832,
+            "rssAfterBytes": 222072832
+          },
+          {
+            "ms": 9.522729000000254,
+            "heapBeforeBytes": 7643384,
+            "heapAfterBytes": 9941088,
+            "heapDeltaBytes": 2297704,
+            "heapAfterGcBytes": 7634816,
+            "rssBeforeBytes": 222072832,
+            "rssAfterBytes": 222072832
+          },
+          {
+            "ms": 9.577142999999523,
+            "heapBeforeBytes": 7634864,
+            "heapAfterBytes": 9941408,
+            "heapDeltaBytes": 2306544,
+            "heapAfterGcBytes": 7644032,
+            "rssBeforeBytes": 222072832,
+            "rssAfterBytes": 222072832
+          },
+          {
+            "ms": 9.319145999999819,
+            "heapBeforeBytes": 7644080,
+            "heapAfterBytes": 9952480,
+            "heapDeltaBytes": 2308400,
+            "heapAfterGcBytes": 7644224,
+            "rssBeforeBytes": 222072832,
+            "rssAfterBytes": 222072832
+          },
+          {
+            "ms": 9.504769999999553,
+            "heapBeforeBytes": 7644272,
+            "heapAfterBytes": 9941920,
+            "heapDeltaBytes": 2297648,
+            "heapAfterGcBytes": 7644416,
+            "rssBeforeBytes": 222072832,
+            "rssAfterBytes": 222072832
+          },
+          {
+            "ms": 9.542388999999275,
+            "heapBeforeBytes": 7644464,
+            "heapAfterBytes": 9942112,
+            "heapDeltaBytes": 2297648,
+            "heapAfterGcBytes": 7644608,
+            "rssBeforeBytes": 222072832,
+            "rssAfterBytes": 222072832
+          },
+          {
+            "ms": 9.5608000000002,
+            "heapBeforeBytes": 7644656,
+            "heapAfterBytes": 9942304,
+            "heapDeltaBytes": 2297648,
+            "heapAfterGcBytes": 7644800,
+            "rssBeforeBytes": 222072832,
+            "rssAfterBytes": 222072832
+          }
+        ]
+      }
+    },
+    {
+      "count": 1000,
+      "property": "import",
+      "bytes": 13016,
+      "sourceSha256": "f1297af6eaac9a7737d7d6adc3d3545952db3d9fe399e9049a2fcf8645bfc0fb",
+      "observation": {
+        "medianMs": 16.79947599999923,
+        "minMs": 16.321006000000125,
+        "maxMs": 19.932614999999714,
+        "samples": [
+          {
+            "ms": 18.723426000000472,
+            "heapBeforeBytes": 7664656,
+            "heapAfterBytes": 12332216,
+            "heapDeltaBytes": 4667560,
+            "heapAfterGcBytes": 7665264,
+            "rssBeforeBytes": 222072832,
+            "rssAfterBytes": 224038912
+          },
+          {
+            "ms": 18.928807000000234,
+            "heapBeforeBytes": 7665464,
+            "heapAfterBytes": 12338080,
+            "heapDeltaBytes": 4672616,
+            "heapAfterGcBytes": 7665608,
+            "rssBeforeBytes": 224038912,
+            "rssAfterBytes": 224038912
+          },
+          {
+            "ms": 19.932614999999714,
+            "heapBeforeBytes": 7665656,
+            "heapAfterBytes": 12597712,
+            "heapDeltaBytes": 4932056,
+            "heapAfterGcBytes": 7657928,
+            "rssBeforeBytes": 224038912,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 16.503394999999728,
+            "heapBeforeBytes": 7685912,
+            "heapAfterBytes": 11968144,
+            "heapDeltaBytes": 4282232,
+            "heapAfterGcBytes": 7687408,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 16.321006000000125,
+            "heapBeforeBytes": 7687456,
+            "heapAfterBytes": 11982512,
+            "heapDeltaBytes": 4295056,
+            "heapAfterGcBytes": 7702408,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 16.79947599999923,
+            "heapBeforeBytes": 7650432,
+            "heapAfterBytes": 11922032,
+            "heapDeltaBytes": 4271600,
+            "heapAfterGcBytes": 7650576,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 16.699963000000025,
+            "heapBeforeBytes": 7650624,
+            "heapAfterBytes": 11935920,
+            "heapDeltaBytes": 4285296,
+            "heapAfterGcBytes": 7659376,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          }
+        ]
+      }
+    },
+    {
+      "count": 1000,
+      "property": "other",
+      "bytes": 12016,
+      "sourceSha256": "7d8d1fa32dcf5684eeed38e8aaf9bb0d83526edf06bf244caae2eb31ffeeca60",
+      "observation": {
+        "medianMs": 16.000363000000107,
+        "minMs": 15.105969000000186,
+        "maxMs": 16.33804699999928,
+        "samples": [
+          {
+            "ms": 15.105969000000186,
+            "heapBeforeBytes": 7667288,
+            "heapAfterBytes": 11846544,
+            "heapDeltaBytes": 4179256,
+            "heapAfterGcBytes": 7667896,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 15.857154000000264,
+            "heapBeforeBytes": 7668096,
+            "heapAfterBytes": 11863288,
+            "heapDeltaBytes": 4195192,
+            "heapAfterGcBytes": 7675112,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 15.81804800000009,
+            "heapBeforeBytes": 7675160,
+            "heapAfterBytes": 11854360,
+            "heapDeltaBytes": 4179200,
+            "heapAfterGcBytes": 7675152,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 16.120021000000634,
+            "heapBeforeBytes": 7659648,
+            "heapAfterBytes": 11838992,
+            "heapDeltaBytes": 4179344,
+            "heapAfterGcBytes": 7659792,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 16.27021599999989,
+            "heapBeforeBytes": 7659840,
+            "heapAfterBytes": 11844240,
+            "heapDeltaBytes": 4184400,
+            "heapAfterGcBytes": 7659984,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 16.33804699999928,
+            "heapBeforeBytes": 7660032,
+            "heapAfterBytes": 11841192,
+            "heapDeltaBytes": 4181160,
+            "heapAfterGcBytes": 7660176,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 16.000363000000107,
+            "heapBeforeBytes": 7660224,
+            "heapAfterBytes": 11847704,
+            "heapDeltaBytes": 4187480,
+            "heapAfterGcBytes": 7660368,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          }
+        ]
+      }
+    },
+    {
+      "count": 2000,
+      "property": "import",
+      "bytes": 26016,
+      "sourceSha256": "7739d301d7157584e249bd661cf5708da6f9cbbd26758894f9210015caa94a84",
+      "observation": {
+        "medianMs": 31.476470999999947,
+        "minMs": 30.475922999999966,
+        "maxMs": 32.73156199999994,
+        "samples": [
+          {
+            "ms": 30.475922999999966,
+            "heapBeforeBytes": 7699824,
+            "heapAfterBytes": 16274392,
+            "heapDeltaBytes": 8574568,
+            "heapAfterGcBytes": 7700432,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 31.2537540000003,
+            "heapBeforeBytes": 7700632,
+            "heapAfterBytes": 16273688,
+            "heapDeltaBytes": 8573056,
+            "heapAfterGcBytes": 7716328,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 30.880239000000074,
+            "heapBeforeBytes": 7716376,
+            "heapAfterBytes": 16273880,
+            "heapDeltaBytes": 8557504,
+            "heapAfterGcBytes": 7716368,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 32.73156199999994,
+            "heapBeforeBytes": 7675872,
+            "heapAfterBytes": 16272168,
+            "heapDeltaBytes": 8596296,
+            "heapAfterGcBytes": 7698976,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 32.04624200000035,
+            "heapBeforeBytes": 7699024,
+            "heapAfterBytes": 16295912,
+            "heapDeltaBytes": 8596888,
+            "heapAfterGcBytes": 7711280,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 31.8690689999994,
+            "heapBeforeBytes": 7711328,
+            "heapAfterBytes": 16277744,
+            "heapDeltaBytes": 8566416,
+            "heapAfterGcBytes": 7711568,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 31.476470999999947,
+            "heapBeforeBytes": 7711616,
+            "heapAfterBytes": 16305632,
+            "heapDeltaBytes": 8594016,
+            "heapAfterGcBytes": 7720616,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          }
+        ]
+      }
+    },
+    {
+      "count": 2000,
+      "property": "other",
+      "bytes": 24016,
+      "sourceSha256": "d13bac12dca218b5e748cb2c2ca56c0ce023b2cda76e9684a867838f0aa6da54",
+      "observation": {
+        "medianMs": 31.891286000000036,
+        "minMs": 30.55156200000056,
+        "maxMs": 32.298217999999906,
+        "samples": [
+          {
+            "ms": 30.55156200000056,
+            "heapBeforeBytes": 7731680,
+            "heapAfterBytes": 16220984,
+            "heapDeltaBytes": 8489304,
+            "heapAfterGcBytes": 7732136,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 31.23479899999984,
+            "heapBeforeBytes": 7685696,
+            "heapAfterBytes": 16200840,
+            "heapDeltaBytes": 8515144,
+            "heapAfterGcBytes": 7678096,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 32.298217999999906,
+            "heapBeforeBytes": 7678144,
+            "heapAfterBytes": 16191376,
+            "heapDeltaBytes": 8513232,
+            "heapAfterGcBytes": 7686896,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 31.695506000000023,
+            "heapBeforeBytes": 7686944,
+            "heapAfterBytes": 16190824,
+            "heapDeltaBytes": 8503880,
+            "heapAfterGcBytes": 7687088,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 32.161620999999286,
+            "heapBeforeBytes": 7687136,
+            "heapAfterBytes": 16191424,
+            "heapDeltaBytes": 8504288,
+            "heapAfterGcBytes": 7687280,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 31.891286000000036,
+            "heapBeforeBytes": 7687328,
+            "heapAfterBytes": 16191208,
+            "heapDeltaBytes": 8503880,
+            "heapAfterGcBytes": 7688768,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          },
+          {
+            "ms": 31.939234999999826,
+            "heapBeforeBytes": 7688816,
+            "heapAfterBytes": 16193440,
+            "heapDeltaBytes": 8504624,
+            "heapAfterGcBytes": 7688960,
+            "rssBeforeBytes": 221212672,
+            "rssAfterBytes": 221212672
+          }
+        ]
+      }
+    },
+    {
+      "count": 4000,
+      "property": "import",
+      "bytes": 52016,
+      "sourceSha256": "02fa915f86fbd5b56b138bf286731bfc9d5089b6efdfbd4c1c3f7416c259d76d",
+      "observation": {
+        "medianMs": 58.864120000000185,
+        "minMs": 56.77528799999891,
+        "maxMs": 63.920169999999416,
+        "samples": [
+          {
+            "ms": 56.77528799999891,
+            "heapBeforeBytes": 7755568,
+            "heapAfterBytes": 24561120,
+            "heapDeltaBytes": 16805552,
+            "heapAfterGcBytes": 7756176,
+            "rssBeforeBytes": 226455552,
+            "rssAfterBytes": 226455552
+          },
+          {
+            "ms": 59.47797899999932,
+            "heapBeforeBytes": 7755944,
+            "heapAfterBytes": 24571608,
+            "heapDeltaBytes": 16815664,
+            "heapAfterGcBytes": 7718000,
+            "rssBeforeBytes": 226455552,
+            "rssAfterBytes": 226455552
+          },
+          {
+            "ms": 58.823253999999,
+            "heapBeforeBytes": 7718048,
+            "heapAfterBytes": 24538432,
+            "heapDeltaBytes": 16820384,
+            "heapAfterGcBytes": 7718192,
+            "rssBeforeBytes": 226455552,
+            "rssAfterBytes": 226455552
+          },
+          {
+            "ms": 63.920169999999416,
+            "heapBeforeBytes": 7718240,
+            "heapAfterBytes": 24532520,
+            "heapDeltaBytes": 16814280,
+            "heapAfterGcBytes": 7718536,
+            "rssBeforeBytes": 226455552,
+            "rssAfterBytes": 226455552
+          },
+          {
+            "ms": 60.988368000000264,
+            "heapBeforeBytes": 7731488,
+            "heapAfterBytes": 24569224,
+            "heapDeltaBytes": 16837736,
+            "heapAfterGcBytes": 7740432,
+            "rssBeforeBytes": 226455552,
+            "rssAfterBytes": 226455552
+          },
+          {
+            "ms": 58.57088199999998,
+            "heapBeforeBytes": 7740480,
+            "heapAfterBytes": 24562880,
+            "heapDeltaBytes": 16822400,
+            "heapAfterGcBytes": 7755432,
+            "rssBeforeBytes": 226455552,
+            "rssAfterBytes": 226455552
+          },
+          {
+            "ms": 58.864120000000185,
+            "heapBeforeBytes": 7710112,
+            "heapAfterBytes": 24534128,
+            "heapDeltaBytes": 16824016,
+            "heapAfterGcBytes": 7720440,
+            "rssBeforeBytes": 226455552,
+            "rssAfterBytes": 226455552
+          }
+        ]
+      }
+    },
+    {
+      "count": 4000,
+      "property": "other",
+      "bytes": 48016,
+      "sourceSha256": "b89f405ecc66369fef377765a67d27caef12627e8ddf7ab7c7edb60a216fac5e",
+      "observation": {
+        "medianMs": 58.61022699999921,
+        "minMs": 57.61715700000059,
+        "maxMs": 62.27634699999908,
+        "samples": [
+          {
+            "ms": 57.74574700000085,
+            "heapBeforeBytes": 7725632,
+            "heapAfterBytes": 24389792,
+            "heapDeltaBytes": 16664160,
+            "heapAfterGcBytes": 7741200,
+            "rssBeforeBytes": 230912000,
+            "rssAfterBytes": 230912000
+          },
+          {
+            "ms": 57.61715700000059,
+            "heapBeforeBytes": 7741400,
+            "heapAfterBytes": 24381656,
+            "heapDeltaBytes": 16640256,
+            "heapAfterGcBytes": 7741544,
+            "rssBeforeBytes": 230912000,
+            "rssAfterBytes": 230912000
+          },
+          {
+            "ms": 62.27634699999908,
+            "heapBeforeBytes": 7741592,
+            "heapAfterBytes": 24405848,
+            "heapDeltaBytes": 16664256,
+            "heapAfterGcBytes": 7756576,
+            "rssBeforeBytes": 230912000,
+            "rssAfterBytes": 230912000
+          },
+          {
+            "ms": 60.577016000001095,
+            "heapBeforeBytes": 7756624,
+            "heapAfterBytes": 24390272,
+            "heapDeltaBytes": 16633648,
+            "heapAfterGcBytes": 7756336,
+            "rssBeforeBytes": 230912000,
+            "rssAfterBytes": 230912000
+          },
+          {
+            "ms": 59.293572000000495,
+            "heapBeforeBytes": 7707656,
+            "heapAfterBytes": 24365232,
+            "heapDeltaBytes": 16657576,
+            "heapAfterGcBytes": 7716408,
+            "rssBeforeBytes": 230912000,
+            "rssAfterBytes": 230912000
+          },
+          {
+            "ms": 58.61022699999921,
+            "heapBeforeBytes": 7716456,
+            "heapAfterBytes": 24371216,
+            "heapDeltaBytes": 16654760,
+            "heapAfterGcBytes": 7716600,
+            "rssBeforeBytes": 230912000,
+            "rssAfterBytes": 230912000
+          },
+          {
+            "ms": 57.947451,
+            "heapBeforeBytes": 7716648,
+            "heapAfterBytes": 24373208,
+            "heapDeltaBytes": 16656560,
+            "heapAfterGcBytes": 7724520,
+            "rssBeforeBytes": 230912000,
+            "rssAfterBytes": 230912000
+          }
+        ]
+      }
+    },
+    {
+      "count": 8000,
+      "property": "import",
+      "bytes": 104016,
+      "sourceSha256": "5e1c414d2662166ae8f55577998830f98432adbb120283248b2dbff82fd96ab0",
+      "observation": {
+        "medianMs": 111.63050499999918,
+        "minMs": 110.49566699999923,
+        "maxMs": 113.0718050000014,
+        "samples": [
+          {
+            "ms": 110.49566699999923,
+            "heapBeforeBytes": 7817504,
+            "heapAfterBytes": 41603184,
+            "heapDeltaBytes": 33785680,
+            "heapAfterGcBytes": 7821272,
+            "rssBeforeBytes": 231960576,
+            "rssAfterBytes": 231960576
+          },
+          {
+            "ms": 110.85569700000087,
+            "heapBeforeBytes": 7821232,
+            "heapAfterBytes": 41584440,
+            "heapDeltaBytes": 33763208,
+            "heapAfterGcBytes": 7821472,
+            "rssBeforeBytes": 231960576,
+            "rssAfterBytes": 231960576
+          },
+          {
+            "ms": 111.15299899999991,
+            "heapBeforeBytes": 7821520,
+            "heapAfterBytes": 41614872,
+            "heapDeltaBytes": 33793352,
+            "heapAfterGcBytes": 7812672,
+            "rssBeforeBytes": 231960576,
+            "rssAfterBytes": 231960576
+          },
+          {
+            "ms": 112.12399299999925,
+            "heapBeforeBytes": 7812720,
+            "heapAfterBytes": 41584784,
+            "heapDeltaBytes": 33772064,
+            "heapAfterGcBytes": 7812960,
+            "rssBeforeBytes": 231960576,
+            "rssAfterBytes": 231960576
+          },
+          {
+            "ms": 111.6613070000003,
+            "heapBeforeBytes": 7813008,
+            "heapAfterBytes": 41614928,
+            "heapDeltaBytes": 33801920,
+            "heapAfterGcBytes": 7822000,
+            "rssBeforeBytes": 231960576,
+            "rssAfterBytes": 231960576
+          },
+          {
+            "ms": 111.63050499999918,
+            "heapBeforeBytes": 7822048,
+            "heapAfterBytes": 41585256,
+            "heapDeltaBytes": 33763208,
+            "heapAfterGcBytes": 7821952,
+            "rssBeforeBytes": 231960576,
+            "rssAfterBytes": 231960576
+          },
+          {
+            "ms": 113.0718050000014,
+            "heapBeforeBytes": 7773448,
+            "heapAfterBytes": 41561504,
+            "heapDeltaBytes": 33788056,
+            "heapAfterGcBytes": 7783776,
+            "rssBeforeBytes": 231960576,
+            "rssAfterBytes": 231960576
+          }
+        ]
+      }
+    },
+    {
+      "count": 8000,
+      "property": "other",
+      "bytes": 96016,
+      "sourceSha256": "5965092e1c491c3ddf2ea3e99f99c6b9ac1397467179533ea9414fee2e81b5c1",
+      "observation": {
+        "medianMs": 111.65917900000022,
+        "minMs": 107.91432600000007,
+        "maxMs": 132.1470019999997,
+        "samples": [
+          {
+            "ms": 107.91432600000007,
+            "heapBeforeBytes": 7799504,
+            "heapAfterBytes": 41209736,
+            "heapDeltaBytes": 33410232,
+            "heapAfterGcBytes": 7799816,
+            "rssBeforeBytes": 231960576,
+            "rssAfterBytes": 231960576
+          },
+          {
+            "ms": 110.79902299999958,
+            "heapBeforeBytes": 7800016,
+            "heapAfterBytes": 41204008,
+            "heapDeltaBytes": 33403992,
+            "heapAfterGcBytes": 7800160,
+            "rssBeforeBytes": 231960576,
+            "rssAfterBytes": 231960576
+          },
+          {
+            "ms": 132.1470019999997,
+            "heapBeforeBytes": 7800208,
+            "heapAfterBytes": 41234400,
+            "heapDeltaBytes": 33434192,
+            "heapAfterGcBytes": 7816488,
+            "rssBeforeBytes": 231960576,
+            "rssAfterBytes": 231960576
+          },
+          {
+            "ms": 113.41635999999926,
+            "heapBeforeBytes": 7816536,
+            "heapAfterBytes": 41220456,
+            "heapDeltaBytes": 33403920,
+            "heapAfterGcBytes": 7816320,
+            "rssBeforeBytes": 232091648,
+            "rssAfterBytes": 232091648
+          },
+          {
+            "ms": 111.65917900000022,
+            "heapBeforeBytes": 7767568,
+            "heapAfterBytes": 41195080,
+            "heapDeltaBytes": 33427512,
+            "heapAfterGcBytes": 7776416,
+            "rssBeforeBytes": 232091648,
+            "rssAfterBytes": 232091648
+          },
+          {
+            "ms": 110.13133899999957,
+            "heapBeforeBytes": 7776464,
+            "heapAfterBytes": 41195288,
+            "heapDeltaBytes": 33418824,
+            "heapAfterGcBytes": 7776608,
+            "rssBeforeBytes": 232091648,
+            "rssAfterBytes": 232091648
+          },
+          {
+            "ms": 113.65379899999971,
+            "heapBeforeBytes": 7776656,
+            "heapAfterBytes": 41219816,
+            "heapDeltaBytes": 33443160,
+            "heapAfterGcBytes": 7791912,
+            "rssBeforeBytes": 232091648,
+            "rssAfterBytes": 232091648
+          }
+        ]
+      }
+    }
+  ],
+  "pruning": [
+    {
+      "generatedFiles": 0,
+      "pruned": false,
+      "selectedSourceFiles": 1,
+      "generator": "100 files/directory; require('prune-tree-<five-digit-index>'); retained index requires declared prune-live",
+      "inputSha256": "f19f9dc38db4a737df4a77ab0f6a6e5a156a130e0ef2a6c2a0ae0451c8b1a1cb",
+      "findingsSha256": "f64a02c0e463212d04a56ae5e538c8523d5fcd5ff57888afa3f3d9e31638422d",
+      "missingCount": 0,
+      "observation": {
+        "medianMs": 1.952371999999741,
+        "minMs": 1.496327000000747,
+        "maxMs": 2.7240490000003774,
+        "samples": [
+          {
+            "ms": 2.2710619999998016,
+            "heapBeforeBytes": 7740848,
+            "heapAfterBytes": 7933232,
+            "heapDeltaBytes": 192384,
+            "heapAfterGcBytes": 7740736,
+            "rssBeforeBytes": 229732352,
+            "rssAfterBytes": 229732352
+          },
+          {
+            "ms": 1.496327000000747,
+            "heapBeforeBytes": 7740904,
+            "heapAfterBytes": 7910200,
+            "heapDeltaBytes": 169296,
+            "heapAfterGcBytes": 7740952,
+            "rssBeforeBytes": 229732352,
+            "rssAfterBytes": 229732352
+          },
+          {
+            "ms": 1.952371999999741,
+            "heapBeforeBytes": 7708480,
+            "heapAfterBytes": 7877960,
+            "heapDeltaBytes": 169480,
+            "heapAfterGcBytes": 7708656,
+            "rssBeforeBytes": 229732352,
+            "rssAfterBytes": 229732352
+          },
+          {
+            "ms": 1.7447010000014416,
+            "heapBeforeBytes": 7708672,
+            "heapAfterBytes": 7879312,
+            "heapDeltaBytes": 170640,
+            "heapAfterGcBytes": 7710008,
+            "rssBeforeBytes": 229732352,
+            "rssAfterBytes": 229732352
+          },
+          {
+            "ms": 1.5802650000005087,
+            "heapBeforeBytes": 7710024,
+            "heapAfterBytes": 7879504,
+            "heapDeltaBytes": 169480,
+            "heapAfterGcBytes": 7710200,
+            "rssBeforeBytes": 229732352,
+            "rssAfterBytes": 229732352
+          },
+          {
+            "ms": 2.24171700000079,
+            "heapBeforeBytes": 7710216,
+            "heapAfterBytes": 7879760,
+            "heapDeltaBytes": 169544,
+            "heapAfterGcBytes": 7710536,
+            "rssBeforeBytes": 229732352,
+            "rssAfterBytes": 229732352
+          },
+          {
+            "ms": 2.7240490000003774,
+            "heapBeforeBytes": 7710552,
+            "heapAfterBytes": 7880032,
+            "heapDeltaBytes": 169480,
+            "heapAfterGcBytes": 7710728,
+            "rssBeforeBytes": 229732352,
+            "rssAfterBytes": 229732352
+          }
+        ]
+      }
+    },
+    {
+      "generatedFiles": 0,
+      "pruned": true,
+      "selectedSourceFiles": 1,
+      "generator": "100 files/directory; require('prune-tree-<five-digit-index>'); retained index requires declared prune-live",
+      "inputSha256": "f19f9dc38db4a737df4a77ab0f6a6e5a156a130e0ef2a6c2a0ae0451c8b1a1cb",
+      "findingsSha256": "f64a02c0e463212d04a56ae5e538c8523d5fcd5ff57888afa3f3d9e31638422d",
+      "missingCount": 0,
+      "observation": {
+        "medianMs": 1.8945299999995768,
+        "minMs": 1.6653459999997722,
+        "maxMs": 2.424246000000494,
+        "samples": [
+          {
+            "ms": 1.8798969999988913,
+            "heapBeforeBytes": 7713448,
+            "heapAfterBytes": 7882960,
+            "heapDeltaBytes": 169512,
+            "heapAfterGcBytes": 7714056,
+            "rssBeforeBytes": 229732352,
+            "rssAfterBytes": 229732352
+          },
+          {
+            "ms": 1.8768829999989975,
+            "heapBeforeBytes": 7714224,
+            "heapAfterBytes": 7883768,
+            "heapDeltaBytes": 169544,
+            "heapAfterGcBytes": 7714400,
+            "rssBeforeBytes": 229732352,
+            "rssAfterBytes": 229732352
+          },
+          {
+            "ms": 1.6653459999997722,
+            "heapBeforeBytes": 7714416,
+            "heapAfterBytes": 7883960,
+            "heapDeltaBytes": 169544,
+            "heapAfterGcBytes": 7714592,
+            "rssBeforeBytes": 229732352,
+            "rssAfterBytes": 229732352
+          },
+          {
+            "ms": 1.8945299999995768,
+            "heapBeforeBytes": 7714608,
+            "heapAfterBytes": 7884152,
+            "heapDeltaBytes": 169544,
+            "heapAfterGcBytes": 7714784,
+            "rssBeforeBytes": 229732352,
+            "rssAfterBytes": 229732352
+          },
+          {
+            "ms": 2.305555999999342,
+            "heapBeforeBytes": 7714800,
+            "heapAfterBytes": 7884344,
+            "heapDeltaBytes": 169544,
+            "heapAfterGcBytes": 7714976,
+            "rssBeforeBytes": 229732352,
+            "rssAfterBytes": 229732352
+          },
+          {
+            "ms": 2.424246000000494,
+            "heapBeforeBytes": 7714992,
+            "heapAfterBytes": 7884536,
+            "heapDeltaBytes": 169544,
+            "heapAfterGcBytes": 7715168,
+            "rssBeforeBytes": 229732352,
+            "rssAfterBytes": 229732352
+          },
+          {
+            "ms": 2.1143929999998363,
+            "heapBeforeBytes": 7715184,
+            "heapAfterBytes": 7884728,
+            "heapDeltaBytes": 169544,
+            "heapAfterGcBytes": 7715360,
+            "rssBeforeBytes": 229732352,
+            "rssAfterBytes": 229732352
+          }
+        ]
+      }
+    },
+    {
+      "generatedFiles": 1000,
+      "pruned": false,
+      "selectedSourceFiles": 1001,
+      "generator": "100 files/directory; require('prune-tree-<five-digit-index>'); retained index requires declared prune-live",
+      "inputSha256": "bf47dab5bc69507e627177864a6686043234834265457bbbea3c05b68dd5083f",
+      "findingsSha256": "6b22c156571ddfc9913cc4f5bfb28d27c14650a7f43a336c42dbe6fb870706f9",
+      "missingCount": 1000,
+      "observation": {
+        "medianMs": 103.41609699999935,
+        "minMs": 96.4683100000002,
+        "maxMs": 186.52078900000015,
+        "samples": [
+          {
+            "ms": 186.52078900000015,
+            "heapBeforeBytes": 8393640,
+            "heapAfterBytes": 26140480,
+            "heapDeltaBytes": 17746840,
+            "heapAfterGcBytes": 8323176,
+            "rssBeforeBytes": 230256640,
+            "rssAfterBytes": 230256640
+          },
+          {
+            "ms": 103.41609699999935,
+            "heapBeforeBytes": 8322584,
+            "heapAfterBytes": 26067928,
+            "heapDeltaBytes": 17745344,
+            "heapAfterGcBytes": 8288888,
+            "rssBeforeBytes": 230256640,
+            "rssAfterBytes": 230256640
+          },
+          {
+            "ms": 97.89198599999872,
+            "heapBeforeBytes": 8288904,
+            "heapAfterBytes": 26018920,
+            "heapDeltaBytes": 17730016,
+            "heapAfterGcBytes": 8290568,
+            "rssBeforeBytes": 230256640,
+            "rssAfterBytes": 230256640
+          },
+          {
+            "ms": 115.12022699999943,
+            "heapBeforeBytes": 8282112,
+            "heapAfterBytes": 26004320,
+            "heapDeltaBytes": 17722208,
+            "heapAfterGcBytes": 8283216,
+            "rssBeforeBytes": 230256640,
+            "rssAfterBytes": 230256640
+          },
+          {
+            "ms": 119.49327500000072,
+            "heapBeforeBytes": 8282920,
+            "heapAfterBytes": 25963552,
+            "heapDeltaBytes": 17680632,
+            "heapAfterGcBytes": 8283864,
+            "rssBeforeBytes": 230256640,
+            "rssAfterBytes": 230256640
+          },
+          {
+            "ms": 98.98061899999993,
+            "heapBeforeBytes": 8283112,
+            "heapAfterBytes": 25968032,
+            "heapDeltaBytes": 17684920,
+            "heapAfterGcBytes": 8283288,
+            "rssBeforeBytes": 230256640,
+            "rssAfterBytes": 230256640
+          },
+          {
+            "ms": 96.4683100000002,
+            "heapBeforeBytes": 8283304,
+            "heapAfterBytes": 25967960,
+            "heapDeltaBytes": 17684656,
+            "heapAfterGcBytes": 8292984,
+            "rssBeforeBytes": 230256640,
+            "rssAfterBytes": 230256640
+          }
+        ]
+      }
+    },
+    {
+      "generatedFiles": 1000,
+      "pruned": true,
+      "selectedSourceFiles": 1,
+      "generator": "100 files/directory; require('prune-tree-<five-digit-index>'); retained index requires declared prune-live",
+      "inputSha256": "bf47dab5bc69507e627177864a6686043234834265457bbbea3c05b68dd5083f",
+      "findingsSha256": "f64a02c0e463212d04a56ae5e538c8523d5fcd5ff57888afa3f3d9e31638422d",
+      "missingCount": 0,
+      "observation": {
+        "medianMs": 1.7356659999986732,
+        "minMs": 1.4992409999995289,
+        "maxMs": 2.280204999999114,
+        "samples": [
+          {
+            "ms": 1.6443789999993896,
+            "heapBeforeBytes": 8161168,
+            "heapAfterBytes": 8328120,
+            "heapDeltaBytes": 166952,
+            "heapAfterGcBytes": 8161368,
+            "rssBeforeBytes": 230256640,
+            "rssAfterBytes": 230256640
+          },
+          {
+            "ms": 1.9579020000001037,
+            "heapBeforeBytes": 8153064,
+            "heapAfterBytes": 8320264,
+            "heapDeltaBytes": 167200,
+            "heapAfterGcBytes": 8153240,
+            "rssBeforeBytes": 230256640,
+            "rssAfterBytes": 230256640
+          },
+          {
+            "ms": 1.5252110000001267,
+            "heapBeforeBytes": 8153256,
+            "heapAfterBytes": 8320456,
+            "heapDeltaBytes": 167200,
+            "heapAfterGcBytes": 8153432,
+            "rssBeforeBytes": 230256640,
+            "rssAfterBytes": 230256640
+          },
+          {
+            "ms": 1.4992409999995289,
+            "heapBeforeBytes": 8153448,
+            "heapAfterBytes": 8320648,
+            "heapDeltaBytes": 167200,
+            "heapAfterGcBytes": 8153624,
+            "rssBeforeBytes": 230256640,
+            "rssAfterBytes": 230256640
+          },
+          {
+            "ms": 1.7356659999986732,
+            "heapBeforeBytes": 8153640,
+            "heapAfterBytes": 8320840,
+            "heapDeltaBytes": 167200,
+            "heapAfterGcBytes": 8153816,
+            "rssBeforeBytes": 230256640,
+            "rssAfterBytes": 230256640
+          },
+          {
+            "ms": 2.280204999999114,
+            "heapBeforeBytes": 8153832,
+            "heapAfterBytes": 8321032,
+            "heapDeltaBytes": 167200,
+            "heapAfterGcBytes": 8154008,
+            "rssBeforeBytes": 228593664,
+            "rssAfterBytes": 228593664
+          },
+          {
+            "ms": 2.1480240000000776,
+            "heapBeforeBytes": 8154024,
+            "heapAfterBytes": 8321224,
+            "heapDeltaBytes": 167200,
+            "heapAfterGcBytes": 8154200,
+            "rssBeforeBytes": 228593664,
+            "rssAfterBytes": 228593664
+          }
+        ]
+      }
+    },
+    {
+      "generatedFiles": 5000,
+      "pruned": false,
+      "selectedSourceFiles": 5001,
+      "generator": "100 files/directory; require('prune-tree-<five-digit-index>'); retained index requires declared prune-live",
+      "inputSha256": "3097c0da56d890f022e404ba6940c619b1b4377dc3d54f34090bd30c99c2be6b",
+      "findingsSha256": "e0e345f89b02a0a590df4c8334d06de5fa08b11e7971931e169b3081653064fd",
+      "missingCount": 5000,
+      "observation": {
+        "medianMs": 468.1456700000017,
+        "minMs": 462.6235740000011,
+        "maxMs": 481.6227820000022,
+        "samples": [
+          {
+            "ms": 462.98547899999903,
+            "heapBeforeBytes": 10431496,
+            "heapAfterBytes": 15869784,
+            "heapDeltaBytes": 5438288,
+            "heapAfterGcBytes": 10378504,
+            "rssBeforeBytes": 234430464,
+            "rssAfterBytes": 234692608
+          },
+          {
+            "ms": 468.1456700000017,
+            "heapBeforeBytes": 10370040,
+            "heapAfterBytes": 16630968,
+            "heapDeltaBytes": 6260928,
+            "heapAfterGcBytes": 10306592,
+            "rssBeforeBytes": 234397696,
+            "rssAfterBytes": 234528768
+          },
+          {
+            "ms": 469.4033090000012,
+            "heapBeforeBytes": 10295032,
+            "heapAfterBytes": 16402224,
+            "heapDeltaBytes": 6107192,
+            "heapAfterGcBytes": 10304088,
+            "rssBeforeBytes": 234528768,
+            "rssAfterBytes": 234659840
+          },
+          {
+            "ms": 462.6235740000011,
+            "heapBeforeBytes": 10277336,
+            "heapAfterBytes": 16312360,
+            "heapDeltaBytes": 6035024,
+            "heapAfterGcBytes": 10354832,
+            "rssBeforeBytes": 234659840,
+            "rssAfterBytes": 234921984
+          },
+          {
+            "ms": 466.82731700000295,
+            "heapBeforeBytes": 10287000,
+            "heapAfterBytes": 16054304,
+            "heapDeltaBytes": 5767304,
+            "heapAfterGcBytes": 10346336,
+            "rssBeforeBytes": 234762240,
+            "rssAfterBytes": 234762240
+          },
+          {
+            "ms": 481.6227820000022,
+            "heapBeforeBytes": 10270712,
+            "heapAfterBytes": 16382536,
+            "heapDeltaBytes": 6111824,
+            "heapAfterGcBytes": 10320792,
+            "rssBeforeBytes": 234762240,
+            "rssAfterBytes": 234893312
+          },
+          {
+            "ms": 468.8704609999986,
+            "heapBeforeBytes": 10299176,
+            "heapAfterBytes": 15783984,
+            "heapDeltaBytes": 5484808,
+            "heapAfterGcBytes": 10356072,
+            "rssBeforeBytes": 234725376,
+            "rssAfterBytes": 234987520
+          }
+        ]
+      }
+    },
+    {
+      "generatedFiles": 5000,
+      "pruned": true,
+      "selectedSourceFiles": 1,
+      "generator": "100 files/directory; require('prune-tree-<five-digit-index>'); retained index requires declared prune-live",
+      "inputSha256": "3097c0da56d890f022e404ba6940c619b1b4377dc3d54f34090bd30c99c2be6b",
+      "findingsSha256": "f64a02c0e463212d04a56ae5e538c8523d5fcd5ff57888afa3f3d9e31638422d",
+      "missingCount": 0,
+      "observation": {
+        "medianMs": 2.319590999999491,
+        "minMs": 1.6566149999998743,
+        "maxMs": 4.414104999999836,
+        "samples": [
+          {
+            "ms": 2.3249739999992016,
+            "heapBeforeBytes": 9683336,
+            "heapAfterBytes": 9843968,
+            "heapDeltaBytes": 160632,
+            "heapAfterGcBytes": 9683120,
+            "rssBeforeBytes": 234848256,
+            "rssAfterBytes": 234848256
+          },
+          {
+            "ms": 2.319590999999491,
+            "heapBeforeBytes": 9615496,
+            "heapAfterBytes": 9777304,
+            "heapDeltaBytes": 161808,
+            "heapAfterGcBytes": 9616184,
+            "rssBeforeBytes": 234848256,
+            "rssAfterBytes": 234848256
+          },
+          {
+            "ms": 1.6566149999998743,
+            "heapBeforeBytes": 9618256,
+            "heapAfterBytes": 9779776,
+            "heapDeltaBytes": 161520,
+            "heapAfterGcBytes": 9618328,
+            "rssBeforeBytes": 234848256,
+            "rssAfterBytes": 234848256
+          },
+          {
+            "ms": 2.40073399999892,
+            "heapBeforeBytes": 9616568,
+            "heapAfterBytes": 9778376,
+            "heapDeltaBytes": 161808,
+            "heapAfterGcBytes": 9616744,
+            "rssBeforeBytes": 234848256,
+            "rssAfterBytes": 234848256
+          },
+          {
+            "ms": 2.1628989999990154,
+            "heapBeforeBytes": 9616760,
+            "heapAfterBytes": 9778568,
+            "heapDeltaBytes": 161808,
+            "heapAfterGcBytes": 9616936,
+            "rssBeforeBytes": 234848256,
+            "rssAfterBytes": 234848256
+          },
+          {
+            "ms": 4.414104999999836,
+            "heapBeforeBytes": 9616952,
+            "heapAfterBytes": 9778760,
+            "heapDeltaBytes": 161808,
+            "heapAfterGcBytes": 9617128,
+            "rssBeforeBytes": 234848256,
+            "rssAfterBytes": 234848256
+          },
+          {
+            "ms": 1.9876360000016575,
+            "heapBeforeBytes": 9617144,
+            "heapAfterBytes": 9778952,
+            "heapDeltaBytes": 161808,
+            "heapAfterGcBytes": 9617320,
+            "rssBeforeBytes": 234848256,
+            "rssAfterBytes": 234848256
+          }
+        ]
+      }
+    }
+  ],
+  "artifact": {
+    "version": "0.2.0",
+    "filename": "depvitals-0.2.0.tgz",
+    "packedBytes": 160851,
+    "unpackedBytes": 684243,
+    "fileCount": 99,
+    "integrity": "sha512-Z5dWWNfQV9Ietb5IoNDsNg+YobtC36KXfpM7hfTKOHt4vO/vXNFOr4/fq/mU6Eo3Z5AbnPEKPFKWVlRMWgU0nQ==",
+    "shasum": "7b103578d0e2c18fc87f6a5ce446e595e6f3bb26",
+    "archiveSha256": "360a949ff546fac2e604f463fc8e13bb7216822fcfb8f4ee0f812b1e01f354db",
+    "matchedBuildSha256": "b64e37062bce8c728185d1ba92fe799632fb49297b3c568f48327cfda77c8650",
+    "runtimeDependencies": [],
+    "optionalDependencies": []
+  },
+  "processMaxRssKiB": 231520
+}

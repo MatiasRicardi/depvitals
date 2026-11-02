@@ -1,0 +1,10 @@
+{
+  "name": "measurement-components",
+  "dependencies": {
+    "jsx-view-live": "*",
+    "tsx-widget-live": "*",
+    "tsx-props-live": "*",
+    "tsx-expression-live": "*",
+    "jsx-text-decoy": "*"
+  }
+}

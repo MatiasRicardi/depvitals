@@ -1,0 +1,17 @@
+{
+  "name": "measurement-node",
+  "type": "module",
+  "dependencies": {
+    "node-main-live": "*",
+    "node-route-live": "*",
+    "node-dynamic-live": "*",
+    "node-regex-decoy": "*"
+  },
+  "devDependencies": {
+    "prettier": "*",
+    "node-payload-decoy": "*"
+  },
+  "scripts": {
+    "format": "cat <<'EOF'\nnode-payload-decoy\nEOF\nprettier"
+  }
+}

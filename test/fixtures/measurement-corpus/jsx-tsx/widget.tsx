@@ -1,0 +1,1 @@
+import type { Props } from 'tsx-props-live'; import Widget from 'tsx-widget-live'; import 'tsx-missing'; export const view = (props: Props) => <Widget {...props}>{require('tsx-expression-live')}</Widget>;

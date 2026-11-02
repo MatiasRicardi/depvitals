@@ -1,0 +1,20 @@
+{
+  "name": "measurement-typescript",
+  "dependencies": {
+    "ts-model-live": "*",
+    "ts-declaration-live": "*",
+    "ts-runtime-live": "*",
+    "ts-shadow-decoy": "*"
+  },
+  "devDependencies": {
+    "@types/node": "*",
+    "typescript": "*",
+    "ts-jest": "*"
+  },
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "jest": {
+    "preset": "ts-jest"
+  }
+}
