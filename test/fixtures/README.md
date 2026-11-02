@@ -264,3 +264,34 @@ The `analysis/audit-fix-baseline` fixture combines the corrected F01–F12 evide
 | F12    | [`packageSelfReference.test.ts`](../unit/scanner/packageSelfReference.test.ts) and [`selfReferenceScopeCliGate.test.ts`](../selfReferenceScopeCliGate.test.ts): exact nearest ownership versus missing/unsupported mappings, prefixes and child/root boundaries. |
 
 The historical 35-case aid supplements these owner tests; it does not cover every first-review obligation or replace this maintained baseline. This is a bounded static-analysis baseline, not universal language/shell/exports support or evidence of an exact-commit CI/release gate.
+
+### Configuration cross-feature composition (Step 93)
+
+[`configurationCompositionGate.test.ts`](../configurationCompositionGate.test.ts) copies the small
+[`analysis/configuration-composition`](analysis/configuration-composition) project into a physical
+temporary directory and compares absent configuration, `{}`, and explicit path/dependency exclusions.
+Its independent [`configuration-composition.expected.json`](analysis/configuration-composition.expected.json)
+records exact finding arrays, tool hints, report counts, ordering and channels. These expectations are
+specified independently of the analyzer and reporter.
+
+The fixture combines implicit-module await/regex, function/class expression division, template
+interpolation, parameter shadowing, trailing-comma calls, inert import properties, nearest exact
+self-references, peer/optional declarations, duplicate production/dev declarations, and `gulp` versus
+`gulp-cli`. Each CommonJS division control has a distinct package identity. Here-document and
+substitution payloads stay inert while exterior `prettier`/`tsc` commands remain evidence. Active
+external ESLint JSON displaces the manifest block, and the Jest preset contributes its ordinary hint.
+
+Temporary overlays add an ignored malformed subtree, ignored flat-config barriers, malformed
+mandatory inputs, a nameless child scope and real filesystem links. Valid generated source remains
+in the base fixture so absent/empty configuration can be compared on the same corrected sources;
+only the explicit-policy variant adds the ignored malformed subtree. With no effective policy that
+same malformed subtree is an operational error. Removing generated-only usage makes `source-only`
+unused; ignored names never become usage, never hide neighboring names, and never alter collisions.
+
+Tests compare direct configured analysis, CLI orchestration, the compiled CLI from a different cwd
+and the process adapter with an injected offline notifier. Byte snapshots include directory entries,
+file contents and link destinations without following links. Error cases require empty stdout,
+exit 1 and a path-identifying diagnostic; successful policy scans keep the existing result/CLI keys.
+No source, scripts, config modules, lifecycle hooks or exports targets are executed or resolved.
+The existing structural/script/notifier matrices and Step 86 audit gate remain independent controls;
+this composed fixture does not claim universal syntax support or native cross-platform CI evidence.
