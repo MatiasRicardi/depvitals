@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 import { runCliEntry } from '../src/cli/entry.js';
+import type { UpdateNoticeCollector } from '../src/cli/notifier/updateCheck.js';
 import { runCli, type CliResult } from '../src/cli/runCli.js';
 import { readProjectConfig, type ProjectConfig } from '../src/config/readProjectConfig.js';
 import { analyzeProject, type AnalysisResult } from '../src/core/analyzeProject.js';
@@ -120,17 +121,9 @@ async function adapter(
 ): Promise<void> {
   let stdout = '';
   let stderr = '';
-  const updateNotice = vi.fn((request: { commandKind: string }) => {
-    expect(request.commandKind).toBe(failure ? 'scan-failure' : 'scan');
-    expect(Object.keys(request).sort()).toEqual([
-      'commandKind',
-      'currentVersion',
-      'env',
-      'stderrTTY',
-      'stdoutTTY',
-    ]);
-    return Promise.resolve(failure ? undefined : '\nInjected offline notice\n');
-  });
+  const updateNotice = vi.fn<UpdateNoticeCollector>(() =>
+    Promise.resolve(failure ? undefined : '\nInjected offline notice\n'),
+  );
   const exitCode = await runCliEntry([relative(runner, root)], {
     cwd: runner,
     version: VERSION,
@@ -150,6 +143,20 @@ async function adapter(
     updateNotice,
   });
   expect(updateNotice).toHaveBeenCalledTimes(1);
+  expect(Object.keys(updateNotice.mock.calls[0]?.[0] ?? {}).sort()).toEqual([
+    'commandKind',
+    'currentVersion',
+    'env',
+    'stderrTTY',
+    'stdoutTTY',
+  ]);
+  expect(updateNotice).toHaveBeenCalledWith({
+    commandKind: failure ? 'scan-failure' : 'scan',
+    currentVersion: VERSION,
+    env: {},
+    stdoutTTY: true,
+    stderrTTY: true,
+  });
   expect({ exitCode, stdout, stderr }).toEqual({
     ...expected,
     stderr: expected.stderr + (failure ? '' : '\nInjected offline notice\n'),
