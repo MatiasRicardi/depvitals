@@ -1,0 +1,364 @@
+{
+  "provenance": "Local historical Step73/Step86 receipts, copied as observation data. Original exact measured source SHA/CPU was not recorded in these JSON files. Not a controlled same-artifact or cross-platform baseline.",
+  "step86": {
+    "node": "v26.6.0",
+    "platform": "linux",
+    "description": "Warmed observations only, no brittle timing assertion or universal complexity claim.",
+    "rows": [
+      {
+        "count": 500,
+        "property": "import",
+        "samplesMs": [11.12133, 10.011600000000016, 9.089638000000008],
+        "medianMs": 10.011600000000016
+      },
+      {
+        "count": 500,
+        "property": "other",
+        "samplesMs": [7.65127099999998, 8.070191999999992, 8.046708999999993],
+        "medianMs": 8.046708999999993
+      },
+      {
+        "count": 1000,
+        "property": "import",
+        "samplesMs": [14.732023999999967, 14.608055000000036, 27.270232999999962],
+        "medianMs": 14.732023999999967
+      },
+      {
+        "count": 1000,
+        "property": "other",
+        "samplesMs": [15.069549999999992, 16.170748000000003, 16.509112999999957],
+        "medianMs": 16.170748000000003
+      },
+      {
+        "count": 2000,
+        "property": "import",
+        "samplesMs": [32.90787, 32.77423999999996, 31.95484399999998],
+        "medianMs": 32.77423999999996
+      },
+      {
+        "count": 2000,
+        "property": "other",
+        "samplesMs": [27.841448000000014, 48.316058999999996, 37.366255000000024],
+        "medianMs": 37.366255000000024
+      },
+      {
+        "count": 4000,
+        "property": "import",
+        "samplesMs": [56.64791100000002, 69.85692199999994, 62.81110199999989],
+        "medianMs": 62.81110199999989
+      },
+      {
+        "count": 4000,
+        "property": "other",
+        "samplesMs": [52.31667100000004, 52.93492500000002, 67.21470900000008],
+        "medianMs": 52.93492500000002
+      }
+    ]
+  },
+  "step73": [
+    {
+      "n": 500,
+      "property": "other",
+      "version": "baseline",
+      "observations": [
+        {
+          "ms": 6.164788999999928,
+          "heapDeltaBytes": 1943296
+        },
+        {
+          "ms": 5.624427000000082,
+          "heapDeltaBytes": 1856864
+        },
+        {
+          "ms": 5.467565000000036,
+          "heapDeltaBytes": 1860456
+        }
+      ]
+    },
+    {
+      "n": 500,
+      "property": "other",
+      "version": "fixed",
+      "observations": [
+        {
+          "ms": 10.252886999999987,
+          "heapDeltaBytes": 2226264
+        },
+        {
+          "ms": 6.036489999999958,
+          "heapDeltaBytes": 1846360
+        },
+        {
+          "ms": 6.455441999999948,
+          "heapDeltaBytes": 1854888
+        }
+      ]
+    },
+    {
+      "n": 500,
+      "property": "import",
+      "version": "baseline",
+      "observations": [
+        {
+          "ms": 36.6907920000001,
+          "heapDeltaBytes": 1911016
+        },
+        {
+          "ms": 34.10157699999991,
+          "heapDeltaBytes": 1878904
+        },
+        {
+          "ms": 37.04503999999997,
+          "heapDeltaBytes": 1908312
+        }
+      ]
+    },
+    {
+      "n": 500,
+      "property": "import",
+      "version": "fixed",
+      "observations": [
+        {
+          "ms": 6.321715999999924,
+          "heapDeltaBytes": 1874904
+        },
+        {
+          "ms": 6.509817999999996,
+          "heapDeltaBytes": 1874248
+        },
+        {
+          "ms": 8.76890299999991,
+          "heapDeltaBytes": 1856128
+        }
+      ]
+    },
+    {
+      "n": 1000,
+      "property": "other",
+      "version": "baseline",
+      "observations": [
+        {
+          "ms": 10.52489300000002,
+          "heapDeltaBytes": 3518800
+        },
+        {
+          "ms": 10.787878000000092,
+          "heapDeltaBytes": 3501760
+        },
+        {
+          "ms": 10.776043999999956,
+          "heapDeltaBytes": 3516064
+        }
+      ]
+    },
+    {
+      "n": 1000,
+      "property": "other",
+      "version": "fixed",
+      "observations": [
+        {
+          "ms": 12.037010999999893,
+          "heapDeltaBytes": 3554584
+        },
+        {
+          "ms": 11.462297000000035,
+          "heapDeltaBytes": 3550944
+        },
+        {
+          "ms": 20.621928000000025,
+          "heapDeltaBytes": 3644136
+        }
+      ]
+    },
+    {
+      "n": 1000,
+      "property": "import",
+      "version": "baseline",
+      "observations": [
+        {
+          "ms": 144.95728099999997,
+          "heapDeltaBytes": 3339696
+        },
+        {
+          "ms": 119.93778500000008,
+          "heapDeltaBytes": 3204480
+        },
+        {
+          "ms": 114.44049900000005,
+          "heapDeltaBytes": 3199160
+        }
+      ]
+    },
+    {
+      "n": 1000,
+      "property": "import",
+      "version": "fixed",
+      "observations": [
+        {
+          "ms": 18.03023600000006,
+          "heapDeltaBytes": 3811128
+        },
+        {
+          "ms": 18.277507000000014,
+          "heapDeltaBytes": 3694488
+        },
+        {
+          "ms": 15.877156999999897,
+          "heapDeltaBytes": 3741920
+        }
+      ]
+    },
+    {
+      "n": 2000,
+      "property": "other",
+      "version": "baseline",
+      "observations": [
+        {
+          "ms": 47.0707010000001,
+          "heapDeltaBytes": 7883976
+        },
+        {
+          "ms": 26.752218000000084,
+          "heapDeltaBytes": 7353312
+        },
+        {
+          "ms": 37.28829299999984,
+          "heapDeltaBytes": 7487720
+        }
+      ]
+    },
+    {
+      "n": 2000,
+      "property": "other",
+      "version": "fixed",
+      "observations": [
+        {
+          "ms": 36.178048999999874,
+          "heapDeltaBytes": 7599160
+        },
+        {
+          "ms": 22.35188100000005,
+          "heapDeltaBytes": 7087416
+        },
+        {
+          "ms": 21.92645000000016,
+          "heapDeltaBytes": 7087416
+        }
+      ]
+    },
+    {
+      "n": 2000,
+      "property": "import",
+      "version": "baseline",
+      "observations": [
+        {
+          "ms": 516.6927399999997,
+          "heapDeltaBytes": 7194720
+        },
+        {
+          "ms": 580.2330220000003,
+          "heapDeltaBytes": 7120024
+        },
+        {
+          "ms": 490.03805999999986,
+          "heapDeltaBytes": 6404520
+        }
+      ]
+    },
+    {
+      "n": 2000,
+      "property": "import",
+      "version": "fixed",
+      "observations": [
+        {
+          "ms": 36.96151400000008,
+          "heapDeltaBytes": 7415008
+        },
+        {
+          "ms": 28.165062000000034,
+          "heapDeltaBytes": 7268656
+        },
+        {
+          "ms": 38.15926999999965,
+          "heapDeltaBytes": 7461656
+        }
+      ]
+    },
+    {
+      "n": 4000,
+      "property": "other",
+      "version": "baseline",
+      "observations": [
+        {
+          "ms": 65.98218399999996,
+          "heapDeltaBytes": 7665328
+        },
+        {
+          "ms": 60.89635500000031,
+          "heapDeltaBytes": 7011704
+        },
+        {
+          "ms": 40.87404699999979,
+          "heapDeltaBytes": 13677208
+        }
+      ]
+    },
+    {
+      "n": 4000,
+      "property": "other",
+      "version": "fixed",
+      "observations": [
+        {
+          "ms": 43.415002000000186,
+          "heapDeltaBytes": 13640936
+        },
+        {
+          "ms": 43.557758999999805,
+          "heapDeltaBytes": 13640512
+        },
+        {
+          "ms": 42.86485499999981,
+          "heapDeltaBytes": 13720760
+        }
+      ]
+    },
+    {
+      "n": 4000,
+      "property": "import",
+      "version": "baseline",
+      "observations": [
+        {
+          "ms": 2783.9558670000006,
+          "heapDeltaBytes": 13927872
+        },
+        {
+          "ms": 2586.095235,
+          "heapDeltaBytes": 12391352
+        },
+        {
+          "ms": 2903.1050749999995,
+          "heapDeltaBytes": 14331032
+        }
+      ]
+    },
+    {
+      "n": 4000,
+      "property": "import",
+      "version": "fixed",
+      "observations": [
+        {
+          "ms": 55.445465000000695,
+          "heapDeltaBytes": 14154352
+        },
+        {
+          "ms": 56.37443799999892,
+          "heapDeltaBytes": 13610320
+        },
+        {
+          "ms": 42.184769000001324,
+          "heapDeltaBytes": 13715344
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+[
+  {
+    "id": "node-esm",
+    "root": "test/fixtures/measurement-corpus/node-esm",
+    "ignorePaths": [],
+    "ignoreDependencies": [],
+    "expected": {
+      "unusedDependencies": [
+        "node-regex-decoy"
+      ],
+      "unusedDevDependencies": [
+        "node-payload-decoy"
+      ],
+      "missingDependencies": [
+        "node-missing"
+      ]
+    }
+  },
+  {
+    "id": "typescript-tooling",
+    "root": "test/fixtures/measurement-corpus/typescript-tooling",
+    "ignorePaths": [],
+    "ignoreDependencies": [],
+    "expected": {
+      "unusedDependencies": [
+        "ts-shadow-decoy"
+      ],
+      "unusedDevDependencies": [
+        "@types/node"
+      ],
+      "missingDependencies": []
+    }
+  },
+  {
+    "id": "jsx-tsx",
+    "root": "test/fixtures/measurement-corpus/jsx-tsx",
+    "ignorePaths": [],
+    "ignoreDependencies": [],
+    "expected": {
+      "unusedDependencies": [
+        "jsx-text-decoy"
+      ],
+      "unusedDevDependencies": [],
+      "missingDependencies": [
+        "tsx-missing"
+      ]
+    }
+  },
+  {
+    "id": "depvitals-self",
+    "root": ".",
+    "ignorePaths": [
+      "instructions",
+      "test/fixtures"
+    ],
+    "ignoreDependencies": [],
+    "expected": {
+      "unusedDependencies": [],
+      "unusedDevDependencies": [
+        "@types/node",
+        "@vitest/coverage-v8"
+      ],
+      "missingDependencies": []
+    }
+  }
+]
