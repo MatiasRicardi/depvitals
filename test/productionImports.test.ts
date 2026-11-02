@@ -7,6 +7,10 @@ const { findExternalProductionImports } = (await import(
 )) as { findExternalProductionImports: (source: string) => Promise<readonly string[]> };
 
 const externalCases = [
+  "const load = () => import('external');",
+  "await import('external', { with: { type: 'json' } });",
+  "require('external');",
+  "require('external',);",
   "import value from 'external';",
   "import { value } from 'external';",
   "import 'external';",
@@ -26,6 +30,8 @@ const externalCases = [
 ];
 
 const inertCases = [
+  "const load = () => import('./local.js'); require('node:fs');",
+  "function local(require) { require('not-a-module-load'); }",
   "import fs from 'node:fs'; export { join } from 'node:path';",
   "  import { value } from './local.js'; export * from '../local.js';",
   "import {\n value\n} from './local.js'; export {\n other\n} from 'node:fs';",
@@ -34,12 +40,11 @@ const inertCases = [
   'const text = "import value from \'external\';";',
   "const text = `\nimport 'external';\nexport * from 'external';\n`;",
   "const pattern = /import 'external'/;",
-  "const load = () => import('external');",
   "export const label = 'external';",
 ];
 
 describe('packaged production import guard', () => {
-  it.each(externalCases)('detects an external static dependency: %s', async (source) => {
+  it.each(externalCases)('detects an external dependency: %s', async (source) => {
     expect(await findExternalProductionImports(source)).toEqual(['external']);
   });
 

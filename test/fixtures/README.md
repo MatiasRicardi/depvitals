@@ -312,3 +312,24 @@ or installs/resolves named dependencies. This is an explicit developer command, 
 [The receipt and reproduction instructions](../../docs/measurements/step94.md) distinguish warm
 in-process timing, boundary memory observations, scope choices and historical comparisons. No timing
 SLA, cross-platform result or accuracy percentage follows from these authored examples.
+
+### Installed-package consumer gate (Step 95)
+
+[`verify-package.mjs`](../../scripts/verify-package.mjs) generates independent temporary projects
+outside this fixture tree and invokes the executable installed from the local tarball. Its audit
+variants compare absent/empty configuration, both exclusions, retained malformed source, invalid
+configuration, detector barriers and mandatory manifest/config validation. Distinct source identities,
+regex/property/shadow decoys, here-document payloads and substitution payloads make lost or leaked
+evidence observable. Expected reports are authored separately from production analysis/reporting.
+
+Recursive snapshots catch changed, removed and added files or directories. Target source and lifecycle
+scripts remain inert. A preload observes notifier cache/transport requests with CI and opt-out flags
+unset; all transport is intercepted and cache paths are temporary. This proves non-TTY suppression
+without querying a registry or using the real user cache.
+
+The gate validates archive checksums, package metadata, configuration modules and installed module
+bytes/relative targets, and rejects external static imports, reexports, literal dynamic imports and
+unshadowed literal `require` calls across emitted JavaScript. It is a bounded literal-load check,
+not a general computed-loader/alias resolver. The current emitted graph uses static imports.
+The existing Node minimum, platform matrix and aggregate CI check remain unchanged; a local run
+alone does not establish native macOS/Windows or minimum-runtime results.

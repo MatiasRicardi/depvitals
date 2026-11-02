@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Package consumer smoke test for the DepVitals `v0.1.0` CLI.
+ * Package consumer smoke test for the DepVitals CLI, including the planned v0.3 configuration/audit behavior.
  *
  * It verifies the package exactly as an npm consumer receives it: it packs the real artifact,
  * inspects the tarball, installs the tarball into an isolated temporary project, and executes the
- * installed `depvitals` executable against two minimal, deterministic fixture projects so the smoke
+ * installed `depvitals` executable against independent, deterministic fixture projects so the smoke
  * test exercises the real dependency scanner end to end.
  *
  * Node.js builtins and the project's built scanner only. No dependency is added.
@@ -25,17 +25,21 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
+  realpathSync,
+  statSync,
   readdirSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { gunzipSync } from 'node:zlib';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
-import { findExternalProductionImports } from './productionImports.mjs';
+import { findProductionImports, isExternalProductionImport } from './productionImports.mjs';
+import { archiveFiles } from './measurementIdentity.mjs';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const ROOT = resolve(SCRIPT_PATH, '..', '..');
@@ -46,6 +50,10 @@ const REQUIRED_FILES = [
   'package/README.md',
   'package/LICENSE',
   'package/dist/cli/index.js',
+  'package/dist/config/readProjectConfig.js',
+  'package/dist/config/ignorePaths.js',
+  'package/dist/config/ignoreDependencies.js',
+  'package/dist/config/projectConfigError.js',
 ];
 
 /** Development-only trees that must never enter the published package. */
@@ -57,6 +65,7 @@ const FORBIDDEN_PREFIXES = [
   'coverage/',
   'node_modules/',
   'scripts/',
+  'docs/',
 ];
 
 /**
@@ -100,81 +109,6 @@ function check(label, condition, detail) {
 }
 
 /**
- * Read a null-terminated C string from a buffer at the given offset and length.
- */
-function readCString(buffer, start, length) {
-  let end = start;
-  while (end < start + length && end < buffer.length && buffer[end] !== 0) {
-    end += 1;
-  }
-
-  return buffer.subarray(start, end).toString('utf8').replace(/\s+$/, '');
-}
-
-/**
- * Parse an octal field from a tar header (returns 0 for empty/invalid values).
- */
-function parseOctal(value) {
-  const trimmed = value.trim();
-
-  if (trimmed.length === 0) {
-    return 0;
-  }
-
-  return parseInt(trimmed, 8) || 0;
-}
-
-/**
- * List every entry name inside a `.tgz` tarball using only the Node.js standard library.
- *
- * Node ships no tar reader, so the gzip stream is decompressed with `zlib` and the classic ustar
- * headers are parsed manually. All entry names in an npm tarball are prefixed with `package/`.
- */
-function listTarballEntries(tarballPath) {
-  const names = [];
-  const tar = gunzipSync(readFileSync(tarballPath));
-  const block = 512;
-  let offset = 0;
-
-  while (offset + block <= tar.length) {
-    const header = tar.subarray(offset, offset + block);
-
-    let allZero = true;
-
-    for (let i = 0; i < block; i += 1) {
-      if (header[i] !== 0) {
-        allZero = false;
-        break;
-      }
-    }
-
-    if (allZero) {
-      break;
-    }
-
-    const name = readCString(header, 0, 100);
-    const typeflag = header[52];
-    const size = parseOctal(readCString(header, 24, 12));
-    const dataBlocks = Math.ceil(size / block) * block;
-
-    // Skip pax extended/global headers: they carry metadata for the following real entry.
-    const isPaxHeader =
-      name.startsWith('././@PaxHeader') ||
-      name === 'pax_global_header' ||
-      typeflag === 88 || // 'x' extended header
-      typeflag === 103; // 'g' global header
-
-    if (name.length > 0 && !isPaxHeader) {
-      names.push(name);
-    }
-
-    offset += block + dataBlocks;
-  }
-
-  return names;
-}
-
-/**
  * Resolve the installed executable path in a cross-platform way.
  */
 function resolveInstalledBin(consumerDir) {
@@ -189,7 +123,7 @@ const tempDirs = [];
  * Create a tracked temporary directory that is always removed at the end.
  */
 function makeTempDir(prefix) {
-  const dir = mkdtempSync(join(tmpdir(), `depvitals-${prefix}-`));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), `depvitals-${prefix}-`)));
   tempDirs.push(dir);
   return dir;
 }
@@ -201,15 +135,37 @@ function runInstalledCli(binPath, consumerDir, args) {
   return run(binPath, args, consumerDir, { ...process.env, DEPVITALS_NO_UPDATE_CHECK: '1' });
 }
 
-async function checkProductionImports(directory) {
+async function checkProductionImports(directory, installedRoot, packedFiles) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) {
-      await checkProductionImports(path);
-    } else if (entry.name.endsWith('.js')) {
-      const source = readFileSync(path, 'utf8');
-      const [external] = await findExternalProductionImports(source);
-      check(`production imports are internal or Node builtins: ${entry.name}`, !external, external);
+      await checkProductionImports(path, installedRoot, packedFiles);
+    } else if (/\.(?:c|m)?js$/.test(entry.name)) {
+      const packedPath = relative(installedRoot, path).split(sep).join('/');
+      const bytes = readFileSync(path);
+      check(
+        `installed module bytes match archive: ${packedPath}`,
+        packedFiles.get(packedPath)?.equals(bytes) === true,
+      );
+      const specifiers = await findProductionImports(bytes.toString('utf8'));
+      const external = specifiers.find(isExternalProductionImport);
+      check(
+        `production imports are internal or Node builtins: ${packedPath}`,
+        external === undefined,
+        external,
+      );
+      for (const specifier of specifiers.filter((name) => /^\.\.?\//.test(name))) {
+        const target = fileURLToPath(new URL(specifier, pathToFileURL(path)));
+        const fromPackage = relative(installedRoot, target);
+        check(
+          `installed import target exists: ${packedPath} -> ${specifier}`,
+          !isAbsolute(fromPackage) &&
+            fromPackage !== '..' &&
+            !fromPackage.startsWith(`..${sep}`) &&
+            existsSync(target) &&
+            statSync(target).isFile(),
+        );
+      }
     }
   }
 }
@@ -221,11 +177,17 @@ async function checkProductionImports(directory) {
 function snapshotFixtures(dirs) {
   const snapshot = {};
 
-  for (const dir of dirs) {
-    for (const entry of readdirSync(dir)) {
-      snapshot[join(dir, entry)] = readFileSync(join(dir, entry), 'utf8');
+  const walk = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        snapshot[path] = 'directory';
+        walk(path);
+      } else if (entry.isSymbolicLink()) snapshot[path] = 'link:' + readlinkSync(path);
+      else snapshot[path] = 'file:' + readFileSync(path).toString('hex');
     }
-  }
+  };
+  for (const dir of dirs) walk(dir);
 
   return snapshot;
 }
@@ -294,10 +256,36 @@ async function main() {
 
     // 2. Inspect the tarball contents.
     console.log('\nChecking tarball contents...');
+    const archiveBytes = readFileSync(tarballPath);
+    check('tarball version matches project', packed.version === rootVersion);
+    check('tarball size matches metadata', archiveBytes.length === packed.size);
+    check(
+      'tarball SHA-1 matches metadata',
+      createHash('sha1').update(archiveBytes).digest('hex') === packed.shasum,
+    );
+    check(
+      'tarball SRI matches metadata',
+      'sha512-' + createHash('sha512').update(archiveBytes).digest('base64') === packed.integrity,
+    );
+    console.log(
+      'Artifact identity: ' +
+        JSON.stringify({
+          version: packed.version,
+          packedBytes: packed.size,
+          unpackedBytes: packed.unpackedSize,
+          integrity: packed.integrity,
+          shasum: packed.shasum,
+          node: process.version,
+          platform: process.platform,
+          arch: process.arch,
+        }),
+    );
     let entries;
+    let packedFiles;
 
     try {
-      entries = listTarballEntries(tarballPath);
+      packedFiles = archiveFiles(archiveBytes);
+      entries = [...packedFiles.keys()].map((name) => `package/${name}`);
     } catch (error) {
       fail(`Could not read tarball entries: ${error.message}`);
     }
@@ -344,9 +332,36 @@ async function main() {
         .filter((name) => !name.startsWith('.'))
         .every((name) => name === 'depvitals'),
     );
-    await checkProductionImports(join(installedRoot, 'dist'));
+    check('installed package stays ESM', installedManifest.type === 'module');
+    check(
+      'installed executable metadata is supported',
+      installedManifest.bin?.depvitals === './dist/cli/index.js',
+    );
+    check(
+      'installed Node minimum matches project',
+      installedManifest.engines?.node ===
+        JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).engines.node,
+    );
+    check(
+      'installed package adds no public API entrypoint',
+      installedManifest.main === undefined &&
+        installedManifest.types === undefined &&
+        installedManifest.exports === undefined,
+    );
+    const installedEntry = join(installedRoot, 'dist/cli/index.js');
+    check(
+      'installed CLI preserves its node shebang',
+      readFileSync(installedEntry, 'utf8').startsWith('#!/usr/bin/env node'),
+    );
+    check(
+      'installed CLI is executable',
+      process.platform === 'win32' || (statSync(installedEntry).mode & 0o111) !== 0,
+    );
+    await checkProductionImports(join(installedRoot, 'dist'), installedRoot, packedFiles);
+    // An unrelated cwd/parent config must never override the selected project.
+    writeFileSync(join(consumerDir, 'depvitals.config.json'), '{invalid consumer-cwd config');
 
-    // 4. Create two minimal, deterministic fixture projects inside the consumer temp dir. They
+    // 4. Create independent, deterministic fixture projects inside the consumer temp dir. They
     //    stand in for real scanned projects and keep the smoke test independent of the DepVitals
     //    repository fixtures or source tree.
     const cleanDir = join(consumerDir, 'smoke-clean');
@@ -649,7 +664,126 @@ require('real');`,
     mkdirSync(invalidConfigDir);
     writeFileSync(join(invalidConfigDir, 'package.json'), '{}');
     writeFileSync(join(invalidConfigDir, 'depvitals.config.json'), '{invalid config JSON');
+    // Each variant has its own manifest/source bytes; expected findings are hand-authored.
+    const auditManifest = {
+      name: 'consumer-self',
+      version: '0.0.0',
+      exports: { './feature': './dist/absent.js' },
+      dependencies: Object.fromEntries(
+        [
+          'consumer-self',
+          'live-esm',
+          'live-cjs-await',
+          'live-function',
+          'live-template',
+          'live-dynamic',
+          'kept-prefix',
+          'selected-unused',
+          'selected-unused-extra',
+          'duplicate',
+          'gulp',
+          'gulp-cli',
+          'payload-decoy',
+          'property-decoy',
+          'regex-decoy',
+          'shadow-decoy',
+          'source-only',
+          'eslint-config-prettier',
+        ].map((name) => [name, '*']),
+      ),
+      devDependencies: {
+        duplicate: '*',
+        'selected-dev': '*',
+        prettier: '*',
+        'ts-jest': '*',
+        typescript: '*',
+      },
+      scripts: {
+        payload: "cat <<'EOF'\npayload-decoy\nEOF\nprettier",
+        opaque: 'echo $( (echo hi); payload-decoy ) && tsc',
+        collision: 'gulp build',
+        postinstall: `node -e "require('node:fs').writeFileSync('SCRIPT_RAN', 'ran')"`,
+      },
+      eslintConfig: { extends: 'prettier' },
+      jest: { preset: 'ts-jest' },
+    };
+    const auditSource = `import 'live-esm'; import 'consumer-self/feature';
+      import 'selected-missing'; import 'genuine-missing';
+      await /don't require('regex-decoy')/;
+      const object = { import: 1 }; const from = 1; from
+      'property-decoy';
+      const f = () => function() {} / require('live-function',) / 2;
+      const tag = require\`\${('tag-decoy')}\${require('live-template')}\`;
+      const shadow = require => require('shadow-decoy');
+      import('live-dynamic', {with: {type: 'json'}, extra: require('dynamic-nested-missing')},);
+      throw new Error('target code must never execute');`;
+    const policy = {
+      ignorePaths: ['generated', 'ignored'],
+      ignoreDependencies: [
+        'duplicate',
+        'gulp',
+        'selected-dev',
+        'selected-missing',
+        'selected-unused',
+      ],
+    };
+    const auditCases = [
+      'absent',
+      'empty',
+      'configured',
+      'retained-malformed',
+      'invalid-policy',
+      'barriers',
+      'active-rc',
+      'root-manifest',
+    ].map((name) => {
+      const directory = join(consumerDir, `audit-${name}`);
+      const files = {
+        'package.json': JSON.stringify(auditManifest),
+        'index.js': auditSource,
+        'script-control.cjs': "var await = 4; await / require('live-cjs-await',) / 2;",
+        'generated/only.ts': "require('source-only');",
+        'generated-extra/neighbor.cjs': "require('kept-prefix');",
+      };
+      if (name === 'empty') files['depvitals.config.json'] = '{}';
+      if (!['absent', 'empty'].includes(name)) {
+        files['depvitals.config.json'] = JSON.stringify(policy);
+        files['ignored/broken.ts'] = "import 'unterminated";
+      }
+      if (name === 'retained-malformed') files['retained/broken.ts'] = "import 'unterminated";
+      if (name === 'invalid-policy')
+        files['depvitals.config.json'] = JSON.stringify({ ignoreDependencies: ['bad/subpath'] });
+      if (name === 'barriers') {
+        files['depvitals.config.json'] = JSON.stringify({
+          ...policy,
+          ignorePaths: [...policy.ignorePaths, 'eslint.config.js', 'jest.config.js'],
+        });
+        files['eslint.config.js'] = "import 'unterminated";
+        files['jest.config.js'] = "import 'unterminated";
+      }
+      if (name === 'active-rc') {
+        files['depvitals.config.json'] = JSON.stringify({
+          ...policy,
+          ignorePaths: [...policy.ignorePaths, '.eslintrc.json', 'package.json'],
+        });
+        files['.eslintrc.json'] = '{invalid detector JSON';
+      }
+      if (name === 'root-manifest') {
+        files['package.json'] = '{invalid manifest JSON';
+        files['depvitals.config.json'] = JSON.stringify({
+          ...policy,
+          ignorePaths: ['package.json'],
+        });
+      }
+      for (const [file, bytes] of Object.entries(files)) {
+        const path = join(directory, file);
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, bytes);
+      }
+      return { name, directory };
+    });
     const fixtureDirs = [
+      ...auditCases.map(({ directory }) => directory),
       configuredDir,
       invalidConfigDir,
       cleanDir,
@@ -658,6 +792,15 @@ require('real');`,
       ...assertionDirs.map(({ directory }) => directory),
       invalidTemplateDir,
     ];
+    // Development-only syntax oracles parse these new controls without executing them.
+    for (const file of ['index.js', 'script-control.cjs']) {
+      const syntax = run(
+        process.execPath,
+        ['--check', join(auditCases[0].directory, file)],
+        consumerDir,
+      );
+      check(`audit control syntax is valid: ${file}`, syntax.status === 0, syntax.stderr);
+    }
     const before = snapshotFixtures(fixtureDirs);
 
     // 5. Invoke the installed executable.
@@ -799,6 +942,160 @@ require('real');`,
     check(
       'version bypasses invalid config',
       runInstalledCli(binPath, invalidConfigDir, ['--version']).status === 0,
+    );
+
+    const expectedAudit = (name) => {
+      const unconfigured = name === 'absent' || name === 'empty';
+      const unused = unconfigured
+        ? [
+            'consumer-self',
+            'duplicate',
+            'gulp-cli',
+            'payload-decoy',
+            'property-decoy',
+            'regex-decoy',
+            'selected-unused',
+            'selected-unused-extra',
+            'shadow-decoy',
+          ]
+        : [
+            'consumer-self',
+            'gulp-cli',
+            'payload-decoy',
+            'property-decoy',
+            'regex-decoy',
+            'selected-unused-extra',
+            'shadow-decoy',
+            'source-only',
+          ];
+      const dev = unconfigured ? ['duplicate', 'selected-dev'] : [];
+      const missing = unconfigured
+        ? ['dynamic-nested-missing', 'genuine-missing', 'selected-missing']
+        : ['dynamic-nested-missing', 'genuine-missing'];
+      if (name === 'barriers') {
+        unused.push('eslint-config-prettier');
+        dev.push('ts-jest');
+      }
+      return (
+        'DepVitals\n' +
+        [
+          ['Unused dependencies', unused],
+          ['Unused devDependencies', dev],
+          ['Missing dependencies', missing],
+        ]
+          .filter(([, names]) => names.length)
+          .map(
+            ([label, names]) =>
+              `\n${label} (${names.length})\n${names
+                .sort()
+                .map((value) => `  ${value}\n`)
+                .join('')}`,
+          )
+          .join('')
+      );
+    };
+    for (const { name, directory } of auditCases) {
+      const result = runInstalledCli(binPath, consumerDir, [relative(consumerDir, directory)]);
+      check(`audit ${name} exits 1`, result.status === 1, result.stderr);
+      const errorFile = {
+        'retained-malformed': 'retained/broken.ts',
+        'invalid-policy': 'depvitals.config.json',
+        'active-rc': '.eslintrc.json',
+        'root-manifest': 'package.json',
+      }[name];
+      if (errorFile) {
+        check(`audit ${name} has no partial report`, result.stdout === '', result.stdout);
+        check(
+          `audit ${name} identifies operational error`,
+          result.stderr.includes(join(directory, errorFile)) &&
+            result.stderr.includes(
+              name === 'retained-malformed'
+                ? 'could not be analyzed: Unterminated string literal'
+                : name === 'invalid-policy'
+                  ? 'field ignoreDependencies[0] must be an exact package root'
+                  : 'not valid JSON',
+            ) &&
+            result.stderr.endsWith('\n'),
+          result.stderr,
+        );
+      } else {
+        check(`audit ${name} exact findings`, result.stdout === expectedAudit(name), result.stdout);
+        check(`audit ${name} stderr empty`, result.stderr === '', result.stderr);
+      }
+    }
+    const configuredCwd = runInstalledCli(binPath, configuredDir, []);
+    check(
+      'configured no-args scan uses cwd policy',
+      configuredCwd.status === 0 &&
+        configuredCwd.stdout === configured.stdout &&
+        configuredCwd.stderr === '',
+    );
+    for (const [flag, reference] of [
+      ['--help', help],
+      ['--version', version],
+    ]) {
+      const bypass = runInstalledCli(binPath, invalidConfigDir, [flag]);
+      check(
+        `${flag} bypasses invalid config with exact output`,
+        bypass.status === 0 && bypass.stdout === reference.stdout && bypass.stderr === '',
+      );
+    }
+
+    // Observe notifier I/O from outside its swallowed-error callback. Pipes must suppress it
+    // independently of both CI variables and the explicit opt-out. Fetch is always intercepted.
+    const observerDir = makeTempDir('notifier-observer');
+    const probe = join(observerDir, 'probe.mjs');
+    const marker = join(observerDir, 'requests.log');
+    const cacheRoot = join(observerDir, 'cache');
+    writeFileSync(
+      probe,
+      `import fs from 'node:fs/promises';
+      import {appendFileSync} from 'node:fs';
+      import {syncBuiltinESMExports} from 'node:module';
+      const marker = process.env.DEPVITALS_SMOKE_PROBE_LOG;
+      for (const method of ['lstat', 'readFile', 'mkdir', 'writeFile', 'rename']) {
+        const original = fs[method];
+        fs[method] = (...args) => {
+          if (String(args[0]).startsWith(process.env.DEPVITALS_SMOKE_CACHE_ROOT)) appendFileSync(marker, 'cache\\n');
+          return original(...args);
+        };
+      }
+      syncBuiltinESMExports();
+      globalThis.fetch = async () => { appendFileSync(marker, 'fetch\\n'); throw new Error('offline transport'); };`,
+    );
+    const observerEnv = { ...process.env };
+    for (const variable of [
+      'DEPVITALS_NO_UPDATE_CHECK',
+      'CI',
+      'GITHUB_ACTIONS',
+      'GITLAB_CI',
+      'TF_BUILD',
+      'CIRCLECI',
+      'TRAVIS',
+      'BUILDKITE',
+      'JENKINS_URL',
+      'TEAMCITY_VERSION',
+      'APPVEYOR',
+    ])
+      delete observerEnv[variable];
+    Object.assign(observerEnv, {
+      NODE_OPTIONS: `--import=${pathToFileURL(probe).href}`,
+      XDG_CACHE_HOME: cacheRoot,
+      LOCALAPPDATA: cacheRoot,
+      DEPVITALS_SMOKE_PROBE_LOG: marker,
+      DEPVITALS_SMOKE_CACHE_ROOT: cacheRoot,
+    });
+    const noninteractive = run(binPath, [configuredDir], consumerDir, observerEnv);
+    check(
+      'noninteractive installed scan has exact ordinary result',
+      noninteractive.status === 0 &&
+        noninteractive.stdout === configured.stdout &&
+        noninteractive.stderr === '',
+      noninteractive.stderr,
+    );
+    check(
+      'noninteractive scan makes no notifier cache or transport requests',
+      !existsSync(marker) && !existsSync(cacheRoot),
     );
 
     // Capture the fixtures again after every scan, then compare the complete before-and-after

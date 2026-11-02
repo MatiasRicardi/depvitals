@@ -43,7 +43,7 @@ export function identifyInputs(root, sources) {
 }
 
 /** Inspect regular files from this package's bounded ustar archive; never extract or execute it. */
-function archiveFiles(bytes) {
+export function archiveFiles(bytes) {
   const tar = gunzipSync(bytes);
   const files = new Map();
   const string = (header, start, length) => {
