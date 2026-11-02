@@ -1,0 +1,57 @@
+{
+  "name": "root-self",
+  "version": "0.0.0",
+  "exports": {
+    "./feature": "./dist/not-installed.js"
+  },
+  "dependencies": {
+    "arrow-used": "*",
+    "cjs-await-used": "*",
+    "cjs-class-used": "*",
+    "duplicate": "*",
+    "eslint-config-prettier": "*",
+    "eslint-plugin-react": "*",
+    "gulp": "*",
+    "gulp-cli": "*",
+    "prefix-real": "*",
+    "property-fake": "*",
+    "regex-fake": "*",
+    "root-self": "*",
+    "selected-unused": "*",
+    "selected-unused-extra": "*",
+    "shadow-fake": "*",
+    "shell-payload": "*",
+    "source-only": "*",
+    "static-used": "*",
+    "template-used": "*",
+    "unused-z": "*"
+  },
+  "devDependencies": {
+    "duplicate": "*",
+    "prettier": "*",
+    "selected-dev": "*",
+    "ts-jest": "*",
+    "typescript": "*",
+    "unused-dev": "*"
+  },
+  "peerDependencies": {
+    "peer-used": "*",
+    "peer-unused": "*"
+  },
+  "optionalDependencies": {
+    "optional-used": "*",
+    "optional-unused": "*"
+  },
+  "eslintConfig": {
+    "extends": "prettier"
+  },
+  "jest": {
+    "preset": "ts-jest"
+  },
+  "scripts": {
+    "payload": "cat <<'EOF'\nshell-payload\nEOF\nprettier",
+    "group": "echo $( (echo hi); shell-payload ) && tsc",
+    "collision": "gulp build",
+    "postinstall": "node -e \"require('node:fs').writeFileSync('SCRIPT_RAN','ran')\""
+  }
+}
