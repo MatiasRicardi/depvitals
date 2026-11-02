@@ -1,0 +1,121 @@
+{
+  "policy": {
+    "ignorePaths": [
+      "./generated/",
+      "ignored",
+      ".eslintrc.json",
+      "package.json",
+      "depvitals.config.json"
+    ],
+    "ignoreDependencies": [
+      "duplicate",
+      "gulp",
+      "selected-dev",
+      "selected-missing",
+      "selected-unused"
+    ]
+  },
+  "default": {
+    "configUsedNames": [
+      "eslint-plugin-react",
+      "ts-jest"
+    ],
+    "analysis": {
+      "unusedDependencies": [
+        "duplicate",
+        "eslint-config-prettier",
+        "gulp-cli",
+        "property-fake",
+        "regex-fake",
+        "root-self",
+        "selected-unused",
+        "selected-unused-extra",
+        "shadow-fake",
+        "shell-payload",
+        "unused-z"
+      ],
+      "unusedDevDependencies": [
+        "duplicate",
+        "selected-dev",
+        "unused-dev"
+      ],
+      "missingDependencies": [
+        "child-missing",
+        "generated-missing",
+        "genuine-missing",
+        "selected-missing",
+        "selected-missing-extra"
+      ]
+    },
+    "cli": {
+      "exitCode": 1,
+      "stdout": "DepVitals\n\nUnused dependencies (11)\n  duplicate\n  eslint-config-prettier\n  gulp-cli\n  property-fake\n  regex-fake\n  root-self\n  selected-unused\n  selected-unused-extra\n  shadow-fake\n  shell-payload\n  unused-z\n\nUnused devDependencies (3)\n  duplicate\n  selected-dev\n  unused-dev\n\nMissing dependencies (5)\n  child-missing\n  generated-missing\n  genuine-missing\n  selected-missing\n  selected-missing-extra\n",
+      "stderr": ""
+    }
+  },
+  "configured": {
+    "configUsedNames": [
+      "eslint-plugin-react",
+      "ts-jest"
+    ],
+    "analysis": {
+      "unusedDependencies": [
+        "eslint-config-prettier",
+        "gulp-cli",
+        "property-fake",
+        "regex-fake",
+        "root-self",
+        "selected-unused-extra",
+        "shadow-fake",
+        "shell-payload",
+        "source-only",
+        "unused-z"
+      ],
+      "unusedDevDependencies": [
+        "unused-dev"
+      ],
+      "missingDependencies": [
+        "child-missing",
+        "genuine-missing",
+        "selected-missing-extra"
+      ]
+    },
+    "cli": {
+      "exitCode": 1,
+      "stdout": "DepVitals\n\nUnused dependencies (10)\n  eslint-config-prettier\n  gulp-cli\n  property-fake\n  regex-fake\n  root-self\n  selected-unused-extra\n  shadow-fake\n  shell-payload\n  source-only\n  unused-z\n\nUnused devDependencies (1)\n  unused-dev\n\nMissing dependencies (3)\n  child-missing\n  genuine-missing\n  selected-missing-extra\n",
+      "stderr": ""
+    }
+  },
+  "barrier": {
+    "configUsedNames": [],
+    "analysis": {
+      "unusedDependencies": [
+        "eslint-config-prettier",
+        "eslint-plugin-react",
+        "gulp-cli",
+        "property-fake",
+        "regex-fake",
+        "root-self",
+        "selected-unused-extra",
+        "shadow-fake",
+        "shell-payload",
+        "source-only",
+        "unused-z"
+      ],
+      "unusedDevDependencies": [
+        "ts-jest",
+        "unused-dev"
+      ],
+      "missingDependencies": [
+        "child-missing",
+        "genuine-missing",
+        "selected-missing-extra"
+      ]
+    },
+    "cli": {
+      "exitCode": 1,
+      "stdout": "DepVitals\n\nUnused dependencies (11)\n  eslint-config-prettier\n  eslint-plugin-react\n  gulp-cli\n  property-fake\n  regex-fake\n  root-self\n  selected-unused-extra\n  shadow-fake\n  shell-payload\n  source-only\n  unused-z\n\nUnused devDependencies (2)\n  ts-jest\n  unused-dev\n\nMissing dependencies (3)\n  child-missing\n  genuine-missing\n  selected-missing-extra\n",
+      "stderr": ""
+    }
+  }
+}
