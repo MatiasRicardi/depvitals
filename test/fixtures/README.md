@@ -306,7 +306,8 @@ include known ambient-type/coverage-provider limits rather than pretending those
 
 [`measure-scanning.mjs`](../../scripts/measure-scanning.mjs) checks those independent arrays during
 warmups and measured scans, checks input non-mutation, measures growing import-property/control
-sources and generated/pruned trees, and reports local pack metadata. It never executes fixture code
+sources and generated/pruned trees, and binds local pack metadata to the actual adjacent tarball and measured build. Root entry names
+also participate in input identity, so opaque detector barriers cannot change unnoticed. It never executes fixture code
 or installs/resolves named dependencies. This is an explicit developer command, not a timed CI test.
 [The receipt and reproduction instructions](../../docs/measurements/step94.md) distinguish warm
 in-process timing, boundary memory observations, scope choices and historical comparisons. No timing

@@ -4,7 +4,8 @@ Recorded November 2, 2026 (America/Montevideo). This is development evidence for
 package metadata still says **0.2.0**. Nothing was published or installed for this measurement.
 
 [Raw receipt](step94.json), [historical observations](step94-historical.json),
-[measurement helper](../../scripts/measure-scanning.mjs), and
+[measurement helper](../../scripts/measure-scanning.mjs),
+[identity verifier](../../scripts/measurementIdentity.mjs), and
 [fixed corpus/independent expectations](../../test/fixtures/measurement-corpus/corpus.json).
 All new fixture code is authored for this repository under its license; no external project was
 downloaded or redistributed. The three small synthetic projects represent syntax/evidence channels,
@@ -12,10 +13,13 @@ not real application complexity. DepVitals itself is the one actual repository i
 
 ## Identity and method
 
-Base source HEAD: `4a44b22fac2efdc68771dfb1f6eeeeeffcfa0d9c`. The helper, corpus and these documents are
-the whole Step 94 change: `src/`, `package.json`, `pnpm-lock.yaml` and `scripts/verify-package.mjs` are
-untouched. The receipt hashes the helper, corpus manifest, lockfile, emitted build and retained
-source/metadata inputs. Each project input inventory is checked again after the scans.
+Base source HEAD: `a3096adb34585cf940040357ae73b465e2fb47d4`. The review corrections are working-tree
+changes. Production source, package metadata, lockfile and package verification remain untouched.
+The receipt hashes both development helpers, the corpus manifest, lockfile, emitted build and retained
+source/metadata inputs. Sorted root entry names also participate in input identity: this conservative
+superset captures detector barriers without duplicating their allowlists. Opaque entries are recorded
+by name without reading their contents; regular legacy JSON is hashed under its actual casing.
+Names and bytes are checked again after each project scan.
 
 Environment: linux x64, kernel `7.3.0-4-cachyos`, Node `v26.6.0`,
 `Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz`, 8 logical CPUs, pnpm 11.28.3 and npm 11.18.0. Shared local machine;
@@ -26,23 +30,23 @@ Each row has three warmups and seven measured runs in one process, after a clean
 collect the existing static ESLint/Jest hints and call `analyzeProject` with validated fixed scope.
 Process startup, config-file loading, report rendering, setup, expected-finding comparisons and
 explicit GC are outside the interval. The scan wrapper includes its constant root-identity sanity
-check; the raw receipt’s excluded “assertions” refers to expected-finding comparisons. This is an internal analysis measurement, not end-to-end CLI latency. Every warmup and
+check, as stated in the raw receipt. This is an internal analysis measurement, not end-to-end CLI latency. Every warmup and
 sample must equal the independent finding arrays; unexpected results abort the receipt.
 
 Explicit GC runs before and after samples. Memory fields are whole-process boundary observations:
 net heap changes can be negative if automatic GC ran inside a scan. They are neither allocation totals
 nor in-scan peaks, and the process is reused between cases. The table shows the largest observed net
 heap increase, not a per-project memory budget. Raw samples include absolute heaps and RSS. The entire
-harness's cumulative maxRSS, including setup/generated trees, was 255.176 MiB.
+harness's cumulative maxRSS, including archive validation/setup/generated trees, was 226.094 MiB.
 
 ## Fixed corpus
 
 | Input              | Source files | Source bytes | Scope rules | Median ms | Largest net heap increase, MiB |
 | ------------------ | -----------: | -----------: | ----------: | --------: | -----------------------------: |
-| node-esm           |            2 |          245 |           0 |    13.987 |                          0.569 |
-| typescript-tooling |            3 |          244 |           0 |     5.906 |                          0.345 |
-| jsx-tsx            |            2 |          327 |           0 |     3.664 |                          0.632 |
-| depvitals-self     |           98 |    1,427,523 |           2 |   517.167 |                         18.895 |
+| node-esm           |            2 |          245 |           0 |     4.006 |                          0.665 |
+| typescript-tooling |            3 |          244 |           0 |     3.981 |                          0.343 |
+| jsx-tsx            |            2 |          327 |           0 |     3.500 |                          0.274 |
+| depvitals-self     |          100 |    1,444,872 |           2 |   480.226 |                         21.650 |
 
 Expected findings, checked on every scan:
 
@@ -85,13 +89,14 @@ extract only `real`. These rows time extraction only, separately from filesystem
 
 | Entries | Current import ms | Current other ms | Historical Step86 import / other ms |
 | ------- | ----------------: | ---------------: | ----------------------------------: |
-| 500     |            13.201 |            9.212 |                      10.012 / 8.047 |
-| 1,000   |            16.706 |           15.980 |                     14.732 / 16.171 |
-| 2,000   |            35.089 |           30.347 |                     32.774 / 37.366 |
-| 4,000   |            58.749 |           59.683 |                     62.811 / 52.935 |
-| 8,000   |           116.536 |          111.999 |                        not measured |
+| 500     |            10.126 |            9.542 |                      10.012 / 8.047 |
+| 1,000   |            16.799 |           16.000 |                     14.732 / 16.171 |
+| 2,000   |            31.476 |           31.891 |                     32.774 / 37.366 |
+| 4,000   |            58.864 |           58.610 |                     62.811 / 52.935 |
+| 8,000   |           111.631 |          111.659 |                        not measured |
 
-The current 4,000→8,000 medians grow about twofold for both spellings. At the shared sizes, the
+The current growth rows retain both spellings as controls; the raw samples, rather than a strict
+millisecond ratio, are the recorded evidence. At the shared sizes, the
 historical and current observations are of a similar order and do not show the old disproportionate
 import-property cost. No narrow timing assertion, universal complexity proof or speed guarantee is
 made. Step86 used three measured runs; this helper uses seven. The historical JSON records Node/Linux
@@ -111,9 +116,9 @@ parameters and aggregate input/result hashes, not thousands of repeated finding 
 
 | Generated files | Selected sources unpruned / pruned | Unpruned median ms | Pruned median ms | Missing unpruned / pruned |
 | --------------- | ---------------------------------: | -----------------: | ---------------: | ------------------------: |
-| 0               |                              1 / 1 |              2.392 |            2.122 |                     0 / 0 |
-| 1,000           |                          1,001 / 1 |            110.775 |            2.134 |                 1,000 / 0 |
-| 5,000           |                          5,001 / 1 |            519.234 |            2.498 |                 5,000 / 0 |
+| 0               |                              1 / 1 |              1.952 |            1.895 |                     0 / 0 |
+| 1,000           |                          1,001 / 1 |            103.416 |            1.736 |                 1,000 / 0 |
+| 5,000           |                          5,001 / 1 |            468.146 |            2.320 |                 5,000 / 0 |
 
 With `generated` excluded, discovery returns only the retained file, so the large subtree contributes
 neither source reads nor evidence. The maintained Step90/Step93 tests separately assert pre-descent
@@ -125,7 +130,13 @@ a deliberate reduction of scope, **not an accuracy gain**. There is no strict mi
 After `pnpm run clean` and `pnpm run build`, local `npm pack --ignore-scripts --json` reported
 **160,851 packed bytes** (157.081 KiB), **684,243 unpacked bytes**
 (668.206 KiB), and **99 files**. Actual tarball bytes and SHA-512 integrity were
-checked against the pack metadata before deleting the temporary archive.
+checked against the pack metadata before deleting the temporary archive. The runner itself now reads
+the adjacent archive and validates compressed size, SHA-1, SHA-512 SRI, unpacked sizes and the complete
+file list. Every packaged `dist/` file must match the measured build hash; packaged README, LICENSE
+and package.json must match the current root bytes. Validation occurs before warmups and again before
+emitting the receipt. A same-version receipt from another build is not accepted.
+
+Archive SHA-256: `360a949ff546fac2e604f463fc8e13bb7216822fcfb8f4ee0f812b1e01f354db`.
 
 SRI: `sha512-Z5dWWNfQV9Ietb5IoNDsNg+YobtC36KXfpM7hfTKOHt4vO/vXNFOr4/fq/mU6Eo3Z5AbnPEKPFKWVlRMWgU0nQ==`.
 
@@ -162,6 +173,10 @@ rm -rf "$measurement_pack_dir"
 printf '%s\n' "$measurement_receipt"
 ```
 
+Keep `pack.json` and its named `.tgz` together until the runner finishes. The runner inspects this
+package’s regular-file ustar contents in memory, never extracting or executing them. Unsupported
+archive entry types (including links or extended headers) fail explicitly rather than being skipped.
+
 The helper emits JSON to stdout and progress to stderr, asserts independent expected results and
 unchanged input/build identities, and cleans only its generated pruning trees. Output contains the
 actual environment and source hashes; another machine will produce different timings/memory and may
@@ -170,17 +185,17 @@ of the runnable helper. Keep measurements separate from concurrent tests/builds,
 setup rebuilds `dist`. No network, comparative marketing benchmark, project execution, automatic
 configuration, runtime feature, corpus-wide accuracy percentage or performance SLA is introduced.
 
-### Reproduction check
+### Review-correction validation
 
-A second clean build at the base HEAD regenerated the identical 96-file `buildSha256`
-(`b64e37062bce…`) with no per-file byte difference, and a second offline pack reproduced the packed bytes,
-unpacked bytes, entry count, shasum and SHA-512 integrity above exactly. A second full measurement run
-asserted the same expected findings and the same helper/corpus/lock/build/input hashes, and moved only
-timing: the self median went from 517.167 ms to 509.895 ms (-1.4%) and the 5,000-file unpruned median
-from 519.234 ms to 502.301 ms (-3.3%), while the 245-byte node-esm median moved from 13.987 ms to
-4.088 ms, which confirms that the tiny-fixture medians are not usable indicators. The 4,000 and 8,000
-entry extraction medians moved 58.749 → 58.037 ms and 116.536 → 111.339 ms for `import` and 59.683 →
-64.522 ms and 111.999 → 133.713 ms for the renamed control. Harness cumulative maxRSS moved from
-255.176 MiB to 247.445 MiB. Across the recorded 140 samples no sample reported a negative net heap
-change, although the boundary allows one. The committed receipt stays the single recorded sample set;
-these reruns only show that build and archive identity reproduce on this host.
+The receipt was regenerated after adding root-entry state and archive/build binding. Its self scan
+now includes the additional development identity helper and regression test, so its source count and
+input hash differ from the original measurement. Do not compare the old and new self timings as
+identical workloads. The artifact is unchanged: the actual adjacent tarball reproduced the same
+packed/unpacked byte counts, file set and integrity, and every packaged file matched the measured
+build/root bytes at both checks.
+
+Regression tests cover each ESLint/Jest barrier name, case-insensitive legacy JSON, a barrier that
+changes hints while source preserves the exact findings, same-version stale builds, stale root files,
+missing/extra entries, absent archives, bad metadata/bytes, checksum errors, unsupported linked entries
+and long ustar prefix paths. These checks validate identities, not a performance threshold. Source,
+CLI, dependency and packaging behavior remain unchanged.

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -25,6 +24,7 @@ import { findEslintRcJsonUsage } from '../dist/detectors/eslintRcJsonConfig.js';
 import { findJestManifestUsage } from '../dist/detectors/jestManifestConfig.js';
 import { extractModuleSpecifiers } from '../dist/scanner/moduleSpecifiers.js';
 import { discoverSourceFiles } from '../dist/scanner/sourceFiles.js';
+import { identifyInputs, verifyMeasuredArchive } from './measurementIdentity.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WARMUPS = 3;
@@ -86,31 +86,6 @@ async function scan(root, options) {
   return findings;
 }
 
-/** Source bytes and mandatory scope/root detector inputs, not docs or ignored fixture payloads. */
-function identifyInputs(root, sources) {
-  const paths = new Set(sources);
-  paths.add(join(root, 'package.json'));
-  for (const source of sources) {
-    let directory = dirname(source);
-    while (directory !== root) {
-      const metadata = join(directory, 'package.json');
-      if (existsSync(metadata)) paths.add(metadata);
-      directory = dirname(directory);
-    }
-  }
-  for (const name of ['.eslintrc.json', 'depvitals.config.json']) {
-    const path = join(root, name);
-    if (existsSync(path)) paths.add(path);
-  }
-  const files = [...paths]
-    .map((path) => ({
-      path: portable(relative(root, path)),
-      sha256: hash(readFileSync(path)),
-      bytes: readFileSync(path).length,
-    }))
-    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  return { sha256: hash(JSON.stringify(files)), files };
-}
 function identifyBuild(directory = join(ROOT, 'dist')) {
   const files = [];
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -126,13 +101,15 @@ const manifest = readJson(join(ROOT, 'package.json'));
 assert.equal(Object.keys(manifest.dependencies ?? {}).length, 0);
 assert.equal(Object.keys(manifest.optionalDependencies ?? {}).length, 0);
 const build = identifyBuild();
+const packPath = resolve(process.argv[2]);
+const artifact = verifyMeasuredArchive(packPath, ROOT, build);
 const receipt = {
   methodology: {
     warmups: WARMUPS,
     repeats: REPEATS,
     gcBeforeAndAfterEachSample: true,
     scanBoundary:
-      'In-process static detector collection plus analyzeProject; excludes process startup, config-file loading, report rendering, setup, assertions and explicit GC.',
+      'In-process static detector collection plus analyzeProject; excludes process startup, config-file loading, report rendering, setup, expected-finding comparisons and explicit GC; includes a root-identity sanity check.',
     memoryBoundary:
       'Whole-process observations at sample boundaries, not allocation totals or in-scan peaks. Heap deltas may be negative due to automatic GC. maxRSS is cumulative for this generator, including setup.',
     noTimingThreshold: true,
@@ -155,6 +132,7 @@ const receipt = {
     packageManager: manifest.packageManager,
     lockSha256: hash(readFileSync(join(ROOT, 'pnpm-lock.yaml'))),
     helperSha256: hash(readFileSync(fileURLToPath(import.meta.url))),
+    identityHelperSha256: hash(readFileSync(new URL('./measurementIdentity.mjs', import.meta.url))),
     corpusManifestSha256: hash(readFileSync(corpusPath)),
     buildSha256: hash(JSON.stringify(build)),
     build,
@@ -255,20 +233,12 @@ try {
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }
-const [pack] = readJson(resolve(process.argv[2]));
-assert.equal(pack.version, manifest.version);
-assert(pack.files.some((file) => file.path === 'dist/cli/index.js'));
-receipt.artifact = {
-  version: pack.version,
-  filename: pack.filename,
-  packedBytes: pack.size,
-  unpackedBytes: pack.unpackedSize,
-  fileCount: pack.files.length,
-  integrity: pack.integrity,
-  shasum: pack.shasum,
-  runtimeDependencies: Object.keys(manifest.dependencies ?? {}),
-  optionalDependencies: Object.keys(manifest.optionalDependencies ?? {}),
-};
+assert.deepEqual(
+  verifyMeasuredArchive(packPath, ROOT, build),
+  artifact,
+  'Archive changed during measurement',
+);
+receipt.artifact = artifact;
 assert.deepEqual(identifyBuild(), build, 'Build changed during measurement');
 receipt.processMaxRssKiB = process.resourceUsage().maxRSS;
 console.log(JSON.stringify(receipt, null, 2));
