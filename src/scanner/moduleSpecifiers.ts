@@ -4187,6 +4187,10 @@ function handleExport(
   i: number,
   occurrences: ModuleSpecifierOccurrence[],
 ): number {
+  // Member names share the same boundary rule as import and require.
+  if (isMemberName(tokens, i)) {
+    return i + 1;
+  }
   return scanImportSource(tokens, i, occurrences, 'export-from');
 }
 
@@ -4619,7 +4623,8 @@ function exportSignalsModule(source: string, end: number): boolean {
  * Probe top-level await without treating every identifier named await as a keyword. A complete
  * regex may be read opaquely during this pass even when its following operand makes it script
  * division. That protects apostrophes until a later static declaration settles the whole file.
- * Calls, indexing, tags and unary +/- remain ambiguous script expressions absent another signal.
+ * Calls, indexing, tags, unary +/- and flag-like identifier divisors remain ambiguous script
+ * expressions absent another signal.
  */
 function probeAwaitOperand(
   source: string,
@@ -4636,12 +4641,23 @@ function probeAwaitOperand(
     }
     const following = skipTrivia(source, finish, source.length);
     const tail = source[following];
+    // Characters consumed as flags can instead be a complete identifier divisor (including a
+    // valid flag such as g). Its following operator/terminator cannot establish module grammar.
+    const hasIdentifierDivisor = source[finish - 1] !== '/';
+    const comparisonKeyword =
+      (isIdentifierStartAt(source, following) || isUnicodeEscapeStart(source, following)) &&
+      ['in', 'instanceof'].includes(readIdentifier(source, following).value);
     const unambiguous =
-      tail === undefined ||
-      [';', ',', ')', ']', '}', '?'].includes(tail) ||
-      (tail === '.' && !isNumberStart(source[following + 1] ?? '')) ||
-      source.startsWith('&&', following) ||
-      source.startsWith('||', following);
+      !hasIdentifierDivisor &&
+      (tail === undefined ||
+        [';', ',', ')', ']', '}', '?'].includes(tail) ||
+        (tail === '.' && !isNumberStart(source[following + 1] ?? '')) ||
+        // These binary operators cannot start the missing right-hand divisor. Unary +/-,
+        // calls, indexing, templates and decimal starts still admit script expressions.
+        ['<', '>', '*', '%', '&', '|', '^'].includes(tail) ||
+        source.startsWith('==', following) ||
+        source.startsWith('!=', following) ||
+        comparisonKeyword);
     return { keyword: true, module: unambiguous };
   }
   // A newline also permits a bare await identifier statement followed by another statement.
