@@ -72,15 +72,15 @@ The helper passes these validated scopes internally; it does not create a root c
 project file. Fixture input identity is fixed by source hashes; timings do not execute imports,
 components, scripts, lifecycle hooks, or resolve/install their named packages.
 
-The self scan holds 99 validated inputs totalling 1,429,492 bytes: 98 supported sources plus
-`package.json`. By area that is `test/` 69 files / 1,002,439 bytes, `src/` 24 files / 383,514 bytes,
-`scripts/` 3 files / 39,104 bytes and three root files (`eslint.config.js` 1,949, `package.json` 1,969,
+The self scan holds 101 validated inputs totalling 1,446,841 bytes: 100 supported sources plus
+`package.json`. By area that is `test/` 70 files / 1,013,707 bytes, `src/` 24 files / 383,514 bytes,
+`scripts/` 4 files / 45,185 bytes and three root files (`eslint.config.js` 1,949, `package.json` 1,969,
 `vitest.config.ts` 517). The largest single source is `src/scanner/moduleSpecifiers.ts` at 162,645 bytes
-(11.4% of scanned source bytes), and the two largest test files add 185,679 bytes. At the recorded median
-that is 5.28 ms per supported source and 2.70 MiB/s. On this host the two scope rules also hide 8 further
-supported-extension files (141,039 bytes) under the ignored `instructions/` directory, which a fresh clone
-would not have, so this measures the scan that the scope decision selects, not a scan of every archived
-file.
+(11.3% of scanned source bytes), and the two largest test files add 185,679 bytes. At the recorded median
+that is 4.80 ms per supported source and 2.87 MiB/s. These rates use the source-only byte count
+(1,444,872) and unrounded scan median (480.226473 ms); the input byte total also includes `package.json`.
+Ignored `instructions/` and fixture contents are outside that inventory: this measures the selected
+source scope, not every archived file.
 
 ## Growing import-property corpus and renamed control
 
