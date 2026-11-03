@@ -32,11 +32,11 @@ These commands use the npm release. Documentation on `main` can describe unrelea
 
 ## Results
 
-| Finding                | Meaning                                                                        |
-| ---------------------- | ------------------------------------------------------------------------------ |
-| Unused dependencies    | Declared in `dependencies`, without supported usage evidence.                  |
-| Unused devDependencies | The same check for `devDependencies`.                                          |
-| Missing dependencies   | Referenced by supported source imports/requires, but undeclared in all groups. |
+| Finding                | Meaning                                                                                |
+| ---------------------- | -------------------------------------------------------------------------------------- |
+| Unused dependencies    | Declared in `dependencies`, without supported usage evidence.                          |
+| Unused devDependencies | The same check for `devDependencies`.                                                  |
+| Missing dependencies   | Referenced by supported source imports/exports/requires, but undeclared in all groups. |
 
 **Missing means undeclared, not uninstalled. Unused is not proof of safe removal.** Review findings before editing your manifest. Peer and optional dependencies suppress missing findings and are never reported unused.
 
