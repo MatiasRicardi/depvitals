@@ -33,7 +33,7 @@ afterEach(() => {
 });
 const CONFIG = 'depvitals.config.json';
 const ENTRY = fileURLToPath(new URL('../dist/cli/index.js', import.meta.url));
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 
 async function project(
   files: Readonly<Record<string, string>>,

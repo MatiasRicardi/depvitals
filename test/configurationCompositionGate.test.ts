@@ -31,7 +31,7 @@ const FIXTURE = fileURLToPath(
 );
 const ENTRY = fileURLToPath(new URL('../dist/cli/index.js', import.meta.url));
 const CONFIG = 'depvitals.config.json';
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 type Golden = {
   configUsedNames: readonly string[];
   analysis: Omit<AnalysisResult, 'projectRoot'>;
