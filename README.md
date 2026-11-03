@@ -7,7 +7,9 @@
 [![CodeQL](https://github.com/MatiasRicardi/depvitals/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/MatiasRicardi/depvitals/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/MatiasRicardi/depvitals/blob/main/LICENSE)
 
-DepVitals finds unused and undeclared npm dependencies in single-package JavaScript and TypeScript projects. It uses a custom static scanner, needs no configuration to get started and has **zero runtime dependencies**.
+DepVitals is a lightweight, [Depcheck](https://github.com/depcheck/depcheck)-inspired **npm dependency analyzer for Node.js, JavaScript and TypeScript projects**. It finds **unused dependencies, unused devDependencies and missing (undeclared) dependencies** using a custom static scanner with **zero runtime dependencies**.
+
+Designed for fast, zero-config dependency checks during development, maintenance and CI, its CLI can also be used in scripts and AI coding-agent workflows. It analyzes one project root at a time; review findings before changing `package.json`.
 
 ## Quick start
 
