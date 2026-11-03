@@ -7,7 +7,30 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Added
+
+- Optional strict `depvitals.config.json` with literal source-path exclusions and exact dependency
+  finding exclusions. Configuration is read only from the selected project root; invalid files or
+  rules fail without a partial report. Exclusions narrow the meaning of a clean result.
+
+### Fixed
+
+- Import/export property names no longer manufacture package references. Function/class expression
+  boundaries, template interpolations and implicit ESM detection preserve genuine calls while
+  keeping regex text inert, including await-identifier division and awaited-regex comparisons.
+- Literal require/import calls accept a trailing comma; dynamic imports recognize bounded
+  object-literal options without treating their strings as usage hints.
+- A parameter named `require` suppresses calls owned by supported function, arrow and method
+  signatures, without hiding calls outside that scope or treating type names/property keys as bindings.
+- Here-document and unsupported shell-region payloads no longer leak package-command evidence;
+  only proven exterior commands remain eligible.
+- Root and required nested manifests reject symlinks and non-regular entries before content reads.
+  Supported exact self-exports use nearest package ownership without loading export targets.
+
+### Changed
+
+- Documented global installation alongside `npx`, optional configuration and the remaining static
+  analysis limits. Existing CLI commands, finding categories and exit codes are unchanged.
 
 ## [0.2.0] - 2026-10-28
 
