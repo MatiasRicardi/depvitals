@@ -7,71 +7,58 @@
 [![CodeQL](https://github.com/MatiasRicardi/depvitals/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/MatiasRicardi/depvitals/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/MatiasRicardi/depvitals/blob/main/LICENSE)
 
-DepVitals finds unused and undeclared npm dependencies in single-package JavaScript and TypeScript projects. It is a zero-config Node.js CLI with a custom static scanner and no runtime dependencies.
-
-[Depcheck](https://github.com/depcheck/depcheck)-inspired, DepVitals focuses on dependency declarations and supported usage evidence. Use it to review dependencies during maintenance or before a release; review each finding before changing your manifest.
-
-Documentation on `main` can be ahead of the [published npm package](https://www.npmjs.com/package/depvitals). Check the [changelog](https://github.com/MatiasRicardi/depvitals/blob/main/CHANGELOG.md) for release-specific behavior.
+DepVitals finds unused and undeclared npm dependencies in single-package JavaScript and TypeScript projects. It uses a custom static scanner, needs no configuration to get started and has **zero runtime dependencies**.
 
 ## Quick start
 
-Requires **Node.js 22.13.0 or newer**. From a directory containing `package.json`:
+Requires **Node.js 22.13.0 or newer**. Scan the current directory containing `package.json`, or pass a project path:
 
 ```sh
 npx depvitals
+npx depvitals ./path/to/project
 ```
 
-Scan an explicit project path, or request standalone help/version:
+### Install globally
 
 ```sh
-npx depvitals ./path/to/project
-npx depvitals --help
-npx depvitals --version
+npm i -g depvitals
+depvitals
+depvitals ./path/to/project
 ```
 
-These commands run the npm release. For development-branch behavior, build and run the local CLI as described in [Contributing](https://github.com/MatiasRicardi/depvitals/blob/main/CONTRIBUTING.md).
+Use `depvitals --help` or `depvitals --version` for standalone help/version; the same flags work with `npx depvitals`.
 
-## Understand the results
+These commands use the npm release. Documentation on `main` can describe unreleased changes; see the [changelog](https://github.com/MatiasRicardi/depvitals/blob/main/CHANGELOG.md). To try the development checkout, [build and run the local CLI](https://github.com/MatiasRicardi/depvitals/blob/main/CONTRIBUTING.md#local-setup).
 
-| Finding                | Meaning                                                                                                      |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Unused dependencies    | Entries in `dependencies` with no supported source, script or configuration usage evidence.                  |
-| Unused devDependencies | The same check for `devDependencies`.                                                                        |
-| Missing dependencies   | Packages referenced by supported source imports/requires but absent from every dependency declaration group. |
+## Results
 
-**Missing means undeclared, not uninstalled.** DepVitals does not inspect `node_modules`. **Unused is not proof of safe removal**: indirect or unsupported usage may exist. Peer and optional declarations suppress missing findings and are never reported as unused.
+| Finding                | Meaning                                                                        |
+| ---------------------- | ------------------------------------------------------------------------------ |
+| Unused dependencies    | Declared in `dependencies`, without supported usage evidence.                  |
+| Unused devDependencies | The same check for `devDependencies`.                                          |
+| Missing dependencies   | Referenced by supported source imports/requires, but undeclared in all groups. |
 
-A scan can report:
+**Missing means undeclared, not uninstalled. Unused is not proof of safe removal.** Review findings before editing your manifest. Peer and optional dependencies suppress missing findings and are never reported unused.
 
-```text
-DepVitals
+Reports use stdout; operational errors use stderr without a partial report. Exit **0** means clean/help/version; **1** means findings/errors. An optional update notice can use stderr without changing the status.
 
-Unused dependencies (1)
-  lodash
+## Optional configuration (unreleased)
 
-Unused devDependencies (1)
-  echo-only
+Create `depvitals.config.json` at the scanned project root:
 
-Missing dependencies (1)
-  undeclared-pkg
+```json
+{
+  "ignorePaths": ["examples", "src/generated"],
+  "ignoreDependencies": ["some-adapter"]
+}
 ```
 
-Reports go to stdout; operational errors go to stderr. Exit status is **0** for a clean scan, help or version, and **1** for findings or errors. An eligible update notice may additionally use stderr without changing the status.
+`ignorePaths` excludes literal source paths/subtrees; `ignoreDependencies` hides exact package names from findings. No globs. Exclusions narrow what a clean report means; excluding the only source reference can make a dependency unused. See the [configuration reference](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#optional-project-configuration) for validation and precedence.
 
-## Coverage and fit
+## Scope and privacy
 
-DepVitals recognizes literal ESM/CommonJS imports, exports and requires in JavaScript, TypeScript, JSX/TSX and declaration files. It normalizes scoped/subpath imports and excludes Node builtins and internal paths.
+Scans cover JS/TS, JSX/TSX and declaration files, literal ESM/CommonJS references, supported script commands and bounded ESLint/Jest hints. Only source evidence creates missing findings. There is no workspace aggregation, alias/tsconfig resolution, blanket `@types` inference, JSON output or automatic fix; see [supported patterns and limits](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md).
 
-Supported `package.json` commands and bounded ESLint/Jest configuration hints can prevent unused findings for declared packages. Only source evidence creates missing findings. See the [technical reference](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md) for supported patterns, precedence and exclusions.
+Core analysis is offline and never executes or modifies the project or inspects `node_modules`. After completed interactive scans, an optional update check requests public metadata for **DepVitals itself**, caches it outside the project and uploads no project data. CI, non-TTY, help/version and failed scans skip it. Set `DEPVITALS_NO_UPDATE_CHECK=1` to disable it; see [privacy and shell examples](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#update-notice-and-privacy).
 
-## Limits and update check
-
-Analysis covers one project root, without workspace aggregation, alias/tsconfig resolution or blanket `@types` inference. The scanner is not a full compiler or resolver. Dynamic references can be missed; generated/vendor directories are excluded using fixed rules. There is no JSON output, public analyzer API, per-package explanation or automatic fix.
-
-Core analysis is offline and never executes or modifies the analyzed project. After a completed interactive scan, an optional, bounded update check can request public metadata for **DepVitals itself** and cache it outside the project for about 24 hours. It uploads no source or dependency list and adds no telemetry. CI, non-TTY, help/version and failed scans skip the check. Set `DEPVITALS_NO_UPDATE_CHECK=1` to disable it; the [reference](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#update-notice-and-privacy) shows POSIX and PowerShell examples.
-
-## More
-
-[Technical reference](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md) · [Contributing](https://github.com/MatiasRicardi/depvitals/blob/main/CONTRIBUTING.md) · [Changelog](https://github.com/MatiasRicardi/depvitals/blob/main/CHANGELOG.md) · [npm](https://www.npmjs.com/package/depvitals) · [Repository](https://github.com/MatiasRicardi/depvitals)
-
-[MIT license](https://github.com/MatiasRicardi/depvitals/blob/main/LICENSE).
+[Technical reference](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md) · [Contributing](https://github.com/MatiasRicardi/depvitals/blob/main/CONTRIBUTING.md) · [Changelog](https://github.com/MatiasRicardi/depvitals/blob/main/CHANGELOG.md) · [MIT license](https://github.com/MatiasRicardi/depvitals/blob/main/LICENSE)

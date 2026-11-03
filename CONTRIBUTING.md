@@ -40,7 +40,7 @@ The [technical reference](docs/reference.md#update-notice-and-privacy) explains 
 | `pnpm run clean`          | Remove generated `dist/`.                                                                   |
 | `pnpm run verify:package` | Pack, inspect and install the local tarball in a temporary consumer, then exercise its CLI. |
 
-`pnpm run check` runs format checking, lint, typechecking and tests. Build, coverage and package smoke are separate commands. Before a change is considered complete, run `check`, `build` and `git diff --check`; run package smoke when CLI, notifier or packaging is affected. Review the full diff and Git status afterward.
+`pnpm run check` runs format checking, lint, typechecking and tests. Build, coverage and package smoke are separate commands. For code changes, run `check`, `build` and `git diff --check`; run package smoke when CLI, notifier or packaging is affected. Vitest rebuilds `dist/` through its shared global setup before process tests run. For documentation-only changes, check formatting, links and facts against the local CLI; do not add tests merely to freeze prose. Review the full diff and Git status afterward.
 
 CI covers the exact minimum Node runtime, other supported Node versions and Linux/macOS/Windows. Package smoke runs separately. The aggregate branch-protection check is named `CI`; do not rename it or weaken the matrix to hide failures.
 

@@ -15,6 +15,45 @@ Unused findings apply separately to `dependencies` and `devDependencies`. Missin
 
 A clean report means no issues were found through supported evidence. It does not establish that every dependency is needed, that removing an unused package is safe, or that the project will build. Findings are deduplicated and sorted alphabetically within the fixed category order: unused dependencies, unused devDependencies, missing dependencies.
 
+## Optional project configuration
+
+This configuration is implemented on `main` for the unreleased v0.3.0 changes. The npm commands in the README run the published release, which may not include it yet.
+
+A scan reads only `<selected project root>/depvitals.config.json`, using that exact filename and casing. There is no parent/child config search, `package.json` field, executable config, alternate format, inheritance, preset or CLI override. Help/version bypass project/config reads. No file, `{}`, and empty arrays all use the corrected defaults.
+
+The file must contain a strict JSON object with only these optional string-array fields:
+
+| Field                | Effect                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------- |
+| `ignorePaths`        | Skip matching source files and prune matching directory subtrees before reading them. |
+| `ignoreDependencies` | Omit exact selected package names from all three final findings categories.           |
+
+A leading UTF-8 BOM is accepted; comments/JSON5 are not. Unknown keys, wrong types and invalid entries reject the whole configuration; there is no coercion, trimming or partial application. Duplicate normalized entries are removed deterministically. A present file must be a readable, non-symlink regular file. Invalid JSON, invalid rules, unreadable files, symlinks (including dangling ones), directories and other non-regular entries fail with exit 1, empty stdout and a path-identifying stderr diagnostic; field/index information is included for invalid rules. Failed scans do not access the notifier cache or network.
+
+### Source path exclusions
+
+Paths are literal and relative to the selected project root. Matching is case-sensitive on every platform: use the discovered casing. A rule matches an exact normalized path or its subtree at a full segment boundary: `src/gen` does not match `src/generator`. Nonexistent valid rules have no effect. Fixed discovery exclusions remain active.
+
+Both `/` and `\` are accepted as separators on every host. Leading `./`, repeated separators, trailing separators and `.` segments normalize away; normalized empty/root rules are invalid. Any `..` segment is rejected, even if it would stay inside the project. POSIX/Windows absolute, rooted, UNC and drive-relative paths such as `C:src` are rejected on every platform, as are colons, control characters and leading/trailing whitespace, including whitespace exposed by normalization. Interior spaces are literal.
+
+Globs, negation and pattern matching are unsupported: `*`, `?`, `[`, `]`, `{`, `}` and `!` are reserved and rejected even in literal filenames. Exclude a containing literal directory instead. `$` and `~` remain literal; there is no environment/home expansion or following of rule destinations.
+
+Path exclusions apply to source discovery, not mandatory metadata or dedicated detector reads. Ignoring `package.json` does not bypass required manifest validation; retained source still requires its nearest scope metadata. Ignoring `.eslintrc.json` does not bypass its dedicated detector read. Ignoring `eslint.config.js` skips its imports but its presence still blocks legacy ESLint hints. No ignored file can reactivate a lower-priority detector source.
+
+### Dependency finding exclusions
+
+Names match exactly and case-sensitively: `foo` does not hide `foo-extra`, and scopes remain distinct. The accepted forms are a single component or `@scope/component`, at most 214 characters combined. Each component starts with an ASCII letter/digit and continues with ASCII letters/digits, `.`, `_` or `-`. Uppercase legacy names are preserved. This is a bounded identifier grammar, not an npm publication validator.
+
+Subpaths, trailing slashes, versions/tags, whitespace, URLs, paths, patterns and empty components are invalid. An undeclared name is allowed, so a rule can suppress missing findings. Builtin-like names such as `fs` are accepted independently of source builtin filtering; there is no registry or installation lookup.
+
+Exclusions are applied after evidence collection and classification using the original dependency inventory. A selected name declared in both dependencies and devDependencies disappears from both unused categories. Rules do not create usage evidence or change script-command collisions: declaring both `gulp` and `gulp-cli` keeps the original command ownership. Retained source still gets parsed; ignoring a dependency cannot hide a source read/lexical error.
+
+### Precedence and meaning of clean output
+
+A scan validates the selected root and root manifest, validates this configuration once, collects static detector hints, analyzes retained sources/scripts, applies exact dependency exclusions, then renders the ordinary report. The optional notifier follows the existing eligibility policy. Configuration adds no flags, output categories or result headings.
+
+Exclusions narrow the scope of a clean report. Removing the only source usage can make a declared package unused; suppressing a name hides a finding, rather than proving that the dependency is used or safe to remove. No configuration means the corrected default at the same implementation, not preservation of earlier incorrect findings.
+
 ## Source scanning and discovery
 
 Supported extensions are `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts` and `.cts`, including declaration files such as `.d.ts`. Literal static imports, side-effect imports, `import type`, `export ... from`, dynamic `import('package')` and CommonJS `require('package')` supply evidence. Code inside template/JSX expressions is scanned; comments, ordinary strings, template text, JSX text and regex text stay inert.
@@ -29,11 +68,20 @@ Package subpaths collapse to their roots: `lodash/chunk` becomes `lodash`, and `
 
 A source reference is internal when its nearest package scope has a matching name and supported exact `exports` metadata. The supported subset is a direct root `./...` target string or a map consisting entirely of exact subpath keys with safe direct string targets. For example, `self-pkg/feature` is internal for `{ "name": "self-pkg", "exports": { "./feature": "./feature.js" } }`; `self-pkg/missing-key` stays external. Names and raw subpaths match case-sensitively before package-root normalization. Targets need not exist and are never loaded to establish ownership. Conditions, arrays, patterns, mixed maps and unsafe/unsupported lexical paths (including traversal, node_modules segments, backslashes, percent-encoded forms and URL/query/fragment forms) do not prove ownership. An unsupported entry leaves the whole exports map unsupported. A child manifest without name/exports blocks root ownership; child source cannot borrow the root scope's exports to suppress a reference to the root package. Only the root dependency inventory is used. A declared self dependency can remain unused when its only source references are internal.
 
-Discovery skips symlinked entries and rejects a symlinked project root. It prunes these directories wherever encountered: `.git`, `node_modules`, `dist`, `build`, `coverage`, `out`, `.cache`, `.turbo`, `.next`, `.nuxt`. It does not interpret `.gitignore` or custom ignore rules. Nested source directories are traversed, but child manifests and lockfiles do not become separate dependency inventories; nested package scopes inform source module mode and bounded self-reference ownership. There is no workspace aggregation.
+Discovery skips symlinked entries and rejects a symlinked project root. It prunes these directories wherever encountered: `.git`, `node_modules`, `dist`, `build`, `coverage`, `out`, `.cache`, `.turbo`, `.next`, `.nuxt`. It does not interpret `.gitignore`; optional `ignorePaths` rules only narrow discovery further. Nested source directories are traversed, but child manifests and lockfiles do not become separate dependency inventories; nested package scopes inform source module mode and bounded self-reference ownership. There is no workspace aggregation.
 
 The selected root is validated before manifest or detector reads. Root and required nested `package.json` entries must be regular files checked with `lstat`; symlinks (including dangling links), directories and other non-regular entries fail operationally without reading their contents. Only an absent nested manifest inherits the parent scope. A present unreadable or invalid manifest fails instead. These checks cover stable filesystem entries; they are not a general filesystem sandbox or a guarantee against replacement between checks and reads. Optional `.eslintrc.json` keeps its separate skip and presence-barrier rules.
 
 For source-mode purposes, `.mjs`/`.mts` are modules and `.cjs`/`.cts` are scripts. An explicit nearest `type: "module"` or `type: "commonjs"` controls `.js`; a child manifest without `type` starts its own ambiguous scope. For ambiguous `.js`, bounded static detection recognizes static imports/exports, `import.meta` and supported unambiguous top-level `await` operands, including awaited regexes. Dynamic import alone is not a module signal. This follows the selected subset of [Node syntax detection](https://nodejs.org/download/release/v22.23.3/docs/api/packages.html#syntax-detection), enabled by default since Node 22.7.0. JSX/TypeScript extensions retain the existing explicit package-type policy. Detection is not a universal Node resolver: it does not model runtime flags or lexical redeclarations of CommonJS wrapper names. Calls, indexing, tags, unary `+`/`-` and flag-like identifier divisors (for example, the `g` in `await / value /g`) remain script-compatible absent a separate module signal. Without a flag-like divisor, binary continuations such as `===` after an awaited regex establish module grammar. This bounded choice does not resolve bindings to decide between otherwise ambiguous expressions. Source is read once; ambiguous `.js` gets a lexical probe and a definitive extraction, without execution or catch-and-retry on lexical failures.
+
+### Corrected source boundaries
+
+These examples describe supported recognition, not execution of the source:
+
+- A member named `import` or `export` is not a declaration. `box.export * from` followed by a separate string statement does not reexport that string; an actual `export * from 'package'` does supply evidence.
+- `const f = () => function() {} / require('real') / 2;` retains the real call after the function expression; the same ownership rules cover supported class expressions and await/yield contexts.
+- A `require` template tag does not turn its interpolation text into a call. Actual `require('real')` calls inside template expressions remain evidence.
+- In an ambiguous `.js`, `var await = 4, g = 2; await / require('real') /g;` keeps real division evidence. In contrast, `await /require('fake')/ === 1;` is an unambiguous awaited regex and contributes no fake call. Explicit/nearest package type and extension rules still take precedence.
 
 ## Script commands
 
@@ -129,6 +177,6 @@ These examples run the npm release; use `node dist/cli/index.js` from a local ch
 
 Completed reports use stdout; operational diagnostics use stderr with no misleading partial clean report. Exit codes are 0 for clean/help/version and 1 for findings/errors. An optional notice uses stderr after the report without altering its exit status.
 
-Unreadable mandatory inputs fail the scan. Unsupported config shapes instead contribute no hints, except the strict external ESLint JSON errors above. Non-literal imports, template-literal specifiers, `require.resolve()` and property calls such as `obj.require()` are not supported evidence.
+Unreadable mandatory inputs fail the scan. Unusable shapes in the bounded ESLint/Jest hint sources contribute no hints, subject to the strict external ESLint JSON errors above. The optional DepVitals configuration is stricter: invalid shapes or rules fail the scan. Non-literal imports, template-literal specifiers, `require.resolve()` and property calls such as `obj.require()` are not supported evidence.
 
 There is no alias/tsconfig resolver, blanket ambient `@types` inference, JSON CLI output, why/confidence or Needs Review category, public analyzer API, automatic remediation, vulnerability scan or dependency upgrade service. Exported internal modules are not a supported public API.
