@@ -42,9 +42,9 @@ These commands use the npm release. Documentation on `main` can describe unrelea
 
 Reports use stdout; operational errors use stderr without a partial report. Exit **0** means clean/help/version; **1** means findings/errors. An optional update notice can use stderr without changing the status.
 
-## Optional configuration (unreleased)
+## Optional configuration
 
-Create `depvitals.config.json` at the scanned project root:
+Requires DepVitals **0.3.0 or newer**. Create `depvitals.config.json` at the scanned project root:
 
 ```json
 {

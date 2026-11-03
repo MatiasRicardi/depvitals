@@ -17,7 +17,7 @@ A clean report means no issues were found through supported evidence. It does no
 
 ## Optional project configuration
 
-This configuration is implemented on `main` for the unreleased v0.3.0 changes. The npm commands in the README run the published release, which may not include it yet.
+This configuration requires DepVitals 0.3.0 or newer. The npm commands in the README use the npm release; check `depvitals --version` when using an older installation.
 
 A scan reads only `<selected project root>/depvitals.config.json`, using that exact filename and casing. There is no parent/child config search, `package.json` field, executable config, alternate format, inheritance, preset or CLI override. Help/version bypass project/config reads. No file, `{}`, and empty arrays all use the corrected defaults.
 
