@@ -44,6 +44,8 @@ The [technical reference](docs/reference.md#update-notice-and-privacy) explains 
 
 CI covers the exact minimum Node runtime, other supported Node versions and Linux/macOS/Windows. Package smoke runs separately. The aggregate branch-protection check is named `CI`; do not rename it or weaken the matrix to hide failures.
 
+Every verify-matrix entry also runs `node scripts/verify-published-npx.mjs` against `depvitals@latest` from the public npm registry. It uses a fresh temporary cache and consumer, logs the resolved version, and checks help/version, clean scans, dependency findings, operational errors and non-mutation. This network-dependent consumer check is separate from the current-checkout tarball smoke and from offline analysis/tests; it does not prove unreleased code was published. Run it explicitly when validating this integration.
+
 ## Meaningful tests and invariants
 
 Tests live under `test/`, use `*.test.ts`, and explicitly import Vitest helpers. Integration fixtures belong under `test/fixtures/`; document representative fixture additions there. Fixtures can deliberately contain unusual or invalid source and are excluded from root lint/typechecking.
