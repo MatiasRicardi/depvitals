@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,9 +13,12 @@ type Result = {
 };
 type Options = { cwd: string; env: NodeJS.ProcessEnv };
 type Runner = (args: readonly string[], options: Options) => Result;
-const { verifyPublishedNpx } = (await import(
+const { resolveNpxCommand, verifyPublishedNpx } = (await import(
   new URL('../../scripts/verify-published-npx.mjs', import.meta.url).href
-)) as { verifyPublishedNpx: (execute: Runner) => { version: string; checks: number } };
+)) as {
+  resolveNpxCommand: (pathValue: string) => string;
+  verifyPublishedNpx: (execute: Runner) => { version: string; checks: number };
+};
 
 function response(args: readonly string[]): Result {
   const last = args.at(-1) ?? '';
@@ -45,6 +49,26 @@ afterEach(() => {
 });
 
 describe('published npx smoke (offline verifier controls)', () => {
+  it('resolves an absolute shim in a PATH directory with spaces and skips a directory decoy', () => {
+    const root = mkdtempSync(join(tmpdir(), 'npx path regression '));
+    try {
+      const filename = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+      const bad = join(root, 'decoy');
+      const good = join(root, 'actual npm bin');
+      mkdirSync(join(bad, filename), { recursive: true });
+      mkdirSync(good);
+      writeFileSync(join(good, filename), 'test shim; never executed');
+      expect(resolveNpxCommand([bad, good].join(delimiter))).toBe(join(good, filename));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects an empty or relative PATH instead of resolving the shim from consumer cwd', () => {
+    expect(() => resolveNpxCommand('')).toThrow('absolute PATH');
+    expect(() => resolveNpxCommand('.')).toThrow('absolute PATH');
+  });
+
   it('uses latest in an isolated consumer/cache and verifies all exit paths without target installs', () => {
     const calls: { args: readonly string[]; options: Options }[] = [];
     const result = verifyPublishedNpx((args, options) => {

@@ -3,24 +3,38 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join, resolve } from 'node:path';
+import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PACKAGE = 'depvitals@latest';
 const VERSION =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[\dA-Za-z.-]+)?(?:\+[\dA-Za-z.-]+)?\n$/;
 
+/** Use the full shim path so Windows %~dp0 points at npm rather than the consumer cwd. */
+export function resolveNpxCommand(pathValue) {
+  const filename = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+  for (const directory of pathValue.split(delimiter)) {
+    if (!isAbsolute(directory)) continue;
+    const candidate = join(directory, filename);
+    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
+  }
+  throw new Error(`Could not find ${filename} in the absolute PATH directories.`);
+}
+
 /** npx.cmd needs cmd.exe; all arguments are fixed options or task-owned paths. */
 function runNpx(args, options) {
+  const npx = resolveNpxCommand(options.env.PATH);
   const spawnOptions = {
     ...options,
     encoding: 'utf8',
@@ -30,10 +44,10 @@ function runNpx(args, options) {
     windowsHide: true,
   };
   if (process.platform === 'win32') {
-    const command = ['npx.cmd', ...args].map((value) => `"${value}"`).join(' ');
+    const command = [npx, ...args].map((value) => `"${value}"`).join(' ');
     return spawnSync(command, { ...spawnOptions, shell: true });
   }
-  return spawnSync('npx', args, spawnOptions);
+  return spawnSync(npx, args, spawnOptions);
 }
 
 function snapshot(directory) {
