@@ -75,6 +75,11 @@ jobs:
         if: ${{ !matrix.coverage }}
         run: pnpm run test
 
+      # Exercise the actual latest npm release on every OS/Node entry, independently of dist/.
+      - name: Verify latest published CLI with npx
+        timeout-minutes: 4
+        run: node scripts/verify-published-npx.mjs
+
       - name: Upload coverage to Codecov
         if: ${{ matrix.coverage && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
