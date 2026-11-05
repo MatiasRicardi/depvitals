@@ -1,0 +1,1709 @@
+{
+  "catalogVersion": 1,
+  "createdOn": "2026-11-04",
+  "purpose": "Acquired external snapshots and raw baseline observations; reviewed expectations belong to Step 101.",
+  "identityMethod": "Sorted recursive entries (directories, regular file bytes/executable bit, symlink text), SHA-256 over compact JSON; no symlink traversal; no .git/node_modules inputs.",
+  "projects": [
+    {
+      "id": "is-number",
+      "upstream": "https://github.com/jonschlinkert/is-number",
+      "commit": "98e8ff1da1a89f93d1397a24d7413ed15421c139",
+      "gitTree": "37450e1347ebbad642393376ee3ef67f576d1109",
+      "selectedRoot": ".",
+      "acquiredOn": "2026-11-04",
+      "license": {
+        "manifest": "MIT",
+        "files": [
+          {
+            "file": "LICENSE",
+            "sha256": "35bdd8a44339719441900fb50fbefc5e2dca1ca662cbaed7a687de842c8b70f2"
+          }
+        ]
+      },
+      "acquisition": {
+        "method": "git bare shallow clone, immutable commit verification, git archive --format=tar, data-only extraction; no checkout filters/submodules/lifecycles",
+        "archiveSha256": "0708184781ebd4ab4776fa34999bfc2f6a441ae32bf5267ef98f9be732f763a4"
+      },
+      "categories": ["node-commonjs-library"],
+      "rationale": "Small single-root Node utility with CommonJS source/tests, Mocha script, static ESLint JSON and benchmark/tooling files.",
+      "reviewAreas": ["Benchmark and documentation tooling declarations; static ESLint hints."],
+      "inventory": {
+        "packageName": "is-number",
+        "packageVersion": "7.0.0",
+        "declaredGroups": {
+          "dependencies": [],
+          "devDependencies": ["ansi", "benchmark", "gulp-format-md", "mocha"],
+          "peerDependencies": [],
+          "optionalDependencies": []
+        },
+        "supportedSourceFiles": 4,
+        "sourceBytes": 7411
+      },
+      "originalDepvitalsConfig": null,
+      "scope": {
+        "mode": "upstream-default",
+        "overlays": []
+      },
+      "fixedSourceExclusions": [
+        ".cache",
+        ".git",
+        ".next",
+        ".nuxt",
+        ".turbo",
+        "build",
+        "coverage",
+        "dist",
+        "node_modules",
+        "out"
+      ],
+      "snapshot": {
+        "sha256": "542f2210615cd0c317d5c648d5c35556139544699444e4f187246b438ad9b060",
+        "entries": [
+          {
+            "path": ".editorconfig",
+            "kind": "file",
+            "bytes": 289,
+            "executable": false,
+            "sha256": "3d21b96431d6ac4a323107527468f8419150c7692f52c408012cee59190cbff4"
+          },
+          {
+            "path": ".eslintrc.json",
+            "kind": "file",
+            "bytes": 3797,
+            "executable": false,
+            "sha256": "da0ae7f8c82ae996ad8e1e4172ed41ee9a6ec237e4f524dcd4e97a07b9f67629"
+          },
+          {
+            "path": ".gitattributes",
+            "kind": "file",
+            "bytes": 127,
+            "executable": false,
+            "sha256": "90f8990df23c9bbe01bf2203bb8548bb2daa568916caab135f955cfb7cb87742"
+          },
+          {
+            "path": ".gitignore",
+            "kind": "file",
+            "bytes": 302,
+            "executable": false,
+            "sha256": "f32334cdd977602b3cce99461242d9a2dc1208ec94b071e43ae61218a0dcdc7a"
+          },
+          {
+            "path": ".npmrc",
+            "kind": "file",
+            "bytes": 19,
+            "executable": false,
+            "sha256": "f3fc23758ab91be5f94a8c5eaff433d1ccd6a206cf1d381d332eb63716009337"
+          },
+          {
+            "path": ".travis.yml",
+            "kind": "file",
+            "bytes": 149,
+            "executable": false,
+            "sha256": "99f2c647bb977fb006c9f607cb93d158abcd3cc4942809935ec2b58d56ae980b"
+          },
+          {
+            "path": ".verb.md",
+            "kind": "file",
+            "bytes": 3084,
+            "executable": false,
+            "sha256": "51b88e0eac5f986869cbaec3f6654afa3727f776d55df67531444f70faf551d1"
+          },
+          {
+            "path": "LICENSE",
+            "kind": "file",
+            "bytes": 1091,
+            "executable": false,
+            "sha256": "35bdd8a44339719441900fb50fbefc5e2dca1ca662cbaed7a687de842c8b70f2"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "bytes": 6514,
+            "executable": false,
+            "sha256": "8e676a0587ba350889df0a5fb883aeab26609ee36432e29441f55af3a0cb16ba"
+          },
+          {
+            "path": "benchmark",
+            "kind": "directory"
+          },
+          {
+            "path": "benchmark/fixtures.js",
+            "kind": "file",
+            "bytes": 2407,
+            "executable": false,
+            "sha256": "6299e4e2e1cfc00a2c37a16d87d6f3e08dd6fcbbdade9d41f3bf0b4022bbafdc"
+          },
+          {
+            "path": "benchmark/index.js",
+            "kind": "file",
+            "bytes": 2238,
+            "executable": false,
+            "sha256": "43b43ab11a861cc3e3fd5d2d9eba58d292fa354de6d6f4f51c75862dd9b35454"
+          },
+          {
+            "path": "benchmark/last.md",
+            "kind": "file",
+            "bytes": 167,
+            "executable": false,
+            "sha256": "8a034e1f824a8d8d68a01292ec4791a9b6198dba9bbf822aa382425f393f15c9"
+          },
+          {
+            "path": "index.js",
+            "kind": "file",
+            "bytes": 411,
+            "executable": false,
+            "sha256": "04255e482e181687823a95b207802ddd32e746c65dce4c95a5176fc192735960"
+          },
+          {
+            "path": "package.json",
+            "kind": "file",
+            "bytes": 1599,
+            "executable": false,
+            "sha256": "51c133f4e41df982aef69027249ff9d7262645029f437d079adc7c83328fb620"
+          },
+          {
+            "path": "test.js",
+            "kind": "file",
+            "bytes": 2355,
+            "executable": false,
+            "sha256": "242b26bb2b9203945c6e869460a8a8289ddac859ed710b9e103f19a4a39829b6"
+          }
+        ]
+      },
+      "expectationStatus": "NOT REVIEWED"
+    },
+    {
+      "id": "p-limit",
+      "upstream": "https://github.com/sindresorhus/p-limit",
+      "commit": "a8a6fbec4e0e866d6d779b10889bb4f5567e70eb",
+      "gitTree": "dcc7e576c722ad0f7d474128a704accb0ffc6abd",
+      "selectedRoot": ".",
+      "acquiredOn": "2026-11-04",
+      "license": {
+        "manifest": "MIT",
+        "files": [
+          {
+            "file": "license",
+            "sha256": "5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3"
+          }
+        ]
+      },
+      "acquisition": {
+        "method": "git bare shallow clone, immutable commit verification, git archive --format=tar, data-only extraction; no checkout filters/submodules/lifecycles",
+        "archiveSha256": "9274800ea00ef123edbe209593db8284748fe4dda552b201862fa52ce302eda7"
+      },
+      "categories": ["node-esm-library", "typescript-declarations"],
+      "rationale": "Single-root ESM library with runtime dependency, AVA tests, tsd declarations and direct CLI tooling scripts.",
+      "reviewAreas": ["Declarations and test-only imports; executable command recognition."],
+      "inventory": {
+        "packageName": "p-limit",
+        "packageVersion": "7.3.3",
+        "declaredGroups": {
+          "dependencies": ["yocto-queue"],
+          "devDependencies": ["ava", "in-range", "random-int", "time-span", "tsd", "xo"],
+          "peerDependencies": [],
+          "optionalDependencies": []
+        },
+        "supportedSourceFiles": 6,
+        "sourceBytes": 35785
+      },
+      "originalDepvitalsConfig": null,
+      "scope": {
+        "mode": "upstream-default",
+        "overlays": []
+      },
+      "fixedSourceExclusions": [
+        ".cache",
+        ".git",
+        ".next",
+        ".nuxt",
+        ".turbo",
+        "build",
+        "coverage",
+        "dist",
+        "node_modules",
+        "out"
+      ],
+      "snapshot": {
+        "sha256": "7cb1188818a9c029f99b4285b363cd370b61dd1a47d29b2fd3bd2fa2854bb8e7",
+        "entries": [
+          {
+            "path": ".editorconfig",
+            "kind": "file",
+            "bytes": 175,
+            "executable": false,
+            "sha256": "a6c981d9e5f90048850a8a59e79372701b58489ba29cccb5c5d273db3b77c4a3"
+          },
+          {
+            "path": ".gitattributes",
+            "kind": "file",
+            "bytes": 19,
+            "executable": false,
+            "sha256": "d60f352d0db1404c70afb4bb8b2ca3fd1c610572aa40720e8a0b7baa7885418c"
+          },
+          {
+            "path": ".github",
+            "kind": "directory"
+          },
+          {
+            "path": ".github/security.md",
+            "kind": "file",
+            "bytes": 175,
+            "executable": false,
+            "sha256": "735c3b0d22b218e784018d854fe287bc3776e0c31067d99658306f94b5dfd8bb"
+          },
+          {
+            "path": ".github/workflows",
+            "kind": "directory"
+          },
+          {
+            "path": ".github/workflows/main.yml",
+            "kind": "file",
+            "bytes": 436,
+            "executable": false,
+            "sha256": "b15324485a2f3ff4a3295a59bdc536c4e16d696594b0af7428c5d19731a5c323"
+          },
+          {
+            "path": ".gitignore",
+            "kind": "file",
+            "bytes": 23,
+            "executable": false,
+            "sha256": "7699b345e5aeb2ad3c28f77e093c934d4a4243d73b8eebd2a3c54edbc1e96bdc"
+          },
+          {
+            "path": ".npmrc",
+            "kind": "file",
+            "bytes": 19,
+            "executable": false,
+            "sha256": "f3fc23758ab91be5f94a8c5eaff433d1ccd6a206cf1d381d332eb63716009337"
+          },
+          {
+            "path": "benchmark.js",
+            "kind": "file",
+            "bytes": 7741,
+            "executable": false,
+            "sha256": "ff4678a088f186a55d63ab51f14f02408f5f26480e5493f02385d38b55586647"
+          },
+          {
+            "path": "index.d.ts",
+            "kind": "file",
+            "bytes": 4645,
+            "executable": false,
+            "sha256": "d367543c32631ba661e044b1d1f44deed2bbf54654dd0eb251061337162514ee"
+          },
+          {
+            "path": "index.js",
+            "kind": "file",
+            "bytes": 3868,
+            "executable": false,
+            "sha256": "edde12a4a4dbdbe8d27161cdd0853db0bab435d5dc6c15f9f4dedc27ee9bca60"
+          },
+          {
+            "path": "index.test-d.ts",
+            "kind": "file",
+            "bytes": 1244,
+            "executable": false,
+            "sha256": "2b2d5e162277d9643cd4f7a2efb3888c07bcf3b33cf0eb015a709280a923d5fa"
+          },
+          {
+            "path": "license",
+            "kind": "file",
+            "bytes": 1117,
+            "executable": false,
+            "sha256": "5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3"
+          },
+          {
+            "path": "package.json",
+            "kind": "file",
+            "bytes": 1055,
+            "executable": false,
+            "sha256": "daa6b0d168d7197eccbfef1c678e8f00b79d063129bf48f4ee2db38dc605ca7f"
+          },
+          {
+            "path": "readme.md",
+            "kind": "file",
+            "bytes": 5418,
+            "executable": false,
+            "sha256": "dbe29b10fca55743e35fe2b3d768024cd135d1bac4bd60aee566a5e1f3af294f"
+          },
+          {
+            "path": "recipes.md",
+            "kind": "file",
+            "bytes": 4692,
+            "executable": false,
+            "sha256": "bc3e6759f7c0953888bdfed68ddee2d8baf964dd21bb263ade6fa50dac859efe"
+          },
+          {
+            "path": "scripts",
+            "kind": "directory"
+          },
+          {
+            "path": "scripts/benchmarker.js",
+            "kind": "file",
+            "bytes": 6224,
+            "executable": false,
+            "sha256": "85ed48b4dd7c36e3154eda769138b0a16d07acdb447ded680738f58fbddaf0f7"
+          },
+          {
+            "path": "test.js",
+            "kind": "file",
+            "bytes": 12063,
+            "executable": false,
+            "sha256": "a803c332d9af3a9e14d657d63280c2e059e3fe5c343ab7ab869da8a85276204c"
+          }
+        ]
+      },
+      "expectationStatus": "NOT REVIEWED"
+    },
+    {
+      "id": "ts-extras",
+      "upstream": "https://github.com/sindresorhus/ts-extras",
+      "commit": "323908522c9f90f07f99378b43891da742f2319f",
+      "gitTree": "2cab3604a52e6fdaf183e4280e64f2c61dd88b87",
+      "selectedRoot": ".",
+      "acquiredOn": "2026-11-04",
+      "license": {
+        "manifest": "MIT",
+        "files": [
+          {
+            "file": "license",
+            "sha256": "5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3"
+          }
+        ]
+      },
+      "acquisition": {
+        "method": "git bare shallow clone, immutable commit verification, git archive --format=tar, data-only extraction; no checkout filters/submodules/lifecycles",
+        "archiveSha256": "5317360871a2ac098710defae75132498cf7fd20e6414284261f5b538038374c"
+      },
+      "categories": ["typescript-library", "typescript-tooling"],
+      "rationale": "Single-root TypeScript utilities with source/test inventories, type-only references, inherited tsconfig and a Node/tsx test script.",
+      "reviewAreas": [
+        "Ambient Node types, external tsconfig inheritance and wrapper/loader command arguments are not blanket usage evidence."
+      ],
+      "inventory": {
+        "packageName": "ts-extras",
+        "packageVersion": "1.3.0",
+        "declaredGroups": {
+          "dependencies": ["type-fest"],
+          "devDependencies": [
+            "@sindresorhus/tsconfig",
+            "@types/node",
+            "del-cli",
+            "expect-type",
+            "tsx",
+            "typescript",
+            "xo"
+          ],
+          "peerDependencies": [],
+          "optionalDependencies": []
+        },
+        "supportedSourceFiles": 71,
+        "sourceBytes": 198042
+      },
+      "originalDepvitalsConfig": null,
+      "scope": {
+        "mode": "upstream-default",
+        "overlays": []
+      },
+      "fixedSourceExclusions": [
+        ".cache",
+        ".git",
+        ".next",
+        ".nuxt",
+        ".turbo",
+        "build",
+        "coverage",
+        "dist",
+        "node_modules",
+        "out"
+      ],
+      "snapshot": {
+        "sha256": "59be01455d33bccfcdb93abf99e77f29635776ae5a2a9be359273b432ff9b3a3",
+        "entries": [
+          {
+            "path": ".editorconfig",
+            "kind": "file",
+            "bytes": 175,
+            "executable": false,
+            "sha256": "a6c981d9e5f90048850a8a59e79372701b58489ba29cccb5c5d273db3b77c4a3"
+          },
+          {
+            "path": ".gitattributes",
+            "kind": "file",
+            "bytes": 19,
+            "executable": false,
+            "sha256": "d60f352d0db1404c70afb4bb8b2ca3fd1c610572aa40720e8a0b7baa7885418c"
+          },
+          {
+            "path": ".github",
+            "kind": "directory"
+          },
+          {
+            "path": ".github/workflows",
+            "kind": "directory"
+          },
+          {
+            "path": ".github/workflows/main.yml",
+            "kind": "file",
+            "bytes": 421,
+            "executable": false,
+            "sha256": "cabd73d26cbbc670a8a8bb332006ce7c9e7d87a7d5d3aafdfabcf252467c1f70"
+          },
+          {
+            "path": ".gitignore",
+            "kind": "file",
+            "bytes": 36,
+            "executable": false,
+            "sha256": "7fe8ab7e798acf8077292463a4e4322a9420abdf6c9b31e034768081d4b296a2"
+          },
+          {
+            "path": ".npmrc",
+            "kind": "file",
+            "bytes": 19,
+            "executable": false,
+            "sha256": "f3fc23758ab91be5f94a8c5eaff433d1ccd6a206cf1d381d332eb63716009337"
+          },
+          {
+            "path": "license",
+            "kind": "file",
+            "bytes": 1117,
+            "executable": false,
+            "sha256": "5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3"
+          },
+          {
+            "path": "package.json",
+            "kind": "file",
+            "bytes": 1267,
+            "executable": false,
+            "sha256": "c9ceee544d23507ab46b1980ad3f0c6329c78cad331b105e65656e4b936bbff2"
+          },
+          {
+            "path": "readme.md",
+            "kind": "file",
+            "bytes": 6943,
+            "executable": false,
+            "sha256": "51918f425c4b050ed2d2ff2d287ec36f4d84cda9155ad3fc0ad68b75e1b5c440"
+          },
+          {
+            "path": "source",
+            "kind": "directory"
+          },
+          {
+            "path": "source/array-at.ts",
+            "kind": "file",
+            "bytes": 1438,
+            "executable": false,
+            "sha256": "b188bc53dee311ddec6cfa33bb2a87c43dfd301c196af337913d1abc07120689"
+          },
+          {
+            "path": "source/array-concat.ts",
+            "kind": "file",
+            "bytes": 2007,
+            "executable": false,
+            "sha256": "47e516e90afdeb3ee83508bd0684e8be0b29b8742d5cba8187108ed0f162ca6c"
+          },
+          {
+            "path": "source/array-first.ts",
+            "kind": "file",
+            "bytes": 889,
+            "executable": false,
+            "sha256": "a969856bf660a498dd40f93bfc2fee5eb6f40f3d0c23931a6125fe1f62930081"
+          },
+          {
+            "path": "source/array-includes.ts",
+            "kind": "file",
+            "bytes": 1111,
+            "executable": false,
+            "sha256": "eda2b33e4b2f9e7081db8e6e4c924f79f6b4f6c740dff609e37e381c6b694136"
+          },
+          {
+            "path": "source/array-join.ts",
+            "kind": "file",
+            "bytes": 996,
+            "executable": false,
+            "sha256": "65c73cf3cdb938df1a38633b41ec7f52c152a6c02c29e0719d759055287b61d6"
+          },
+          {
+            "path": "source/array-last.ts",
+            "kind": "file",
+            "bytes": 937,
+            "executable": false,
+            "sha256": "d08d40e7289a505aae626ea574746b37a0c06381dd77f232afb7306e7bd82d2e"
+          },
+          {
+            "path": "source/as-writable.ts",
+            "kind": "file",
+            "bytes": 574,
+            "executable": false,
+            "sha256": "ae7d8a5e946eae80af67a064bbb71a95708b5d433cafc083f42292f1fc3321a4"
+          },
+          {
+            "path": "source/assert-defined.ts",
+            "kind": "file",
+            "bytes": 801,
+            "executable": false,
+            "sha256": "a355f4bcb08a300d5df326e7f68fff927f1da15e0e5951bf943f3e7cffe481df"
+          },
+          {
+            "path": "source/assert-error.ts",
+            "kind": "file",
+            "bytes": 1465,
+            "executable": false,
+            "sha256": "343d2af61741aeed5e840e1e3e7e8e794a7606a9f910c320e581abcbfc107d89"
+          },
+          {
+            "path": "source/assert-never.ts",
+            "kind": "file",
+            "bytes": 1183,
+            "executable": false,
+            "sha256": "ab40a0e526483eb6a4e1ec0560eadb72473980724b03856536c9d9a7c3dbb3f1"
+          },
+          {
+            "path": "source/assert-present.ts",
+            "kind": "file",
+            "bytes": 926,
+            "executable": false,
+            "sha256": "adf66a10c0e73d99e09cd5ace650f583e3840af9700cbc78d25cb676699dd6d0"
+          },
+          {
+            "path": "source/assert.ts",
+            "kind": "file",
+            "bytes": 692,
+            "executable": false,
+            "sha256": "860db68ce3433ed116bc65d0f8a9079e63eb0cfd2f6157105b470efd7cc2036b"
+          },
+          {
+            "path": "source/index.ts",
+            "kind": "file",
+            "bytes": 1671,
+            "executable": false,
+            "sha256": "3412d5afa7c7282b7f291654af44ce53144cd456a72d2acb0b4f2f2c8569f7d9"
+          },
+          {
+            "path": "source/internal-types.ts",
+            "kind": "file",
+            "bytes": 3551,
+            "executable": false,
+            "sha256": "1e713c0a53fa51bf5b2619875d83b035d77ffbd0e2f21325388d18a2a37be0f8"
+          },
+          {
+            "path": "source/is-defined.ts",
+            "kind": "file",
+            "bytes": 419,
+            "executable": false,
+            "sha256": "e2afd9b4db15035424d045bdf6a212b190daca687c7d0e6eefa8dcab6ff3e875"
+          },
+          {
+            "path": "source/is-empty.ts",
+            "kind": "file",
+            "bytes": 612,
+            "executable": false,
+            "sha256": "5de34b90be7ba5f769433d5ac2b52d1bdb9d276fd4a8adc9bce97147d49467bc"
+          },
+          {
+            "path": "source/is-equal-type.ts",
+            "kind": "file",
+            "bytes": 1431,
+            "executable": false,
+            "sha256": "1964a17e7e190097213493ca77c981e92d5db2d1cffc9ddf54d44ff4c95181a3"
+          },
+          {
+            "path": "source/is-finite.ts",
+            "kind": "file",
+            "bytes": 240,
+            "executable": false,
+            "sha256": "1378d0e4f0d4379a75defa2a25789c3aed3aaa0ae87861d8fb5db61e4a0e69c5"
+          },
+          {
+            "path": "source/is-infinite.ts",
+            "kind": "file",
+            "bytes": 530,
+            "executable": false,
+            "sha256": "9e284d11d8af8b172f261619ad6b642f25cb9c43ba009269c4e3bcbc17ce2f13"
+          },
+          {
+            "path": "source/is-integer.ts",
+            "kind": "file",
+            "bytes": 245,
+            "executable": false,
+            "sha256": "e37167c0455c728c121f17265d224d09301528dcddbb913a03049f1782c41ecb"
+          },
+          {
+            "path": "source/is-present.ts",
+            "kind": "file",
+            "bytes": 469,
+            "executable": false,
+            "sha256": "51c42a1e1dcd8da737d57cd92f6206c93ed60fd54d2abcbd5a4102437cb5a6f2"
+          },
+          {
+            "path": "source/is-property-defined.ts",
+            "kind": "file",
+            "bytes": 2325,
+            "executable": false,
+            "sha256": "91f175d54f6d2867a9c59284f3166fd64ecb49e0f602ab7d04af887d8255f11e"
+          },
+          {
+            "path": "source/is-property-present.ts",
+            "kind": "file",
+            "bytes": 2450,
+            "executable": false,
+            "sha256": "1bd50f3364cdb8f31cd7a843aefd3f071bd43aba9db020d262909b15e2b24efa"
+          },
+          {
+            "path": "source/is-safe-integer.ts",
+            "kind": "file",
+            "bytes": 257,
+            "executable": false,
+            "sha256": "688b7532fe7816532801b06912399f3d409c69b3045d6dd3f9692354ead1c6dd"
+          },
+          {
+            "path": "source/key-in.ts",
+            "kind": "file",
+            "bytes": 2101,
+            "executable": false,
+            "sha256": "e7509415a5e258d8f6ad6a479fca262576eefe16b096e90f48cc1062cda67dcc"
+          },
+          {
+            "path": "source/not.ts",
+            "kind": "file",
+            "bytes": 1225,
+            "executable": false,
+            "sha256": "f3ce2d0e493e429d626b4409abf0073cda4c3e599be000763f5f112176d45e4d"
+          },
+          {
+            "path": "source/object-assign.ts",
+            "kind": "file",
+            "bytes": 4960,
+            "executable": false,
+            "sha256": "185a38ddfbf6b4d429e52639647a99f75298095c1f03bfd1c6e175f916ff0eb2"
+          },
+          {
+            "path": "source/object-entries.ts",
+            "kind": "file",
+            "bytes": 1182,
+            "executable": false,
+            "sha256": "4b4b809fba03de0c36560a94e81537fd4a83437b805083281f7d5b64b496eeb8"
+          },
+          {
+            "path": "source/object-from-entries.ts",
+            "kind": "file",
+            "bytes": 1459,
+            "executable": false,
+            "sha256": "3e0ae1671fe13fd452b1574b9fb0f11d6dc02109666a1e8a9faea44b55f28b5b"
+          },
+          {
+            "path": "source/object-has-in.ts",
+            "kind": "file",
+            "bytes": 1280,
+            "executable": false,
+            "sha256": "b65d36891d6252f530fbf66a38ae4ec4dbd50d33bba37c058b433e7a1d0169c1"
+          },
+          {
+            "path": "source/object-has-own.ts",
+            "kind": "file",
+            "bytes": 974,
+            "executable": false,
+            "sha256": "ac92ce935056c77d4c57a5d72dbfd4e0f484ea747bd7c422283077543c394054"
+          },
+          {
+            "path": "source/object-keys.ts",
+            "kind": "file",
+            "bytes": 919,
+            "executable": false,
+            "sha256": "c85d38756e9c8be9d966a4247986aa0d226a77e76e310a5a42f7aa0d9721b6e5"
+          },
+          {
+            "path": "source/object-map-values.ts",
+            "kind": "file",
+            "bytes": 11441,
+            "executable": false,
+            "sha256": "2546079cabf282ecf09be6e2e6a8539b04f0534fc9dad956eadf3ee516d4dee2"
+          },
+          {
+            "path": "source/object-update.ts",
+            "kind": "file",
+            "bytes": 2957,
+            "executable": false,
+            "sha256": "e5551511f08d3ea7a4148dea09ecc9b35628c523e2a9c0f9656648c15760c5c7"
+          },
+          {
+            "path": "source/object-values.ts",
+            "kind": "file",
+            "bytes": 1074,
+            "executable": false,
+            "sha256": "b5cff5bef21f1e808b12fe34357c71a5834018c416b745fe03da6828587316a8"
+          },
+          {
+            "path": "source/safe-cast-to.ts",
+            "kind": "file",
+            "bytes": 717,
+            "executable": false,
+            "sha256": "5272402fe91df0bd99df6717f423dfa6448db2c93b6ceae2ad70b19758c5607a"
+          },
+          {
+            "path": "source/set-has.ts",
+            "kind": "file",
+            "bytes": 1069,
+            "executable": false,
+            "sha256": "55b68b4a357e5a85c83ce64fd1553a187284dab6d57ad678fee90b208ba5a214"
+          },
+          {
+            "path": "source/string-split.ts",
+            "kind": "file",
+            "bytes": 886,
+            "executable": false,
+            "sha256": "dc4ec1031827127855c20497706f5d6ce26f29799f2a43f51a215b810cb973d2"
+          },
+          {
+            "path": "test",
+            "kind": "directory"
+          },
+          {
+            "path": "test/array-at.ts",
+            "kind": "file",
+            "bytes": 1805,
+            "executable": false,
+            "sha256": "6d0f0a497567cfe61fd68ce4ed2af6625e2d3442043cef0af7532231735468e3"
+          },
+          {
+            "path": "test/array-concat.ts",
+            "kind": "file",
+            "bytes": 3143,
+            "executable": false,
+            "sha256": "b671d9fe46e176cf2c7e26cd1cab31eb17917998da5fb081604ff5cd96b46f42"
+          },
+          {
+            "path": "test/array-first.ts",
+            "kind": "file",
+            "bytes": 1506,
+            "executable": false,
+            "sha256": "01939e1358cc89404f7c62d38861b87cbf80e75a66a2091d10f0f6393ea16f35"
+          },
+          {
+            "path": "test/array-includes.ts",
+            "kind": "file",
+            "bytes": 2218,
+            "executable": false,
+            "sha256": "2cbfdc4faa4a4e8ca37e97b6001a98c7792298da8cc8e5548c522db592e56e16"
+          },
+          {
+            "path": "test/array-join.ts",
+            "kind": "file",
+            "bytes": 2028,
+            "executable": false,
+            "sha256": "490eca005e7310b24c78926125bef8577bada6437e68b0fdd068030b77198fd1"
+          },
+          {
+            "path": "test/array-last.ts",
+            "kind": "file",
+            "bytes": 1497,
+            "executable": false,
+            "sha256": "53d6557987bbd55b5fad248f47c0acb1dbc312bc58c276660abe49b20729f772"
+          },
+          {
+            "path": "test/as-writable.ts",
+            "kind": "file",
+            "bytes": 379,
+            "executable": false,
+            "sha256": "5ce80b9d7f1fd515f7a5c5d8cd6887f892aa971d9694e1739673287c9361d7a4"
+          },
+          {
+            "path": "test/assert-defined.ts",
+            "kind": "file",
+            "bytes": 570,
+            "executable": false,
+            "sha256": "ab183b1af53dbfb40284170664b3f1a92f110935be2a2dfeb56894fea5c91600"
+          },
+          {
+            "path": "test/assert-error.ts",
+            "kind": "file",
+            "bytes": 377,
+            "executable": false,
+            "sha256": "965c83ff9c2245e5d0c8f34f6dd236612ec52c6bb3fa3eacfddee36afb6513f8"
+          },
+          {
+            "path": "test/assert-never.ts",
+            "kind": "file",
+            "bytes": 820,
+            "executable": false,
+            "sha256": "b54725098e364f7c54c1d2769506338d1e5d3a84666b3963b2e8f59768966a8d"
+          },
+          {
+            "path": "test/assert-present.ts",
+            "kind": "file",
+            "bytes": 635,
+            "executable": false,
+            "sha256": "9992e4f27a1823910e478e721ec0443191f06d2c83fda30927b732220ec6a2e9"
+          },
+          {
+            "path": "test/assert.ts",
+            "kind": "file",
+            "bytes": 569,
+            "executable": false,
+            "sha256": "b95601802a20b3d5fd2e3522eb2c8faf39ce5154199e7c6ac800311d424f3e0b"
+          },
+          {
+            "path": "test/is-defined.ts",
+            "kind": "file",
+            "bytes": 559,
+            "executable": false,
+            "sha256": "983f88f22de161935999591245a2b0291eab89e7328be0033acc3fd5d150cbad"
+          },
+          {
+            "path": "test/is-empty.ts",
+            "kind": "file",
+            "bytes": 510,
+            "executable": false,
+            "sha256": "e4b73c8a6e384904a9d1df57350b66b23982512afc70ee07b56151d5114f4c7a"
+          },
+          {
+            "path": "test/is-equal-type.ts",
+            "kind": "file",
+            "bytes": 4420,
+            "executable": false,
+            "sha256": "3b9b6d6473102509bbc96989ca01608db025b51c13caf5693bbc2b17d2a6f7d9"
+          },
+          {
+            "path": "test/is-infinite.ts",
+            "kind": "file",
+            "bytes": 595,
+            "executable": false,
+            "sha256": "a4d122dd00600809046b271bb961a14ef2c8e451bfaff2be3d31c215b0b944e2"
+          },
+          {
+            "path": "test/is-present.ts",
+            "kind": "file",
+            "bytes": 628,
+            "executable": false,
+            "sha256": "223af7d90e90ae5edc34078fa42049082d34f2df5494e5de9afb19d74e3a9099"
+          },
+          {
+            "path": "test/is-property-defined.ts",
+            "kind": "file",
+            "bytes": 16640,
+            "executable": false,
+            "sha256": "8ee0ce767bad6a29cb00201945e8912ce0a88d81b93f706951d0d1167996739d"
+          },
+          {
+            "path": "test/is-property-present.ts",
+            "kind": "file",
+            "bytes": 17577,
+            "executable": false,
+            "sha256": "2a8082eaa4bf9b813076467106cd53ab7d80e64c5c14341e73ceaee16ca5475e"
+          },
+          {
+            "path": "test/key-in.ts",
+            "kind": "file",
+            "bytes": 4890,
+            "executable": false,
+            "sha256": "8320f16bf3b999765acd67ecddb47e0ea6f3560cbc71542aff3bbafe0e8ea81a"
+          },
+          {
+            "path": "test/not.ts",
+            "kind": "file",
+            "bytes": 3290,
+            "executable": false,
+            "sha256": "d0fd8fc02b6f3316d4384c6a0937b9ab55f95e7f3a7371c175e633405101a863"
+          },
+          {
+            "path": "test/object-assign.ts",
+            "kind": "file",
+            "bytes": 19791,
+            "executable": false,
+            "sha256": "a3c9bf2011d5f32c3ed2f4e17a6fc438cd07d9a7c7c14136d087e98b70bc3a7d"
+          },
+          {
+            "path": "test/object-entries.ts",
+            "kind": "file",
+            "bytes": 4064,
+            "executable": false,
+            "sha256": "ee7512ba7b328d7b034aa20a9b17b8fc0e307df304f1acd834a1ffa06a30e06a"
+          },
+          {
+            "path": "test/object-from-entries.ts",
+            "kind": "file",
+            "bytes": 2474,
+            "executable": false,
+            "sha256": "396629c7b3c105d9a90ae0d31ab45c9436d87c0c42b4565bcf2aa24128432cad"
+          },
+          {
+            "path": "test/object-has-in.ts",
+            "kind": "file",
+            "bytes": 2285,
+            "executable": false,
+            "sha256": "d9da082c880fcc8ded27e5e33d7ee3aec810d876db7ebbc9881b21418dbdb259"
+          },
+          {
+            "path": "test/object-has-own.ts",
+            "kind": "file",
+            "bytes": 1771,
+            "executable": false,
+            "sha256": "3bd53a6b89a48423fdab2b30d659cc9ef5379b13f417abbac2d1ed942d194f53"
+          },
+          {
+            "path": "test/object-keys.ts",
+            "kind": "file",
+            "bytes": 662,
+            "executable": false,
+            "sha256": "b8bdbbbf4f5ca7bdaf02c4a195b977210542b734ebe2e9d8ab9f535ebad005ab"
+          },
+          {
+            "path": "test/object-map-values.ts",
+            "kind": "file",
+            "bytes": 29926,
+            "executable": false,
+            "sha256": "2f0b20dd02c4f753b59ed3732d3dbec83aef6d75e6da7de1ab503b1bc6a8cb79"
+          },
+          {
+            "path": "test/object-update.ts",
+            "kind": "file",
+            "bytes": 4889,
+            "executable": false,
+            "sha256": "b12fcddc3af17b2963ace27d520ff79a94e1c6760eb3e53e72ba90a100d1dbab"
+          },
+          {
+            "path": "test/object-values.ts",
+            "kind": "file",
+            "bytes": 3432,
+            "executable": false,
+            "sha256": "542507f82062ac4be50db4fb4a374b6d13b6a740600b695a2fa20816a61ec4ce"
+          },
+          {
+            "path": "test/safe-cast-to.ts",
+            "kind": "file",
+            "bytes": 1250,
+            "executable": false,
+            "sha256": "692bbce8324f34e4c42f0e1debbe1fd5ff3246ae7f704d83add434ed4b338f2c"
+          },
+          {
+            "path": "test/set-has.ts",
+            "kind": "file",
+            "bytes": 1955,
+            "executable": false,
+            "sha256": "a6a07bab97bd292b60120dec0032220d8fa76fb8609147cc9a2c783e8fb3672f"
+          },
+          {
+            "path": "test/string-split.ts",
+            "kind": "file",
+            "bytes": 1424,
+            "executable": false,
+            "sha256": "68a3aeaf08e5e4a5aa7b55aa8f21460691e079f39cc0cc3c2575bdfd387df3a3"
+          },
+          {
+            "path": "test/tsconfig.json",
+            "kind": "file",
+            "bytes": 124,
+            "executable": false,
+            "sha256": "d4ac2d52d7dab00f5c3cfc2dc5c8882cb91b2dd26d5dc8510662a24b3751e77f"
+          },
+          {
+            "path": "tsconfig.json",
+            "kind": "file",
+            "bytes": 70,
+            "executable": false,
+            "sha256": "aa1d1115ee679c6d98bec0f6d35caaca901d148473a51ef7610b421986a6c4a2"
+          }
+        ]
+      },
+      "expectationStatus": "NOT REVIEWED"
+    },
+    {
+      "id": "preact-render-to-string",
+      "upstream": "https://github.com/preactjs/preact-render-to-string",
+      "commit": "2380b0525495c68fd137a86f18cb40ce8f1b0983",
+      "gitTree": "54ca4522524a16dea2104969d2c1ec1077897686",
+      "selectedRoot": ".",
+      "acquiredOn": "2026-11-04",
+      "license": {
+        "manifest": "MIT",
+        "files": [
+          {
+            "file": "LICENSE",
+            "sha256": "f1f6a1f3170072992cfdbbd59b125a04b9e810f6d1e08bb459741f54904a3460"
+          }
+        ]
+      },
+      "acquisition": {
+        "method": "git bare shallow clone, immutable commit verification, git archive --format=tar, data-only extraction; no checkout filters/submodules/lifecycles",
+        "archiveSha256": "5ea62145f572df61ba723f5a38e6f3f4d44ee78d3c1632e185194cafb1343b9a"
+      },
+      "categories": ["frontend-jsx", "frontend-testing", "typescript-declarations"],
+      "rationale": "Single package with JSX integration tests, Preact peer dependency, TypeScript declarations, Vitest configuration and multiple static build scripts; retained as the more demanding frontend case.",
+      "reviewAreas": [
+        "JSX/TypeScript boundaries, peer/dev overlap, aliases, Vitest and Babel configuration not interpreted as general tool support."
+      ],
+      "inventory": {
+        "packageName": "preact-render-to-string",
+        "packageVersion": "6.8.2",
+        "declaredGroups": {
+          "dependencies": [],
+          "devDependencies": [
+            "@babel/plugin-transform-react-jsx",
+            "@babel/preset-env",
+            "@babel/register",
+            "@changesets/changelog-github",
+            "@changesets/cli",
+            "@preact/signals-core",
+            "@types/node",
+            "baseline-rts",
+            "benchmarkjs-pretty",
+            "check-export-map",
+            "copyfiles",
+            "husky",
+            "jsdom",
+            "lint-staged",
+            "microbundle",
+            "oxfmt",
+            "oxlint",
+            "preact",
+            "pretty-format",
+            "rollup",
+            "typescript",
+            "vitest",
+            "web-streams-polyfill"
+          ],
+          "peerDependencies": ["preact"],
+          "optionalDependencies": []
+        },
+        "supportedSourceFiles": 56,
+        "sourceBytes": 232493
+      },
+      "originalDepvitalsConfig": null,
+      "scope": {
+        "mode": "upstream-default",
+        "overlays": []
+      },
+      "fixedSourceExclusions": [
+        ".cache",
+        ".git",
+        ".next",
+        ".nuxt",
+        ".turbo",
+        "build",
+        "coverage",
+        "dist",
+        "node_modules",
+        "out"
+      ],
+      "snapshot": {
+        "sha256": "42cb8cac588e7f2a0315393c42be041bb3cf8f2ec75376d587545f96ce594823",
+        "entries": [
+          {
+            "path": ".changeset",
+            "kind": "directory"
+          },
+          {
+            "path": ".changeset/README.md",
+            "kind": "file",
+            "bytes": 510,
+            "executable": false,
+            "sha256": "bf33c79d7e0477dcad0e0b98c8d364db6fdb794d62ef68b6153d61e868b3bdf0"
+          },
+          {
+            "path": ".changeset/config.json",
+            "kind": "file",
+            "bytes": 340,
+            "executable": false,
+            "sha256": "ded883223a19822806d2402099143974a3f7689d0bd5631d1c62d731133878c7"
+          },
+          {
+            "path": ".changeset/skip-string-event-props.md",
+            "kind": "file",
+            "bytes": 172,
+            "executable": false,
+            "sha256": "18eb3b08702b007fdd8e5e2bdef14f94865e94c447c2223ff7a9ce187a8936c9"
+          },
+          {
+            "path": ".changeset/use-context-ssr.md",
+            "kind": "file",
+            "bytes": 181,
+            "executable": false,
+            "sha256": "0b644d22800294c4904eddebf634e5d092fcb4e85f79f6e4d8214ceaaf02fd43"
+          },
+          {
+            "path": ".editorconfig",
+            "kind": "file",
+            "bytes": 299,
+            "executable": false,
+            "sha256": "f99668215d1525df28f5c241486385efec4fec7fcf9dd9e95f3548ffbc415735"
+          },
+          {
+            "path": ".github",
+            "kind": "directory"
+          },
+          {
+            "path": ".github/CODEOWNERS",
+            "kind": "file",
+            "bytes": 74,
+            "executable": false,
+            "sha256": "7406d136a2b89bc51c3e95d8850a0f8a39d106f836631d9cfa7d4954f083ef45"
+          },
+          {
+            "path": ".github/scripts",
+            "kind": "directory"
+          },
+          {
+            "path": ".github/scripts/has-unpublished-packages.mjs",
+            "kind": "file",
+            "bytes": 1295,
+            "executable": false,
+            "sha256": "1bb262edbd341076cfb2a57e9bba8459fe288cb4525fd204e4882f5205eabc7e"
+          },
+          {
+            "path": ".github/scripts/stage-package.mjs",
+            "kind": "file",
+            "bytes": 3066,
+            "executable": false,
+            "sha256": "8e477b9c201b495c1421ab13d4c638202aad1520d87644011ca3dff533b62ffc"
+          },
+          {
+            "path": ".github/workflows",
+            "kind": "directory"
+          },
+          {
+            "path": ".github/workflows/ci.yml",
+            "kind": "file",
+            "bytes": 459,
+            "executable": false,
+            "sha256": "e3b2006fd8ac2660f62fb2c5036a80728f390963a67d2fa6390b0811fe6a3854"
+          },
+          {
+            "path": ".github/workflows/release.yml",
+            "kind": "file",
+            "bytes": 2816,
+            "executable": false,
+            "sha256": "662f2eb77f5ff7db7a64c212ae7949698a8a2bd0466e538db644e88d3defc2a2"
+          },
+          {
+            "path": ".gitignore",
+            "kind": "file",
+            "bytes": 129,
+            "executable": false,
+            "sha256": "89119b9ec2357c429575d4e5ed6bcf0d273874637343ee79b39b9711163f2ed6"
+          },
+          {
+            "path": ".oxfmtrc.json",
+            "kind": "file",
+            "bytes": 236,
+            "executable": false,
+            "sha256": "811ef8a03083130afb2e09b9326489dabea991fc8770469c471cd3143a810c31"
+          },
+          {
+            "path": "CHANGELOG.md",
+            "kind": "file",
+            "bytes": 32538,
+            "executable": false,
+            "sha256": "8c49d690d47c637081e4d8b3c486efc9b95016bc04dc9d5fb9f13d37f39ea252"
+          },
+          {
+            "path": "LICENSE",
+            "kind": "file",
+            "bytes": 1079,
+            "executable": false,
+            "sha256": "f1f6a1f3170072992cfdbbd59b125a04b9e810f6d1e08bb459741f54904a3460"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "bytes": 6257,
+            "executable": false,
+            "sha256": "87558a9e8129809119f560f1eb5bff59f9c9aa342b1e6875ff7f5f2793aa4da9"
+          },
+          {
+            "path": "benchmarks",
+            "kind": "directory"
+          },
+          {
+            "path": "benchmarks/async.js",
+            "kind": "file",
+            "bytes": 764,
+            "executable": false,
+            "sha256": "4ad8ab063155475cb0bce4a28dd284071d8a4882267948082b090f979443c47d"
+          },
+          {
+            "path": "benchmarks/index.js",
+            "kind": "file",
+            "bytes": 1160,
+            "executable": false,
+            "sha256": "5dad62524e1cf7ee28f542214e9257c1ff5a1c5dfdb2525c02e94c5f7c73dbf5"
+          },
+          {
+            "path": "benchmarks/isomorphic-ui",
+            "kind": "directory"
+          },
+          {
+            "path": "benchmarks/isomorphic-ui/_colors.js",
+            "kind": "file",
+            "bytes": 9514,
+            "executable": false,
+            "sha256": "968ed7ade630e26924317ee4c33218733b2539f7ed7f868997dff74e29d4b49f"
+          },
+          {
+            "path": "benchmarks/isomorphic-ui/color-picker.js",
+            "kind": "file",
+            "bytes": 1044,
+            "executable": false,
+            "sha256": "1d0d5989b0df8c14629ac1c922a95a1304189c96192d9d36eeeeb60ef929928a"
+          },
+          {
+            "path": "benchmarks/isomorphic-ui/search-results",
+            "kind": "directory"
+          },
+          {
+            "path": "benchmarks/isomorphic-ui/search-results/Footer.js",
+            "kind": "file",
+            "bytes": 27393,
+            "executable": false,
+            "sha256": "4c23c71a19d9436ff22297e7f7de9468ebe4744b965a80a89f1b19da99227cbd"
+          },
+          {
+            "path": "benchmarks/isomorphic-ui/search-results/SearchResultsItem.js",
+            "kind": "file",
+            "bytes": 1137,
+            "executable": false,
+            "sha256": "3f6aa37f7d632f8a5e2c138ed9a40164d4ed5b2af16b012136bd9964d9e784b3"
+          },
+          {
+            "path": "benchmarks/isomorphic-ui/search-results/data.js",
+            "kind": "file",
+            "bytes": 559,
+            "executable": false,
+            "sha256": "f1a5d234ccb834ff913b2160e3213cb7e837faba5c8bc3009adfb72a8f59d6a1"
+          },
+          {
+            "path": "benchmarks/isomorphic-ui/search-results/index.js",
+            "kind": "file",
+            "bytes": 548,
+            "executable": false,
+            "sha256": "d127cfe83cf576f7f8e9fec400057f0690b8f16fd7802e6bcac4eb6cebd7431f"
+          },
+          {
+            "path": "benchmarks/isomorphic-ui/search-results/search-results-data.json",
+            "kind": "file",
+            "bytes": 87217,
+            "executable": false,
+            "sha256": "140457a437e96cf0757be6df19293e6c1b42cd49af46c4def69d39f88125a58a"
+          },
+          {
+            "path": "benchmarks/lib",
+            "kind": "directory"
+          },
+          {
+            "path": "benchmarks/lib/benchmark-lite.js",
+            "kind": "file",
+            "bytes": 2029,
+            "executable": false,
+            "sha256": "0254cbc077fbbbf7a8d3031c8a2103815b95c4a1f22256e7f03d32a9f49bbef1"
+          },
+          {
+            "path": "benchmarks/stack.js",
+            "kind": "file",
+            "bytes": 488,
+            "executable": false,
+            "sha256": "371bc4384c7db5f5103d3e7a762574781a1d101f6af059b07d19442b625f0f66"
+          },
+          {
+            "path": "benchmarks/text.js",
+            "kind": "file",
+            "bytes": 2099,
+            "executable": false,
+            "sha256": "f6b4cdb43e4818e5bf388759876ce500ceafd80ba45ce1491444147083210083"
+          },
+          {
+            "path": "config",
+            "kind": "directory"
+          },
+          {
+            "path": "config/node-13-exports.js",
+            "kind": "file",
+            "bytes": 323,
+            "executable": false,
+            "sha256": "5491a1b3445e65fae1cdd0cec87bee614b928cc1fdf5e95ae54ae6839526f36f"
+          },
+          {
+            "path": "config/node-commonjs.js",
+            "kind": "file",
+            "bytes": 1045,
+            "executable": false,
+            "sha256": "db8ea2fd54203742faa2e574c7eb0e81da66a0edcd73312b25a01d2d8cac8182"
+          },
+          {
+            "path": "config/node-verify-exports.js",
+            "kind": "file",
+            "bytes": 1130,
+            "executable": false,
+            "sha256": "680a4d7db3740521b7950595175b32f7e6fd66a17e66586b3751661d00e0f293"
+          },
+          {
+            "path": "demo",
+            "kind": "directory"
+          },
+          {
+            "path": "demo/index.html",
+            "kind": "file",
+            "bytes": 316,
+            "executable": false,
+            "sha256": "3b31870ac5ca80c6b19e2ba9d09d1abe5241fd469a86c8d4c72a6e8bc7d3a3c0"
+          },
+          {
+            "path": "demo/package-lock.json",
+            "kind": "file",
+            "bytes": 92767,
+            "executable": false,
+            "sha256": "7c6396cc7025c22dc32144713fab77a6b60b63e7ca57ba2d569527e0fcaadbba"
+          },
+          {
+            "path": "demo/package.json",
+            "kind": "file",
+            "bytes": 663,
+            "executable": false,
+            "sha256": "3c293123bc2735b6fabece4f497f5e5409603621f483e385959eabc6e9a7ea57"
+          },
+          {
+            "path": "demo/src",
+            "kind": "directory"
+          },
+          {
+            "path": "demo/src/App.jsx",
+            "kind": "file",
+            "bytes": 936,
+            "executable": false,
+            "sha256": "264b9a9a55b46f885978601692ad99ee033d067cb3c6cb8622d7fe7f763ce090"
+          },
+          {
+            "path": "demo/src/Pokemons.jsx",
+            "kind": "file",
+            "bytes": 637,
+            "executable": false,
+            "sha256": "5b55dc5bcbc3170689961ddea2f9a0329a40079d6bc9c16a01b88c8e01402437"
+          },
+          {
+            "path": "demo/src/entry-client.jsx",
+            "kind": "file",
+            "bytes": 548,
+            "executable": false,
+            "sha256": "9341d57825af87b6cfbb189a72478ea4ac586b61805701e82c84652b4737df0a"
+          },
+          {
+            "path": "demo/src/entry-server.jsx",
+            "kind": "file",
+            "bytes": 685,
+            "executable": false,
+            "sha256": "dfdaed9330221d25fb754681c22a6047f85c9442c6b2c1254f64cf232727a484"
+          },
+          {
+            "path": "demo/vite.config.js",
+            "kind": "file",
+            "bytes": 1306,
+            "executable": false,
+            "sha256": "8602e3a9b190057afa43f5d0ba6c719edb884d6563d9eb3c5de0ae4585d35e6d"
+          },
+          {
+            "path": "jsx.d.ts",
+            "kind": "file",
+            "bytes": 580,
+            "executable": false,
+            "sha256": "5af5396e6c1762c5258370b8d6998a03c9fcd89d9ee8dad3e0bc1a29834e5e06"
+          },
+          {
+            "path": "jsx.js",
+            "kind": "file",
+            "bytes": 40,
+            "executable": false,
+            "sha256": "03681a34fe6966a1226c19e0b89a68e07995b40f58693bbe587670a58b8f1234"
+          },
+          {
+            "path": "package-lock.json",
+            "kind": "file",
+            "bytes": 350857,
+            "executable": false,
+            "sha256": "da68b446ec88fa509cb0d51bdd752311e016277e33b6c3af728a9ed8b9d3f0bc"
+          },
+          {
+            "path": "package.json",
+            "kind": "file",
+            "bytes": 4559,
+            "executable": false,
+            "sha256": "318e840b2e4911b4ca1339792f87143d9c62c4427c579489db288543e095c7b3"
+          },
+          {
+            "path": "src",
+            "kind": "directory"
+          },
+          {
+            "path": "src/index.d.ts",
+            "kind": "file",
+            "bytes": 475,
+            "executable": false,
+            "sha256": "25ea3b4f2c68440ca745f0ec3df6a41721de357b6d2d71389b6202155d261592"
+          },
+          {
+            "path": "src/index.js",
+            "kind": "file",
+            "bytes": 19610,
+            "executable": false,
+            "sha256": "ff904d460612f4680efad91132007aae12565990487fd62af1de844d57394a60"
+          },
+          {
+            "path": "src/internal.d.ts",
+            "kind": "file",
+            "bytes": 1142,
+            "executable": false,
+            "sha256": "3549f0820a63fe414b6f65a284ec5563ee42f6f58f09f81325874825f7a8671d"
+          },
+          {
+            "path": "src/jsx.d.ts",
+            "kind": "file",
+            "bytes": 580,
+            "executable": false,
+            "sha256": "5af5396e6c1762c5258370b8d6998a03c9fcd89d9ee8dad3e0bc1a29834e5e06"
+          },
+          {
+            "path": "src/jsx.js",
+            "kind": "file",
+            "bytes": 3478,
+            "executable": false,
+            "sha256": "63bbdd938dbabfba6d6fb94d40a943edf05aecaf6690fc67f015483fe76e816a"
+          },
+          {
+            "path": "src/lib",
+            "kind": "directory"
+          },
+          {
+            "path": "src/lib/chunked.js",
+            "kind": "file",
+            "bytes": 3686,
+            "executable": false,
+            "sha256": "4b8ad3d4b6276c0d53679270b6f35e85c0da13edbe65e419a168b203d0ec4016"
+          },
+          {
+            "path": "src/lib/client.js",
+            "kind": "file",
+            "bytes": 4232,
+            "executable": false,
+            "sha256": "f7131070e9762dc9e817373d381b68a61e41df7a3ffcd8eedd6d2756ee92916b"
+          },
+          {
+            "path": "src/lib/constants.js",
+            "kind": "file",
+            "bytes": 549,
+            "executable": false,
+            "sha256": "04f8902fba48f89115ecf2cc4c959e47d1b19bd16d3ffbe9828c97ac71051047"
+          },
+          {
+            "path": "src/lib/polyfills.js",
+            "kind": "file",
+            "bytes": 181,
+            "executable": false,
+            "sha256": "6086f3263ebf03a8d110f6be435b223de5bfcba8f302360f2e4349bbe23f7abf"
+          },
+          {
+            "path": "src/lib/util.js",
+            "kind": "file",
+            "bytes": 5322,
+            "executable": false,
+            "sha256": "7b762833801220af7dbc8b118ac19c75fddba679ce942ee64c5ccb2a1d1e5fe3"
+          },
+          {
+            "path": "src/pretty.js",
+            "kind": "file",
+            "bytes": 12468,
+            "executable": false,
+            "sha256": "fa050d638d821b33f604a5cb9f56ed5b02565ba861c8865f087e52399e8355b3"
+          },
+          {
+            "path": "src/stream-node.d.ts",
+            "kind": "file",
+            "bytes": 466,
+            "executable": false,
+            "sha256": "f9e797f39e63027ee802fa6a46a8837cf1d93fd43b9c7dcca7af52710b59a007"
+          },
+          {
+            "path": "src/stream-node.js",
+            "kind": "file",
+            "bytes": 1851,
+            "executable": false,
+            "sha256": "a3ddf9b47e09cc208165196a08875eff7dac97e3498c321b6aecacb943cce19a"
+          },
+          {
+            "path": "src/stream.d.ts",
+            "kind": "file",
+            "bytes": 324,
+            "executable": false,
+            "sha256": "da9e36f38f0fd4037fd08222be73bb145039bf959b8b1eb59af0ffe2f3ed3af5"
+          },
+          {
+            "path": "src/stream.js",
+            "kind": "file",
+            "bytes": 1037,
+            "executable": false,
+            "sha256": "a1aad364f18ce1f617ef4394fe20b74bacfbe41e1ad7ab934f90c7a097b2dc52"
+          },
+          {
+            "path": "test",
+            "kind": "directory"
+          },
+          {
+            "path": "test/attribute-encoding.test.jsx",
+            "kind": "file",
+            "bytes": 2216,
+            "executable": false,
+            "sha256": "009b355bd37c4a095de8316afef813f375237228b304223f80e828fa844fd840"
+          },
+          {
+            "path": "test/client.test.jsx",
+            "kind": "file",
+            "bytes": 5737,
+            "executable": false,
+            "sha256": "33fdecabc456dcc467bd9f6197edcd3170edf270d730bcd9de84a972b4e4c89a"
+          },
+          {
+            "path": "test/compat",
+            "kind": "directory"
+          },
+          {
+            "path": "test/compat/async.test.jsx",
+            "kind": "file",
+            "bytes": 16255,
+            "executable": false,
+            "sha256": "572e0f463a45e8a8d90d684285c86531e8669822243241fac187b64a4a8e224f"
+          },
+          {
+            "path": "test/compat/index.test.jsx",
+            "kind": "file",
+            "bytes": 2992,
+            "executable": false,
+            "sha256": "12a9c838d2ccdb0e8f37b537d96d80e901f568f8ed9b421d24611caf11033fd4"
+          },
+          {
+            "path": "test/compat/render-chunked.test.jsx",
+            "kind": "file",
+            "bytes": 10814,
+            "executable": false,
+            "sha256": "c10d1ef99840900ae43e31ad7b013f34872f2732728daf4858b767c510aed085"
+          },
+          {
+            "path": "test/compat/stream-node.test.jsx",
+            "kind": "file",
+            "bytes": 3476,
+            "executable": false,
+            "sha256": "cff293af70baddc07812345a55921413fff2be419d503429896120ad282f5779"
+          },
+          {
+            "path": "test/compat/stream.test.jsx",
+            "kind": "file",
+            "bytes": 3487,
+            "executable": false,
+            "sha256": "a42b4eaa21fae9218e703176293d5e2beb465e64ea73d596c0213231f5b5b8f6"
+          },
+          {
+            "path": "test/context.test.jsx",
+            "kind": "file",
+            "bytes": 2128,
+            "executable": false,
+            "sha256": "6b9ef7464f56dc9e05d594f8577a74cd6dab761fab490033dce00514e38b25fc"
+          },
+          {
+            "path": "test/debug",
+            "kind": "directory"
+          },
+          {
+            "path": "test/debug/index.test.jsx",
+            "kind": "file",
+            "bytes": 888,
+            "executable": false,
+            "sha256": "4f083d70a074e0da27658dbb82e29b4d355021a00c9e9f267565512a90706719"
+          },
+          {
+            "path": "test/index.test.jsx",
+            "kind": "file",
+            "bytes": 623,
+            "executable": false,
+            "sha256": "77270128a96e50e06a618aaaeb65223dcc4d046368585dc70f9085a2ad98d402"
+          },
+          {
+            "path": "test/jsx.test.jsx",
+            "kind": "file",
+            "bytes": 4008,
+            "executable": false,
+            "sha256": "9981cf511dbf4870362082d37c65de141f6db2914f094c0c49a44390ae187256"
+          },
+          {
+            "path": "test/pretty.test.jsx",
+            "kind": "file",
+            "bytes": 7103,
+            "executable": false,
+            "sha256": "4510967316e344067d287e5053f8a5ae264d2698f4dbdce5527e19403c2164ce"
+          },
+          {
+            "path": "test/render.test.jsx",
+            "kind": "file",
+            "bytes": 43704,
+            "executable": false,
+            "sha256": "e851a6f17f7a0f4471b937c87e4e17a09d6d3292b653dd1d7e43eca2ae594101"
+          },
+          {
+            "path": "test/shallowRender.test.jsx",
+            "kind": "file",
+            "bytes": 1585,
+            "executable": false,
+            "sha256": "f79a78134299ae1f6fa62a1080c59ea8292c58d312b31dd85ba49ce57a9ad763"
+          },
+          {
+            "path": "test/signals",
+            "kind": "directory"
+          },
+          {
+            "path": "test/signals/render.test.jsx",
+            "kind": "file",
+            "bytes": 416,
+            "executable": false,
+            "sha256": "a084b8d2192299192ce977e7b19ecda61ba2db71b797ebb58fca9439a8e6cef4"
+          },
+          {
+            "path": "test/utils.jsx",
+            "kind": "file",
+            "bytes": 10518,
+            "executable": false,
+            "sha256": "d99dc16197e628c2c940970bf6ce040375486b9ecb2fa8aef6c4aaf7b572e1c2"
+          },
+          {
+            "path": "test/vnode-recognition.test.jsx",
+            "kind": "file",
+            "bytes": 2627,
+            "executable": false,
+            "sha256": "b6f57261971eb89b5cd9296c683032e332750508bd28e9c8c8aecb39164f95ee"
+          },
+          {
+            "path": "tsconfig.json",
+            "kind": "file",
+            "bytes": 618,
+            "executable": false,
+            "sha256": "fd7ce6004d5380587dc847ddaff1ea6ffb0428f8b952b3310999415af115549e"
+          },
+          {
+            "path": "typings.json",
+            "kind": "file",
+            "bytes": 88,
+            "executable": false,
+            "sha256": "1d04d647d352e6dc92900c208c4d4ac6b53ed32335501485253570261037a44b"
+          },
+          {
+            "path": "vitest.config.ts",
+            "kind": "file",
+            "bytes": 189,
+            "executable": false,
+            "sha256": "fb80bc5917eb608789398668785507f21d2efa983e79dd3443a0678580b35e58"
+          }
+        ]
+      },
+      "expectationStatus": "NOT REVIEWED"
+    }
+  ],
+  "rejectedCandidates": [
+    {
+      "upstream": "https://github.com/preactjs/preact-markup",
+      "reason": "Unauthenticated acquisition failed: Git requested credentials with terminal prompts disabled. No login attempted; availability/private status is not inferred. Replaced before any scan by public preact-render-to-string."
+    }
+  ]
+}
