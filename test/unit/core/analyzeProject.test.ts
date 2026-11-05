@@ -622,3 +622,27 @@ describe('Step 76 mode boundaries and bounded reads', () => {
     expect(error.code).toBe('invalid-source');
   });
 });
+
+it('preserves legacy finding arithmetic across four declaration groups', async () => {
+  const result = await analyzeTemporaryProject(
+    {
+      dependencies: { all: '1', sharedUnused: '1' },
+      devDependencies: { all: '2', sharedUnused: '2' },
+      peerDependencies: { all: '3', peerOnly: '1', peerUnused: '1' },
+      optionalDependencies: { all: '4', optionalOnly: '1', optionalUnused: '1' },
+    },
+    {
+      'index.cjs':
+        "require('all'); require('peerOnly'); require('optionalOnly'); require('missing');",
+    },
+  );
+  expect(Object.keys(result).sort()).toEqual([
+    'missingDependencies',
+    'projectRoot',
+    'unusedDependencies',
+    'unusedDevDependencies',
+  ]);
+  expect(result.unusedDependencies).toEqual(['sharedUnused']);
+  expect(result.unusedDevDependencies).toEqual(['sharedUnused']);
+  expect(result.missingDependencies).toEqual(['missing']);
+});

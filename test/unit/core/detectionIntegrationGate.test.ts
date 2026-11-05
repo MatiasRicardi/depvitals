@@ -501,6 +501,7 @@ describe('Step 62: the analysis path has no network or execution capability', ()
     // notification orchestrator plus the stream-injecting entry layer that calls it after the report
     // (both - unlike the analysis path below - confined to src/cli/).
     // Steps 87–89 add the config readers, pure path/name policies and shared error; Step92 loads them in the CLI.
+    // Step103 adds only the internal evidence model and pure ordering/path/pointer helpers.
     expect(modules).toEqual([
       'cli/entry.ts',
       'cli/index.ts',
@@ -516,6 +517,7 @@ describe('Step 62: the analysis path has no network or execution capability', ()
       'config/projectConfigError.ts',
       'config/readProjectConfig.ts',
       'core/analyzeProject.ts',
+      'core/evidence.ts',
       'detectors/eslintManifestConfig.ts',
       'detectors/eslintRcJsonConfig.ts',
       'detectors/jestManifestConfig.ts',
