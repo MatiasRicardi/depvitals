@@ -14,7 +14,7 @@
     ],
     "passThroughFlags": ["--test"],
     "stop": "First non-option operand or --; do not inspect subsequent arguments.",
-    "rejectNewPreloads": "Unknown/malformed option prefix, eval/print/loader/compact flags or existing unsupported shell region. Preserve ordinary outer command credit; opaque shell segments preserve their ordinary no-credit rule.",
+    "rejectNewPreloads": "Unknown/malformed option prefix, eval/print/loader/compact flags or existing unsupported shell region rejects all preload candidates of that node segment, including valid preloads before the rejected option. Preserve ordinary outer command credit; opaque shell segments preserve their ordinary no-credit rule.",
     "module": "Use existing package-specifier classifier, normalize recognized external subpaths, no executable mapping or installed resolution. Existing dependency/devDependency gate only; no missing from scripts."
   },
   "evidenceProposal": {
