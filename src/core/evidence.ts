@@ -117,7 +117,9 @@ export function compareEvidence(a: Evidence, b: Evidence): number {
     return (
       a.position.offset - b.position.offset ||
       SOURCE_REFERENCES.indexOf(a.reference) - SOURCE_REFERENCES.indexOf(b.reference) ||
-      compareStrings(a.specifier, b.specifier)
+      compareStrings(a.specifier, b.specifier) ||
+      a.position.line - b.position.line ||
+      a.position.column - b.position.column
     );
   }
   if (a.kind === 'script' && b.kind === 'script') {

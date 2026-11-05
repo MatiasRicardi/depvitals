@@ -176,6 +176,28 @@ describe('internal evidence primitives', () => {
     }
   });
 
+  it('breaks otherwise equal source ties by numeric line and column in either input order', () => {
+    const first: SourceEvidence = {
+      ...source,
+      position: { ...source.position, line: 2, column: 2 },
+    };
+    const laterColumn: SourceEvidence = {
+      ...source,
+      position: { ...source.position, line: 2, column: 10 },
+    };
+    const laterLine: SourceEvidence = {
+      ...source,
+      position: { ...source.position, line: 10, column: 1 },
+    };
+    const expected = [first, laterColumn, laterLine];
+
+    expect(compareEvidence(first, laterColumn)).toBeLessThan(0);
+    expect(compareEvidence(laterColumn, laterLine)).toBeLessThan(0);
+    expect(sortedUniqueEvidence(expected)).toEqual(expected);
+    expect(sortedUniqueEvidence([...expected].reverse())).toEqual(expected);
+    expect(sortedUniqueEvidence([laterLine, first, laterColumn, { ...first }])).toEqual(expected);
+  });
+
   it('deduplicates complete semantic records regardless of property insertion order', () => {
     const reordered: SourceEvidence = {
       position: { column: 10, line: 1, offset: 9 },
