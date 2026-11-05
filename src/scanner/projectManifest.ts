@@ -49,6 +49,8 @@ export type ProjectManifest = {
   name?: string;
   dependencies: DependencyMap;
   devDependencies: DependencyMap;
+  peerDependencies: DependencyMap;
+  optionalDependencies: DependencyMap;
   declaredDependencyNames: ReadonlySet<string>;
   /** `scripts` entries as static strings, never executed. */
   scripts: Readonly<Record<string, string>>;
@@ -256,6 +258,8 @@ function parseManifest(root: string, packageJsonPath: string, text: string): Pro
     packageJsonPath,
     dependencies,
     devDependencies,
+    peerDependencies,
+    optionalDependencies,
     declaredDependencyNames: declaredNames([
       dependencies,
       devDependencies,

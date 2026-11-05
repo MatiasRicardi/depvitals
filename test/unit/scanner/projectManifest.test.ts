@@ -1,4 +1,12 @@
-import { existsSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -74,8 +82,11 @@ describe('loadProjectManifest', () => {
       });
     });
 
-    it('includes optional and peer names only in declaredDependencyNames', async () => {
+    it('retains optional and peer memberships alongside the complete union', async () => {
       const manifest = await loadProjectManifest(fixture('basic'));
+
+      expect(manifest.peerDependencies).toEqual({ react: '^18.3.1' });
+      expect(manifest.optionalDependencies).toEqual({ fsevents: '^2.3.3' });
 
       // The union is deterministic: sorted names, never JSON insertion order.
       expect([...manifest.declaredDependencyNames]).toEqual([
@@ -137,6 +148,8 @@ describe('loadProjectManifest', () => {
 
       expect(manifest.dependencies).toEqual({});
       expect(manifest.devDependencies).toEqual({});
+      expect(manifest.peerDependencies).toEqual({});
+      expect(manifest.optionalDependencies).toEqual({});
       expect(manifest.scripts).toEqual({});
       expect(manifest.declaredDependencyNames).toBeInstanceOf(Set);
       expect(manifest.declaredDependencyNames.size).toBe(0);
@@ -246,3 +259,61 @@ describe('loadProjectManifest', () => {
     });
   });
 });
+
+describe('four-group manifest inventory', () => {
+  it('retains overlapping, case-sensitive and prototype-like own keys without mutation', async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'depvitals-inventory-')));
+    const text =
+      '{"dependencies":{"all":"1","__proto__":"2","":"3","Mixed":"4"},"devDependencies":{"all":"5","constructor":"6"},"peerDependencies":{"all":"7","peer-only":"8"},"optionalDependencies":{"all":"9","optional-only":"10","mixed":"11"}}';
+    try {
+      writeFileSync(join(root, 'package.json'), text);
+      const manifest = await loadProjectManifest(root);
+      expect(manifest.dependencies['all']).toBe('1');
+      expect(manifest.devDependencies['all']).toBe('5');
+      expect(manifest.peerDependencies).toEqual({ all: '7', 'peer-only': '8' });
+      expect(manifest.optionalDependencies).toEqual({
+        all: '9',
+        'optional-only': '10',
+        mixed: '11',
+      });
+      expect(readFileSync(join(root, 'package.json'), 'utf8')).toBe(text);
+      expect(Object.hasOwn(manifest.dependencies, '__proto__')).toBe(true);
+      expect(Object.hasOwn(manifest.dependencies, '')).toBe(true);
+      expect([...manifest.declaredDependencyNames]).toEqual([
+        '',
+        'Mixed',
+        '__proto__',
+        'all',
+        'constructor',
+        'mixed',
+        'optional-only',
+        'peer-only',
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+it.each(['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'])(
+  'preserves strict malformed section/value validation for %s',
+  async (group) => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'depvitals-inventory-invalid-')));
+    try {
+      for (const value of [
+        null,
+        [],
+        1,
+        'invalid',
+        { entry: false },
+        { entry: null },
+        { entry: {} },
+      ]) {
+        writeFileSync(join(root, 'package.json'), JSON.stringify({ [group]: value }));
+        expectManifestError(await captureLoadFailure(root), 'invalid-shape', [group]);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
