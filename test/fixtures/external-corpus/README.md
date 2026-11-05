@@ -117,6 +117,10 @@ when collection succeeds; that does **not** mean the projects are clean. Timeout
 exit, identity mismatch or malformed output channels fail collection and do not produce a success
 receipt. Each scan is bounded at 30 seconds and 16 MiB of captured output.
 
+On macOS, the system aliases `/tmp` and `/var` are accepted through their `/private` spellings.
+Project-created root/ancestor symlinks remain rejected. Output containment compares canonical
+directories, including when the input map and receipt use different system-alias spellings.
+
 Snapshot hashes cover sorted recursive directory names, regular file bytes/executable bits and
 symlink target text. Links are not followed; special files are rejected. This is a conservative superset
 of scan inputs, including detector barrier names and nested manifests. Catalog hash means SHA-256 of

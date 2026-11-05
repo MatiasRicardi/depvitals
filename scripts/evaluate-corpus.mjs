@@ -10,7 +10,7 @@ import {
   realpathSync,
   writeFileSync,
 } from 'node:fs';
-import { isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -18,13 +18,31 @@ const json = (file) => JSON.parse(readFileSync(file, 'utf8'));
 const equal = (actual, expected, message) => assert.deepEqual(actual, expected, message);
 const validHash = (value) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 
+/** Resolve system aliases separately from the project symlink policy. */
+function canonicalDirectory(root) {
+  assert(isAbsolute(root), 'Snapshot root must be absolute');
+  let expected = resolve(root);
+  // macOS exposes these system directories through /private aliases. Do not exempt
+  // any project-created link: the remaining path must still match realpath exactly.
+  if (process.platform === 'darwin') {
+    for (const alias of ['/tmp', '/var']) {
+      if (expected === alias || expected.startsWith(alias + '/')) {
+        expected = '/private' + expected;
+        break;
+      }
+    }
+  }
+  assert(lstatSync(expected).isDirectory(), 'Snapshot root must be a real directory');
+  const canonical = realpathSync(root);
+  assert.equal(canonical, expected, 'Snapshot root must not traverse symlinks');
+  return canonical;
+}
+
 /** A conservative whole-snapshot identity: directory names, regular bytes/modes and link text.
  * Symlinks are never followed. Source snapshots must exclude Git internals and installed packages.
  */
 export function identifySnapshot(root) {
-  assert(isAbsolute(root), 'Snapshot root must be absolute');
-  assert(lstatSync(root).isDirectory(), 'Snapshot root must be a real directory');
-  assert.equal(realpathSync(root), resolve(root), 'Snapshot root must not traverse symlinks');
+  root = canonicalDirectory(root);
   const entries = [];
   function visit(directory, prefix) {
     for (const name of readdirSync(directory).sort()) {
@@ -160,7 +178,7 @@ export function evaluateCorpus({ catalog, roots, toolRoot, toolIdentity }, execu
       typeof roots[entry.id] === 'string' && isAbsolute(roots[entry.id]),
       'Explicit absolute acquired roots are required',
     );
-    const root = resolve(roots[entry.id], entry.selectedRoot);
+    const root = canonicalDirectory(resolve(roots[entry.id], entry.selectedRoot));
     verifyInputs(entry, root);
     return { entry, root };
   });
@@ -263,17 +281,21 @@ function main(args) {
   }
   const catalog = json(values['--manifest']);
   const roots = json(values['--roots']);
-  const toolRoot = values['--tool-root'];
+  const toolRoot = canonicalDirectory(values['--tool-root']);
   const toolIdentity = json(values['--tool-identity']);
   // Never write receipts inside source snapshots or the scanner source/build directories.
-  const output = values['--output'];
-  const outputParent = realpathSync(resolve(output, '..'));
-  assert.equal(outputParent, resolve(output, '..'), 'Output parent must not traverse symlinks');
+  const output = join(
+    canonicalDirectory(dirname(values['--output'])),
+    basename(values['--output']),
+  );
   const within = (parent, child) => child === parent || child.startsWith(parent + sep);
   for (const root of Object.values(roots))
-    assert(!within(resolve(root), output), 'Receipt must be outside acquired inputs');
+    assert(!within(canonicalDirectory(root), output), 'Receipt must be outside acquired inputs');
   for (const name of ['src', 'dist'])
-    assert(!within(resolve(toolRoot, name), output), 'Receipt must be outside tool source/build');
+    assert(
+      !within(canonicalDirectory(join(toolRoot, name)), output),
+      'Receipt must be outside tool source/build',
+    );
   const receipt = evaluateCorpus({ catalog, roots, toolRoot, toolIdentity });
   writeFileSync(output, JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
   console.log(

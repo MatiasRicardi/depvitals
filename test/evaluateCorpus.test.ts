@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -98,7 +99,7 @@ function runner(onScan: () => Result): Runner {
   };
 }
 beforeEach(() => {
-  scratch = mkdtempSync(join(tmpdir(), 'depvitals-corpus-control-'));
+  scratch = realpathSync(mkdtempSync(join(tmpdir(), 'depvitals-corpus-control-')));
   project = join(scratch, 'project');
   mkdirSync(project);
   writeFileSync(join(project, 'package.json'), '{}');
@@ -278,6 +279,83 @@ describe('offline external corpus identities', () => {
       rmSync(join(project, 'linked.js'));
       symlinkSync('elsewhere', join(project, 'linked.js'));
       expect(identifySnapshot(project).sha256).not.toBe(before.sha256);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')('rejects project and ancestor symlinks', () => {
+    const linkedProject = join(scratch, 'linked-project');
+    symlinkSync(project, linkedProject);
+    expect(() => identifySnapshot(linkedProject)).toThrow('real directory');
+    const linkedParent = join(scratch, 'linked-parent');
+    symlinkSync(scratch, linkedParent);
+    expect(() => identifySnapshot(join(linkedParent, 'project'))).toThrow(
+      'must not traverse symlinks',
+    );
+    const args = input();
+    args.roots['authored-control'] = join(linkedParent, 'project');
+    expect(() => evaluateCorpus(args)).toThrow('must not traverse symlinks');
+  });
+
+  it.skipIf(process.platform !== 'darwin').each(['/tmp', '/var/tmp'])(
+    'accepts macOS system aliases for acquired roots and CLI output under %s',
+    (base) => {
+      const alias = mkdtempSync(join(base, 'depvitals-corpus-system-alias-'));
+      const canonical = realpathSync(alias);
+      try {
+        project = join(canonical, 'project');
+        mkdirSync(project);
+        writeFileSync(join(project, 'package.json'), '{}');
+        expect(identifySnapshot(join(alias, 'project'))).toEqual(identifySnapshot(project));
+        const args = input();
+        args.roots['authored-control'] = join(alias, 'project');
+        expect(evaluateCorpus(args).observations[0]).toMatchObject({
+          status: 0,
+          nonMutationVerified: true,
+        });
+        const catalog = join(canonical, 'catalog.json');
+        const roots = join(canonical, 'roots.json');
+        const tool = join(canonical, 'tool.json');
+        for (const [path, value] of [
+          [catalog, args.catalog],
+          [roots, args.roots],
+          [tool, args.toolIdentity],
+        ] as const)
+          writeFileSync(path, JSON.stringify(value));
+        const invoke = (output: string): ReturnType<typeof spawnSync> =>
+          spawnSync(
+            process.execPath,
+            [
+              join(toolRoot, 'scripts/evaluate-corpus.mjs'),
+              '--manifest',
+              catalog,
+              '--roots',
+              roots,
+              '--tool-root',
+              toolRoot,
+              '--tool-identity',
+              tool,
+              '--output',
+              output,
+            ],
+            { encoding: 'utf8', timeout: 10000 },
+          );
+        const output = join(alias, 'receipt.json');
+        expect(invoke(output).status).toBe(0);
+        expect(existsSync(join(canonical, 'receipt.json'))).toBe(true);
+        // Mixed alias/canonical spellings must not bypass output containment.
+        const inside = join(canonical, 'project', 'receipt.json');
+        const rejected = invoke(inside);
+        expect(rejected.status).toBe(1);
+        expect(String(rejected.stderr)).toContain('outside acquired inputs');
+        expect(existsSync(inside)).toBe(false);
+        args.roots['authored-control'] = project;
+        writeFileSync(roots, JSON.stringify(args.roots));
+        const aliasedInside = join(alias, 'project', 'receipt.json');
+        expect(String(invoke(aliasedInside).stderr)).toContain('outside acquired inputs');
+        expect(existsSync(inside)).toBe(false);
+      } finally {
+        rmSync(canonical, { recursive: true, force: true });
+      }
     },
   );
 
