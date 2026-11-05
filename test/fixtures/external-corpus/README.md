@@ -3,7 +3,8 @@
 This catalog identifies four public upstream snapshots acquired on November 4, 2026. It is separate
 from the synthetic measurement corpus. No upstream source is redistributed here. The catalog includes
 licenses, immutable commits, archive hashes, full snapshot inventories, selected roots and scope.
-**Expected findings are NOT REVIEWED.** Acquisition and raw CLI observations do not establish accuracy,
+**Acquisition alone does not review findings.** The separately bound baseline sidecar records the
+subsequent REVIEWED source/manifest assessment. Raw CLI observations alone do not establish accuracy,
 compatibility with an entire framework, or that a dependency can safely be removed.
 
 | ID                      | Upstream                                                                                | Selected root | Source files | Selection rationale                                                                                            |
@@ -151,8 +152,7 @@ reader is for the frozen v0.3 baseline format; it is not a production CLI parser
 
 ## Next review
 
-Independent current-contract expectations and project-use assessments are subsequent work. Preserve
-raw output separately; do not derive expected arrays by copying the observed report. Review uncertainty,
+The REVIEWED sidecar now records independent current-contract expectations and project-use assessments. Preserve raw output separately; do not derive expected arrays by copying the observed report. Review uncertainty,
 unsupported patterns, intentional exceptions and confirmed bugs separately before selecting corrections.
 No numerical accuracy or performance claim follows from this initial corpus. The synthetic corpus and
 its regressions remain maintained. Future JSON/query observations extend this same evaluator after

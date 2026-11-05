@@ -374,6 +374,24 @@ describe('offline external corpus identities', () => {
     expect(() => verifyReviewedBaseline(receipt, review)).toThrow('Invalid baseline count');
   });
 
+  it.each([
+    'DepVitals\n',
+    'DepVitals',
+    'DepVitals\n\nUnused dependencies (0)\n',
+    'DepVitals\n\nUnused dependencies (1)\n  missing-final-lf',
+  ])('rejects incomplete or non-canonical reviewed baseline reports: %j', (stdout) => {
+    const receipt = evaluateCorpus(input());
+    const review = reviewedClean(receipt);
+    const observation = receipt.observations[0],
+      entry = review.projects[0];
+    if (!observation || !entry) throw new Error('fixture');
+    observation.stdout = stdout;
+    entry.expectedProcess.stdout = stdout;
+    if (stdout.includes('missing-final-lf'))
+      entry.currentContractExpected.unusedDependencies = ['missing-final-lf'];
+    expect(() => verifyReviewedBaseline(receipt, review)).toThrow();
+  });
+
   it('CLI accepts a complete review and refuses to write a successful receipt for changed expectations', () => {
     const receipt = evaluateCorpus(input());
     const review = reviewedClean(receipt);

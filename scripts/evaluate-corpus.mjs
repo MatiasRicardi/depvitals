@@ -161,8 +161,10 @@ function baselineFindings(stdout) {
   if (stdout === '') return null;
   const findings = { unusedDependencies: [], unusedDevDependencies: [], missingDependencies: [] };
   if (stdout === 'DepVitals\n\nNo dependency issues found.\n') return findings;
-  const sections = stdout.trimEnd().split('\n\n');
+  assert(stdout.endsWith('\n'), 'Baseline report must end with LF');
+  const sections = stdout.slice(0, -1).split('\n\n');
   assert.equal(sections.shift(), 'DepVitals', 'Invalid baseline report heading');
+  assert(sections.length > 0, 'Incomplete baseline report');
   const categories = new Map([
     ['Unused dependencies', 'unusedDependencies'],
     ['Unused devDependencies', 'unusedDevDependencies'],
@@ -171,7 +173,7 @@ function baselineFindings(stdout) {
   const seen = new Set();
   for (const section of sections) {
     const [heading, ...lines] = section.split('\n');
-    const match = /^(.*?) \((\d+)\)$/.exec(heading);
+    const match = /^(.*?) \(([1-9]\d*)\)$/.exec(heading);
     const category = categories.get(match?.[1]);
     assert(category && !seen.has(category), 'Invalid or repeated baseline category');
     seen.add(category);

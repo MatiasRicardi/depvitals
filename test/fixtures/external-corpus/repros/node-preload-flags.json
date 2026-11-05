@@ -1,7 +1,7 @@
 {
   "reproVersion": 1,
   "family": "node-preload-flags",
-  "status": "PROPOSED \u2014 implementation deferred to Step 114 after Step 102 acceptance",
+  "status": "SELECTED for future Step 114; not implemented; Step 102 acceptance required",
   "authorship": "Authored minimal controls; no upstream source copied. Script strings are never executed. Baseline arrays follow documented current command recognition; afterF1 arrays are proposed acceptance, not passing tests or shipped behavior.",
   "grammar": {
     "command": "exact dequoted node after existing supported leading assignments",
@@ -23,7 +23,7 @@
     "file": "package.json",
     "pointer": "/scripts/check",
     "command": "Exact dequoted preload module selector (e.g. @sample/preload/esm), excluding the option prefix.",
-    "occurrence": "Ordinal of external candidate events before declaration/exclusion filtering; preserve outer node event 0 even when undeclared; first eligible preload is 1. Ignore internal/builtin/unsupported values, with no fabricated source positions.",
+    "occurrence": "Ordinal among accepted external candidate events over the entire script, before declaration, deduplication or exclusion filtering. Outer node and first eligible preload are 0 and 1 only when no earlier accepted events exist. For eslint . && node -r preload-alpha they are eslint=0, node=1, preload-alpha=2; an earlier undeclared command also consumes its ordinal. Internal/builtin/unsupported module values produce no external event. No source offsets are invented.",
     "step102Amendments": [
       "EVIDENCE_CONTRACT script via enum/command/occurrence/sort rank",
       "CLI_AND_JSON_CONTRACT script via description",
@@ -708,6 +708,193 @@
       },
       "baselineExit": 0,
       "afterF1Exit": 0
+    },
+    {
+      "id": "preceding-declared-event",
+      "scripts": {
+        "check": "eslint . && node -r preload-alpha ./entry.cjs"
+      },
+      "devDependencies": {
+        "eslint": "*",
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 0,
+      "candidateEventsAfterF1": [
+        {
+          "packageName": "eslint",
+          "command": "eslint",
+          "via": "direct",
+          "occurrence": 0
+        },
+        {
+          "packageName": "node",
+          "command": "node",
+          "via": "direct",
+          "occurrence": 1
+        },
+        {
+          "packageName": "preload-alpha",
+          "command": "preload-alpha",
+          "via": "node-preload",
+          "occurrence": 2
+        }
+      ],
+      "expectedEvidenceAfterF1": {
+        "preload-alpha": [
+          {
+            "kind": "script",
+            "file": "package.json",
+            "pointer": "/scripts/check",
+            "command": "preload-alpha",
+            "via": "node-preload",
+            "occurrence": 2
+          }
+        ],
+        "eslint": [
+          {
+            "kind": "script",
+            "file": "package.json",
+            "pointer": "/scripts/check",
+            "command": "eslint",
+            "via": "direct",
+            "occurrence": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "preceding-undeclared-event",
+      "scripts": {
+        "check": "unlisted-tool && node -r preload-alpha ./entry.cjs"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 0,
+      "candidateEventsAfterF1": [
+        {
+          "packageName": "unlisted-tool",
+          "command": "unlisted-tool",
+          "via": "direct",
+          "occurrence": 0
+        },
+        {
+          "packageName": "node",
+          "command": "node",
+          "via": "direct",
+          "occurrence": 1
+        },
+        {
+          "packageName": "preload-alpha",
+          "command": "preload-alpha",
+          "via": "node-preload",
+          "occurrence": 2
+        }
+      ],
+      "expectedEvidenceAfterF1": {
+        "preload-alpha": [
+          {
+            "kind": "script",
+            "file": "package.json",
+            "pointer": "/scripts/check",
+            "command": "preload-alpha",
+            "via": "node-preload",
+            "occurrence": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "repeated-same-preload",
+      "scripts": {
+        "check": "node -r preload-alpha -r preload-alpha ./entry.cjs"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 0,
+      "candidateEventsAfterF1": [
+        {
+          "packageName": "node",
+          "command": "node",
+          "via": "direct",
+          "occurrence": 0
+        },
+        {
+          "packageName": "preload-alpha",
+          "command": "preload-alpha",
+          "via": "node-preload",
+          "occurrence": 1
+        },
+        {
+          "packageName": "preload-alpha",
+          "command": "preload-alpha",
+          "via": "node-preload",
+          "occurrence": 2
+        }
+      ],
+      "expectedEvidenceAfterF1": {
+        "preload-alpha": [
+          {
+            "kind": "script",
+            "file": "package.json",
+            "pointer": "/scripts/check",
+            "command": "preload-alpha",
+            "via": "node-preload",
+            "occurrence": 1
+          },
+          {
+            "kind": "script",
+            "file": "package.json",
+            "pointer": "/scripts/check",
+            "command": "preload-alpha",
+            "via": "node-preload",
+            "occurrence": 2
+          }
+        ]
+      }
     }
   ],
   "investigationExamples": [

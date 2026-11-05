@@ -1,6 +1,6 @@
 {
   "reviewVersion": 1,
-  "status": "DRAFT",
+  "status": "REVIEWED",
   "reviewedOn": "2026-11-05",
   "toolVersion": "0.3.0",
   "method": "Hand-inspected root/nested declarations, source imports and command/config positions; development-only TypeScript AST location/syntax cross-check. Expected arrays/process channels authored without invoking or importing the scanner/reporter. No target execution or resolution.",
@@ -392,9 +392,35 @@
   ],
   "reviewedBy": {
     "primary": "Codex primary \u2014 source/manifest review",
-    "independent": "PENDING \u2014 maintainer authorization requested"
+    "independent": "Codex independent reviewer /root/step101_independent_review"
   },
   "sourceSnapshotSha256": "be44d48852bf74bc1be25bcf3fce0032552b8a31d404dc283144389f34735d8f",
   "catalogSha256": "5a70ace45f6557080e23be76321ef1c6e89722b589ebcde8754025833bc7b078",
-  "baselineSourceSha": "0920c9a9f50bb15b09e1760941f390e5a0f3df26"
+  "baselineSourceSha": "0920c9a9f50bb15b09e1760941f390e5a0f3df26",
+  "independentReview": {
+    "reviewer": "Codex independent reviewer /root/step101_independent_review",
+    "date": "2026-11-05",
+    "decision": "ACCEPTED",
+    "reviewedParentSha": "a9e3c226fb368e475e9bb71993112a5ed167c13d",
+    "scope": [
+      "Original source/manifests/configuration in all four pinned roots; representative positive evidence in every root and all 16 finding dispositions",
+      "All current-contract arrays/process expectations",
+      "All 31 F1 controls including script-wide ordinals, preceding declared/undeclared events and repeated preload occurrences",
+      "F1/F2/F3 selection and owner bindings; reviewed-baseline comparator"
+    ],
+    "resolvedFindings": [
+      {
+        "id": "SCRIPT_WIDE_ORDINALS",
+        "resolution": "Candidate-event ordinals cover the entire script before declaration/dedup/exclusion filtering; preceding declared or undeclared events shift Node/preload indices, repeated selectors retain distinct occurrences."
+      },
+      {
+        "id": "INCOMPLETE_BASELINE_REPORT",
+        "resolution": "Exact clean sentinel or at least one positive-count category and terminal LF required; trimEnd removed. Four regressions failed before and passed after."
+      }
+    ],
+    "remainingBlockingFindings": [],
+    "remainingUnresolvedProjectUses": ["ts-extras/xo", "preact-render-to-string/rollup"],
+    "limitations": "Read-only source/manifest review; no target execution, dependency install, network acquisition or full-suite/build by reviewer. No future F1 outcome executed or implementation accepted. Step102 integrated freeze remains separate.",
+    "reviewedComparatorSha256": "cb3527c23578c0d38fd8b1e21696feb5d03779d587e3ae871ff97cc61e08798c"
+  }
 }
