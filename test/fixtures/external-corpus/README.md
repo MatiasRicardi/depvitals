@@ -3,7 +3,8 @@
 This catalog identifies four public upstream snapshots acquired on November 4, 2026. It is separate
 from the synthetic measurement corpus. No upstream source is redistributed here. The catalog includes
 licenses, immutable commits, archive hashes, full snapshot inventories, selected roots and scope.
-**Expected findings are NOT REVIEWED.** Acquisition and raw CLI observations do not establish accuracy,
+**Acquisition alone does not review findings.** The separately bound baseline sidecar records the
+subsequent REVIEWED source/manifest assessment. Raw CLI observations alone do not establish accuracy,
 compatibility with an entire framework, or that a dependency can safely be removed.
 
 | ID                      | Upstream                                                                                | Selected root | Source files | Selection rationale                                                                                            |
@@ -134,10 +135,24 @@ paths. Store them in task-owned locations. Prefer neutral temporary roots when r
 operational diagnostics so local usernames do not enter receipts. The checked-in catalog contains no
 machine paths. Routine tests use authored temporary fixtures and never fetch upstream projects.
 
+## Baseline review sidecar
+
+The [baseline review](baseline-review.json) and [project matrix](../../../docs/compatibility/v0.4.0.md)
+record source/manifest judgments separately from raw observations. The acquisition catalog retains
+its original `NOT REVIEWED` state. Review completion belongs to the sidecar; a `DRAFT` sidecar remains
+incomplete even when its primary expectations match the scanner.
+
+After the independent review has actually completed, add
+`--reviewed-baseline test/fixtures/external-corpus/baseline-review.json` to the evaluator invocation.
+The comparator requires `REVIEWED`, distinct recorded reviewers, the same semantic catalog and source
+identity, exact expected process channels and independently specified finding arrays. A draft,
+changed identity or disagreement fails without writing a success receipt. Raw collection without
+this option remains available and does not certify expectations. The development-only terminal
+reader is for the frozen v0.3 baseline format; it is not a production CLI parser or detection engine.
+
 ## Next review
 
-Independent current-contract expectations and project-use assessments are subsequent work. Preserve
-raw output separately; do not derive expected arrays by copying the observed report. Review uncertainty,
+The REVIEWED sidecar now records independent current-contract expectations and project-use assessments. Preserve raw output separately; do not derive expected arrays by copying the observed report. Review uncertainty,
 unsupported patterns, intentional exceptions and confirmed bugs separately before selecting corrections.
 No numerical accuracy or performance claim follows from this initial corpus. The synthetic corpus and
 its regressions remain maintained. Future JSON/query observations extend this same evaluator after

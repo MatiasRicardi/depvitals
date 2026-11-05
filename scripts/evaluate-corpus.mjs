@@ -156,8 +156,110 @@ function validateCatalog(catalog) {
   }
 }
 
+/** Decode only the frozen v0.3 terminal corpus format, never production detection rules. */
+function baselineFindings(stdout) {
+  if (stdout === '') return null;
+  const findings = { unusedDependencies: [], unusedDevDependencies: [], missingDependencies: [] };
+  if (stdout === 'DepVitals\n\nNo dependency issues found.\n') return findings;
+  assert(stdout.endsWith('\n'), 'Baseline report must end with LF');
+  const sections = stdout.slice(0, -1).split('\n\n');
+  assert.equal(sections.shift(), 'DepVitals', 'Invalid baseline report heading');
+  assert(sections.length > 0, 'Incomplete baseline report');
+  const categories = new Map([
+    ['Unused dependencies', 'unusedDependencies'],
+    ['Unused devDependencies', 'unusedDevDependencies'],
+    ['Missing dependencies', 'missingDependencies'],
+  ]);
+  const seen = new Set();
+  for (const section of sections) {
+    const [heading, ...lines] = section.split('\n');
+    const match = /^(.*?) \(([1-9]\d*)\)$/.exec(heading);
+    const category = categories.get(match?.[1]);
+    assert(category && !seen.has(category), 'Invalid or repeated baseline category');
+    seen.add(category);
+    assert.equal(Number(match[2]), lines.length, 'Invalid baseline count');
+    findings[category] = lines.map((line) => {
+      assert(line.startsWith('  '), 'Invalid baseline package row');
+      return line.slice(2);
+    });
+  }
+  return findings;
+}
+
+/** Compare hand-reviewed data with a captured receipt; never derive expectations from the CLI. */
+export function verifyReviewedBaseline(receipt, review) {
+  assert.equal(review.reviewVersion, 1, 'Unknown baseline review version');
+  assert.equal(review.status, 'REVIEWED', 'Independent baseline review is incomplete');
+  assert(
+    typeof review.reviewedBy?.primary === 'string' &&
+      review.reviewedBy.primary.length > 0 &&
+      typeof review.reviewedBy.independent === 'string' &&
+      review.reviewedBy.independent.length > 0 &&
+      review.reviewedBy.primary !== review.reviewedBy.independent,
+    'Distinct primary and independent reviewers required',
+  );
+  assert.equal(
+    receipt.mode,
+    'baseline-terminal-observation',
+    'Expected baseline observation receipt',
+  );
+  assert.equal(receipt.tool.version, review.toolVersion, 'Review tool version changed');
+  assert.equal(
+    receipt.tool.source.sha256,
+    review.sourceSnapshotSha256,
+    'Review source identity changed',
+  );
+  assert.equal(receipt.catalogSha256, review.catalogSha256, 'Review corpus identity changed');
+  equal(
+    receipt.observations.map((p) => p.id).sort(),
+    review.projects.map((p) => p.id).sort(),
+    'Review must cover every corpus observation',
+  );
+  assert.equal(
+    new Set(review.projects.map((p) => p.id)).size,
+    review.projects.length,
+    'Duplicate review ID',
+  );
+  for (const expected of review.projects) {
+    const actual = receipt.observations.find((p) => p.id === expected.id);
+    assert.equal(actual.nonMutationVerified, true, 'Unverified corpus mutation state');
+    equal(
+      { status: actual.status, stdout: actual.stdout, stderr: actual.stderr },
+      expected.expectedProcess,
+      `Reviewed process mismatch: ${expected.id}`,
+    );
+    if (expected.currentContractExpected !== null) {
+      equal(
+        Object.keys(expected.currentContractExpected).sort(),
+        ['missingDependencies', 'unusedDependencies', 'unusedDevDependencies'],
+        'Invalid reviewed finding categories',
+      );
+      for (const names of Object.values(expected.currentContractExpected)) {
+        assert(
+          Array.isArray(names) && names.every((name) => typeof name === 'string'),
+          'Invalid reviewed findings',
+        );
+        equal(names, [...new Set(names)].sort(), 'Reviewed findings must be unique and sorted');
+      }
+    }
+    equal(
+      baselineFindings(actual.stdout),
+      expected.currentContractExpected,
+      `Reviewed finding mismatch: ${expected.id}`,
+    );
+  }
+  return {
+    matched: true,
+    reviewSha256: sha256(JSON.stringify(review)),
+    reviewedBy: review.reviewedBy,
+  };
+}
+
 /** Capture the complete ordinary CLI pipeline, never importing the analyzer or reporter. */
-export function evaluateCorpus({ catalog, roots, toolRoot, toolIdentity }, execute = spawnSync) {
+export function evaluateCorpus(
+  { catalog, roots, toolRoot, toolIdentity, reviewedBaseline },
+  execute = spawnSync,
+) {
   validateCatalog(catalog);
   equal(
     Object.keys(roots).sort(),
@@ -252,7 +354,7 @@ export function evaluateCorpus({ catalog, roots, toolRoot, toolIdentity }, execu
   // A later scan must not have changed a previously scanned project.
   for (const { entry, root } of selected) verifyInputs(entry, root);
   verifyTool();
-  return {
+  const receipt = {
     receiptVersion: 1,
     mode: 'baseline-terminal-observation',
     catalogSha256: sha256(JSON.stringify(catalog)),
@@ -262,15 +364,22 @@ export function evaluateCorpus({ catalog, roots, toolRoot, toolIdentity }, execu
     observations,
     expectationsReviewed: false,
   };
+  if (reviewedBaseline !== undefined) {
+    receipt.reviewVerification = verifyReviewedBaseline(receipt, reviewedBaseline);
+    receipt.expectationsReviewed = true;
+    for (const observation of observations) observation.expectationStatus = 'REVIEWED';
+  }
+  return receipt;
 }
 
 function main(args) {
   const keys = ['--manifest', '--roots', '--tool-root', '--tool-identity', '--output'];
+  const required = [...keys];
+  keys.push('--reviewed-baseline');
   const values = {};
-  assert.equal(
-    args.length,
-    keys.length * 2,
-    'Usage: node scripts/evaluate-corpus.mjs --manifest <catalog.json> --roots <roots.json> --tool-root <depvitals> --tool-identity <identity.json> --output <receipt.json>',
+  assert(
+    args.length % 2 === 0 && args.length >= required.length * 2 && args.length <= keys.length * 2,
+    'Usage: node scripts/evaluate-corpus.mjs --manifest <catalog.json> --roots <roots.json> --tool-root <depvitals> --tool-identity <identity.json> --output <receipt.json> [--reviewed-baseline <review.json>]',
   );
   for (let i = 0; i < args.length; i += 2) {
     assert(
@@ -279,6 +388,10 @@ function main(args) {
     );
     values[args[i]] = resolve(args[i + 1]);
   }
+  assert(
+    required.every((key) => Object.hasOwn(values, key)),
+    'Missing required evaluator option',
+  );
   const catalog = json(values['--manifest']);
   const roots = json(values['--roots']);
   const toolRoot = canonicalDirectory(values['--tool-root']);
@@ -296,10 +409,13 @@ function main(args) {
       !within(canonicalDirectory(join(toolRoot, name)), output),
       'Receipt must be outside tool source/build',
     );
-  const receipt = evaluateCorpus({ catalog, roots, toolRoot, toolIdentity });
+  const reviewedBaseline = values['--reviewed-baseline']
+    ? json(values['--reviewed-baseline'])
+    : undefined;
+  const receipt = evaluateCorpus({ catalog, roots, toolRoot, toolIdentity, reviewedBaseline });
   writeFileSync(output, JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
   console.log(
-    `Captured ${receipt.observations.length} corpus observations; expectations remain NOT REVIEWED.`,
+    `Captured ${receipt.observations.length} corpus observations; expectations ${receipt.expectationsReviewed ? 'REVIEWED and matched' : 'remain NOT REVIEWED'}.`,
   );
 }
 

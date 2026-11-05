@@ -1,0 +1,426 @@
+{
+  "reviewVersion": 1,
+  "status": "REVIEWED",
+  "reviewedOn": "2026-11-05",
+  "toolVersion": "0.3.0",
+  "method": "Hand-inspected root/nested declarations, source imports and command/config positions; development-only TypeScript AST location/syntax cross-check. Expected arrays/process channels authored without invoking or importing the scanner/reporter. No target execution or resolution.",
+  "projects": [
+    {
+      "id": "is-number",
+      "currentContractExpected": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["gulp-format-md"],
+        "missingDependencies": []
+      },
+      "expectedProcess": {
+        "status": 1,
+        "stdout": "DepVitals\n\nUnused devDependencies (1)\n  gulp-format-md\n",
+        "stderr": ""
+      },
+      "assessments": [
+        {
+          "name": "ansi",
+          "declarations": ["devDependencies"],
+          "classification": "source",
+          "location": "benchmark/index.js:2",
+          "rationale": "CommonJS benchmark import."
+        },
+        {
+          "name": "benchmark",
+          "declarations": ["devDependencies"],
+          "classification": "source",
+          "location": "benchmark/index.js:1",
+          "rationale": "CommonJS Suite import."
+        },
+        {
+          "name": "gulp-format-md",
+          "declarations": ["devDependencies"],
+          "classification": "unsupported-pattern",
+          "location": "package.json#/verb/plugins/0",
+          "rationale": "Verb plugin is explicitly configured; arbitrary Verb configuration is outside the supported detectors. No safe-removal claim."
+        },
+        {
+          "name": "mocha",
+          "declarations": ["devDependencies"],
+          "classification": "source+script",
+          "location": "test.js:10; package.json#/scripts/test",
+          "rationale": "Explicit require and direct test command."
+        }
+      ]
+    },
+    {
+      "id": "p-limit",
+      "currentContractExpected": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "expectedProcess": {
+        "status": 0,
+        "stdout": "DepVitals\n\nNo dependency issues found.\n",
+        "stderr": ""
+      },
+      "assessments": [
+        {
+          "name": "ava",
+          "declarations": ["devDependencies"],
+          "classification": "source+script",
+          "location": "test.js:4; package.json#/scripts/test",
+          "rationale": "ESM test import and direct command."
+        },
+        {
+          "name": "in-range",
+          "declarations": ["devDependencies"],
+          "classification": "source",
+          "location": "test.js:5",
+          "rationale": "ESM test import."
+        },
+        {
+          "name": "random-int",
+          "declarations": ["devDependencies"],
+          "classification": "source",
+          "location": "test.js:7",
+          "rationale": "ESM test import."
+        },
+        {
+          "name": "time-span",
+          "declarations": ["devDependencies"],
+          "classification": "source",
+          "location": "test.js:6",
+          "rationale": "ESM test import."
+        },
+        {
+          "name": "tsd",
+          "declarations": ["devDependencies"],
+          "classification": "source+script",
+          "location": "index.test-d.ts:1; package.json#/scripts/test",
+          "rationale": "Declaration-test import and direct command."
+        },
+        {
+          "name": "xo",
+          "declarations": ["devDependencies"],
+          "classification": "script",
+          "location": "package.json#/scripts/test",
+          "rationale": "Direct first executable in test chain."
+        },
+        {
+          "name": "yocto-queue",
+          "declarations": ["dependencies"],
+          "classification": "source",
+          "location": "index.js:1",
+          "rationale": "ESM external import."
+        }
+      ]
+    },
+    {
+      "id": "ts-extras",
+      "currentContractExpected": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["@sindresorhus/tsconfig", "@types/node", "tsx", "xo"],
+        "missingDependencies": []
+      },
+      "expectedProcess": {
+        "status": 1,
+        "stdout": "DepVitals\n\nUnused devDependencies (4)\n  @sindresorhus/tsconfig\n  @types/node\n  tsx\n  xo\n",
+        "stderr": ""
+      },
+      "assessments": [
+        {
+          "name": "@sindresorhus/tsconfig",
+          "declarations": ["devDependencies"],
+          "classification": "unsupported-pattern",
+          "location": "tsconfig.json:2; test/tsconfig.json:2",
+          "rationale": "Explicit extends string; inherited TypeScript configuration is outside supported configuration hints."
+        },
+        {
+          "name": "@types/node",
+          "declarations": ["devDependencies"],
+          "classification": "unsupported-pattern",
+          "location": "test/tsconfig.json#/compilerOptions/types/0; test/object-map-values.ts:399",
+          "rationale": "Node type list and Buffer usage demonstrate type intent; no blanket builtin-to-ambient-type inference is permitted."
+        },
+        {
+          "name": "del-cli",
+          "declarations": ["devDependencies"],
+          "classification": "script",
+          "location": "package.json#/scripts/build",
+          "rationale": "Direct del-cli executable."
+        },
+        {
+          "name": "expect-type",
+          "declarations": ["devDependencies"],
+          "classification": "source",
+          "location": "test/array-at.ts:3",
+          "rationale": "Explicit type assertion library import."
+        },
+        {
+          "name": "tsx",
+          "declarations": ["devDependencies"],
+          "classification": "unsupported-pattern",
+          "location": "package.json#/scripts/test",
+          "rationale": "node --test --import=tsx/esm explicitly selects a preload subpath; candidate F1."
+        },
+        {
+          "name": "type-fest",
+          "declarations": ["dependencies"],
+          "classification": "source",
+          "location": "source/array-at.ts:1",
+          "rationale": "Type-only external imports remain source evidence."
+        },
+        {
+          "name": "typescript",
+          "declarations": ["devDependencies"],
+          "classification": "script",
+          "location": "package.json#/scripts/build; package.json#/scripts/test",
+          "rationale": "tsc mapping supplies supported script evidence."
+        },
+        {
+          "name": "xo",
+          "declarations": ["devDependencies"],
+          "classification": "unresolved",
+          "location": "package.json#/xo",
+          "rationale": "Configuration exists but no direct script/import in the retained root proves its activation. Not certified used or safely removable."
+        }
+      ]
+    },
+    {
+      "id": "preact-render-to-string",
+      "currentContractExpected": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [
+          "@babel/plugin-transform-react-jsx",
+          "@babel/preset-env",
+          "@babel/register",
+          "@changesets/changelog-github",
+          "@types/node",
+          "husky",
+          "lint-staged",
+          "rollup"
+        ],
+        "missingDependencies": ["@preact/preset-vite", "urql", "vite"]
+      },
+      "expectedProcess": {
+        "status": 1,
+        "stdout": "DepVitals\n\nUnused devDependencies (8)\n  @babel/plugin-transform-react-jsx\n  @babel/preset-env\n  @babel/register\n  @changesets/changelog-github\n  @types/node\n  husky\n  lint-staged\n  rollup\n\nMissing dependencies (3)\n  @preact/preset-vite\n  urql\n  vite\n",
+        "stderr": ""
+      },
+      "assessments": [
+        {
+          "name": "@babel/plugin-transform-react-jsx",
+          "declarations": ["devDependencies"],
+          "classification": "unsupported-pattern",
+          "location": "package.json#/babel/env/test/plugins/0/0",
+          "rationale": "Explicit Babel plugin configuration; arbitrary Babel config is outside supported detectors."
+        },
+        {
+          "name": "@babel/preset-env",
+          "declarations": ["devDependencies"],
+          "classification": "unsupported-pattern",
+          "location": "package.json#/babel/env/test/presets/0/0",
+          "rationale": "Explicit Babel preset configuration; not interpreted as source usage."
+        },
+        {
+          "name": "@babel/register",
+          "declarations": ["devDependencies"],
+          "classification": "unsupported-pattern",
+          "location": "package.json#/scripts/bench",
+          "rationale": "BABEL_ENV=test node -r @babel/register explicitly selects a preload; candidate F1."
+        },
+        {
+          "name": "@changesets/changelog-github",
+          "declarations": ["devDependencies"],
+          "classification": "unsupported-pattern",
+          "location": ".changeset/config.json#/changelog/0",
+          "rationale": "Explicit Changesets changelog configuration, outside existing detector fields."
+        },
+        {
+          "name": "@changesets/cli",
+          "declarations": ["devDependencies"],
+          "classification": "script",
+          "location": "package.json#/scripts/version",
+          "rationale": "changeset maps to @changesets/cli with existing exact collision semantics."
+        },
+        {
+          "name": "@preact/preset-vite",
+          "declarations": [],
+          "classification": "project-exception",
+          "location": "demo/vite.config.js:2; demo/package.json#/dependencies/@preact~1preset-vite",
+          "rationale": "Declared in nested demo inventory, absent from selected root. Root-only arithmetic intentionally still reports missing."
+        },
+        {
+          "name": "@preact/signals-core",
+          "declarations": ["devDependencies"],
+          "classification": "source",
+          "location": "test/signals/render.test.jsx:2",
+          "rationale": "ESM external import."
+        },
+        {
+          "name": "@types/node",
+          "declarations": ["devDependencies"],
+          "classification": "unsupported-pattern",
+          "location": "tsconfig.json#/compilerOptions/types/0; src/stream-node.d.ts:2",
+          "rationale": "Explicit Node types and declaration builtin import; typeRoots is nontrivial and not resolved. No blanket ambient-type inference."
+        },
+        {
+          "name": "baseline-rts",
+          "declarations": ["devDependencies"],
+          "classification": "source",
+          "location": "benchmarks/index.js:5",
+          "rationale": "Explicit alias-key import; no npm-alias target resolution is required."
+        },
+        {
+          "name": "benchmarkjs-pretty",
+          "declarations": ["devDependencies"],
+          "classification": "source",
+          "location": "benchmarks/index.js:2",
+          "rationale": "ESM benchmark import."
+        },
+        {
+          "name": "check-export-map",
+          "declarations": ["devDependencies"],
+          "classification": "script",
+          "location": "package.json#/scripts/postbuild",
+          "rationale": "Direct command after independent node segments."
+        },
+        {
+          "name": "copyfiles",
+          "declarations": ["devDependencies"],
+          "classification": "script",
+          "location": "package.json#/scripts/copy-typescript-definition",
+          "rationale": "Direct command."
+        },
+        {
+          "name": "husky",
+          "declarations": ["devDependencies"],
+          "classification": "unsupported-pattern",
+          "location": "package.json#/husky/hooks/pre-commit",
+          "rationale": "Hook configuration intent exists; installation/hook activation is not executed or certified."
+        },
+        {
+          "name": "jsdom",
+          "declarations": ["devDependencies"],
+          "classification": "source",
+          "location": "test/client.test.jsx:2",
+          "rationale": "ESM test import."
+        },
+        {
+          "name": "lint-staged",
+          "declarations": ["devDependencies"],
+          "classification": "unsupported-pattern",
+          "location": "package.json#/husky/hooks/pre-commit; package.json#/lint-staged",
+          "rationale": "Hook command and tool config are outside supported root package scripts/config hints."
+        },
+        {
+          "name": "microbundle",
+          "declarations": ["devDependencies"],
+          "classification": "script",
+          "location": "package.json#/scripts/transpile",
+          "rationale": "Direct build executable."
+        },
+        {
+          "name": "oxfmt",
+          "declarations": ["devDependencies"],
+          "classification": "script",
+          "location": "package.json#/scripts/format",
+          "rationale": "Direct formatting executable."
+        },
+        {
+          "name": "oxlint",
+          "declarations": ["devDependencies"],
+          "classification": "script",
+          "location": "package.json#/scripts/test",
+          "rationale": "Direct lint executable."
+        },
+        {
+          "name": "preact",
+          "declarations": ["devDependencies", "peerDependencies"],
+          "classification": "source",
+          "location": "src/index.js:14; test/render.test.jsx:11",
+          "rationale": "Root subpath normalization and duplicate peer/dev membership are preserved."
+        },
+        {
+          "name": "pretty-format",
+          "declarations": ["devDependencies"],
+          "classification": "source",
+          "location": "src/jsx.js:4",
+          "rationale": "ESM external import."
+        },
+        {
+          "name": "rollup",
+          "declarations": ["devDependencies"],
+          "classification": "unresolved",
+          "location": "package.json#/devDependencies/rollup",
+          "rationale": "No explicit supported source/script reference found in reviewed scope. A transitive build-tool relationship is not proven usage and is not resolved."
+        },
+        {
+          "name": "typescript",
+          "declarations": ["devDependencies"],
+          "classification": "script",
+          "location": "package.json#/scripts/test",
+          "rationale": "tsc executable mapping."
+        },
+        {
+          "name": "urql",
+          "declarations": [],
+          "classification": "project-exception",
+          "location": "demo/src/App.jsx:3; demo/package.json#/dependencies/urql",
+          "rationale": "Nested demo declaration does not extend the selected root inventory."
+        },
+        {
+          "name": "vite",
+          "declarations": [],
+          "classification": "project-exception",
+          "location": "demo/vite.config.js:1; demo/package.json#/devDependencies/vite",
+          "rationale": "Nested demo declaration does not extend the selected root inventory."
+        },
+        {
+          "name": "vitest",
+          "declarations": ["devDependencies"],
+          "classification": "source+script",
+          "location": "vitest.config.ts:1; package.json#/scripts/test:vitest",
+          "rationale": "ESM config-source import and direct command."
+        },
+        {
+          "name": "web-streams-polyfill",
+          "declarations": ["devDependencies"],
+          "classification": "source",
+          "location": "test/compat/stream.test.jsx:51",
+          "rationale": "Literal dynamic import in a conditional branch is eligible evidence."
+        }
+      ]
+    }
+  ],
+  "reviewedBy": {
+    "primary": "Codex primary \u2014 source/manifest review",
+    "independent": "Codex independent reviewer /root/step101_independent_review"
+  },
+  "sourceSnapshotSha256": "be44d48852bf74bc1be25bcf3fce0032552b8a31d404dc283144389f34735d8f",
+  "catalogSha256": "5a70ace45f6557080e23be76321ef1c6e89722b589ebcde8754025833bc7b078",
+  "baselineSourceSha": "0920c9a9f50bb15b09e1760941f390e5a0f3df26",
+  "independentReview": {
+    "reviewer": "Codex independent reviewer /root/step101_independent_review",
+    "date": "2026-11-05",
+    "decision": "ACCEPTED",
+    "reviewedParentSha": "a9e3c226fb368e475e9bb71993112a5ed167c13d",
+    "scope": [
+      "Original source/manifests/configuration in all four pinned roots; representative positive evidence in every root and all 16 finding dispositions",
+      "All current-contract arrays/process expectations",
+      "All 31 F1 controls including script-wide ordinals, preceding declared/undeclared events and repeated preload occurrences",
+      "F1/F2/F3 selection and owner bindings; reviewed-baseline comparator"
+    ],
+    "resolvedFindings": [
+      {
+        "id": "SCRIPT_WIDE_ORDINALS",
+        "resolution": "Candidate-event ordinals cover the entire script before declaration/dedup/exclusion filtering; preceding declared or undeclared events shift Node/preload indices, repeated selectors retain distinct occurrences."
+      },
+      {
+        "id": "INCOMPLETE_BASELINE_REPORT",
+        "resolution": "Exact clean sentinel or at least one positive-count category and terminal LF required; trimEnd removed. Four regressions failed before and passed after."
+      }
+    ],
+    "remainingBlockingFindings": [],
+    "remainingUnresolvedProjectUses": ["ts-extras/xo", "preact-render-to-string/rollup"],
+    "limitations": "Read-only source/manifest review; no target execution, dependency install, network acquisition or full-suite/build by reviewer. No future F1 outcome executed or implementation accepted. Step102 integrated freeze remains separate.",
+    "reviewedComparatorSha256": "cb3527c23578c0d38fd8b1e21696feb5d03779d587e3ae871ff97cc61e08798c"
+  }
+}

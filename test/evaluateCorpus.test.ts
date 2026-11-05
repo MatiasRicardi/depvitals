@@ -44,7 +44,26 @@ type Runner = (
   args: string[],
   options: { cwd: string; env: NodeJS.ProcessEnv; timeout: number },
 ) => Result;
+type BaselineReview = {
+  reviewVersion: number;
+  status: string;
+  reviewedBy: { primary: string; independent: string };
+  toolVersion: string;
+  sourceSnapshotSha256: string;
+  catalogSha256: string;
+  projects: {
+    id: string;
+    currentContractExpected: {
+      unusedDependencies: string[];
+      unusedDevDependencies: string[];
+      missingDependencies: string[];
+    };
+    expectedProcess: { status: number; stdout: string; stderr: string };
+  }[];
+};
 type Receipt = {
+  tool: { version: string; source: Snapshot };
+  catalogSha256: string;
   expectationsReviewed: boolean;
   observations: {
     id: string;
@@ -54,9 +73,10 @@ type Receipt = {
     nonMutationVerified: boolean;
   }[];
 };
-const { identifySnapshot, identifyTool, evaluateCorpus } = (await import(
+const { identifySnapshot, identifyTool, evaluateCorpus, verifyReviewedBaseline } = (await import(
   new URL('../scripts/evaluate-corpus.mjs', import.meta.url).href
 )) as {
+  verifyReviewedBaseline: (receipt: Receipt, review: BaselineReview) => { matched: boolean };
   identifySnapshot: (root: string) => Snapshot;
   identifyTool: (root: string, sha: string) => ToolIdentity;
   evaluateCorpus: (input: Input, execute?: Runner) => Receipt;
@@ -107,6 +127,32 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
+
+function reviewedClean(receipt: Receipt): BaselineReview {
+  return {
+    reviewVersion: 1,
+    status: 'REVIEWED',
+    reviewedBy: { primary: 'authored primary', independent: 'authored independent' },
+    toolVersion: receipt.tool.version,
+    sourceSnapshotSha256: receipt.tool.source.sha256,
+    catalogSha256: receipt.catalogSha256,
+    projects: [
+      {
+        id: 'authored-control',
+        currentContractExpected: {
+          unusedDependencies: [],
+          unusedDevDependencies: [],
+          missingDependencies: [],
+        },
+        expectedProcess: {
+          status: 0,
+          stdout: 'DepVitals\n\nNo dependency issues found.\n',
+          stderr: '',
+        },
+      },
+    ],
+  };
+}
 
 describe('offline external corpus identities', () => {
   it('captures actual clean/findings/error channels through the built CLI without running target code', () => {
@@ -260,6 +306,135 @@ describe('offline external corpus identities', () => {
     expect(result.observations[0]?.stderr).toBe('independent operational diagnostic\n');
     expect(result.expectationsReviewed).toBe(false);
     expect(result.observations[0]).not.toHaveProperty('expected');
+  });
+
+  it('matches separately authored reviewed process/findings while leaving raw observations unreviewed', () => {
+    const receipt = evaluateCorpus(input());
+    expect(verifyReviewedBaseline(receipt, reviewedClean(receipt)).matched).toBe(true);
+    expect(receipt.expectationsReviewed).toBe(false);
+  });
+
+  it.each([
+    'draft',
+    'reviewer',
+    'source',
+    'corpus',
+    'version',
+    'process',
+    'arrays',
+    'duplicate',
+    'missing',
+    'mutation',
+  ])('rejects invalid independent baseline review: %s', (change) => {
+    const receipt = evaluateCorpus(input());
+    const review = reviewedClean(receipt);
+    const entry = review.projects[0];
+    if (!entry) throw new Error('fixture');
+    if (change === 'draft') review.status = 'DRAFT';
+    if (change === 'reviewer') review.reviewedBy.independent = review.reviewedBy.primary;
+    if (change === 'source') review.sourceSnapshotSha256 = '0'.repeat(64);
+    if (change === 'corpus') review.catalogSha256 = '0'.repeat(64);
+    if (change === 'version') review.toolVersion = '9.9.9';
+    if (change === 'process') entry.expectedProcess.status = 1;
+    if (change === 'arrays')
+      entry.currentContractExpected.unusedDependencies.push('independent-decoy');
+    if (change === 'duplicate') review.projects.push(entry);
+    if (change === 'missing') review.projects = [];
+    if (change === 'mutation') {
+      const observation = receipt.observations[0];
+      if (observation) observation.nonMutationVerified = false;
+    }
+    expect(() => verifyReviewedBaseline(receipt, review)).toThrow();
+  });
+
+  it('matches independent finding arrays and rejects report counts that disagree with the reviewed names', () => {
+    const receipt = evaluateCorpus(
+      input(),
+      runner(() => ({
+        status: 1,
+        signal: null,
+        stdout: 'DepVitals\n\nMissing dependencies (1)\n  report-missing\n',
+        stderr: '',
+      })),
+    );
+    const review = reviewedClean(receipt);
+    const entry = review.projects[0];
+    if (!entry) throw new Error('fixture');
+    entry.expectedProcess = {
+      status: 1,
+      stdout: 'DepVitals\n\nMissing dependencies (1)\n  report-missing\n',
+      stderr: '',
+    };
+    entry.currentContractExpected.missingDependencies = ['report-missing'];
+    expect(verifyReviewedBaseline(receipt, review).matched).toBe(true);
+    const observation = receipt.observations[0];
+    if (!observation) throw new Error('fixture');
+    observation.stdout = 'DepVitals\n\nMissing dependencies (2)\n  report-missing\n';
+    entry.expectedProcess.stdout = observation.stdout;
+    expect(() => verifyReviewedBaseline(receipt, review)).toThrow('Invalid baseline count');
+  });
+
+  it.each([
+    'DepVitals\n',
+    'DepVitals',
+    'DepVitals\n\nUnused dependencies (0)\n',
+    'DepVitals\n\nUnused dependencies (1)\n  missing-final-lf',
+  ])('rejects incomplete or non-canonical reviewed baseline reports: %j', (stdout) => {
+    const receipt = evaluateCorpus(input());
+    const review = reviewedClean(receipt);
+    const observation = receipt.observations[0],
+      entry = review.projects[0];
+    if (!observation || !entry) throw new Error('fixture');
+    observation.stdout = stdout;
+    entry.expectedProcess.stdout = stdout;
+    if (stdout.includes('missing-final-lf'))
+      entry.currentContractExpected.unusedDependencies = ['missing-final-lf'];
+    expect(() => verifyReviewedBaseline(receipt, review)).toThrow();
+  });
+
+  it('CLI accepts a complete review and refuses to write a successful receipt for changed expectations', () => {
+    const receipt = evaluateCorpus(input());
+    const review = reviewedClean(receipt);
+    const args = input();
+    const catalog = join(scratch, 'catalog.json'),
+      roots = join(scratch, 'roots.json'),
+      tool = join(scratch, 'tool.json'),
+      reviewFile = join(scratch, 'review.json');
+    for (const [path, value] of [
+      [catalog, args.catalog],
+      [roots, args.roots],
+      [tool, args.toolIdentity],
+      [reviewFile, review],
+    ] as const)
+      writeFileSync(path, JSON.stringify(value));
+    const invoke = (output: string): ReturnType<typeof spawnSync> =>
+      spawnSync(
+        process.execPath,
+        [
+          join(toolRoot, 'scripts/evaluate-corpus.mjs'),
+          '--manifest',
+          catalog,
+          '--roots',
+          roots,
+          '--tool-root',
+          toolRoot,
+          '--tool-identity',
+          tool,
+          '--output',
+          output,
+          '--reviewed-baseline',
+          reviewFile,
+        ],
+        { encoding: 'utf8', timeout: 10000 },
+      );
+    const output = join(scratch, 'reviewed-receipt.json');
+    expect(invoke(output).status).toBe(0);
+    expect((JSON.parse(readFileSync(output, 'utf8')) as Receipt).expectationsReviewed).toBe(true);
+    review.status = 'DRAFT';
+    writeFileSync(reviewFile, JSON.stringify(review));
+    const invalid = join(scratch, 'invalid-receipt.json');
+    expect(invoke(invalid).status).toBe(1);
+    expect(existsSync(invalid)).toBe(false);
   });
 
   it('rejects installed packages without descending into node_modules', () => {

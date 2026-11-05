@@ -1,0 +1,979 @@
+{
+  "reproVersion": 1,
+  "family": "node-preload-flags",
+  "status": "SELECTED for future Step 114; not implemented; Step 102 acceptance required",
+  "authorship": "Authored minimal controls; no upstream source copied. Script strings are never executed. Baseline arrays follow documented current command recognition; afterF1 arrays are proposed acceptance, not passing tests or shipped behavior.",
+  "grammar": {
+    "command": "exact dequoted node after existing supported leading assignments",
+    "flags": [
+      "-r MODULE",
+      "--require MODULE",
+      "--require=MODULE",
+      "--import MODULE",
+      "--import=MODULE"
+    ],
+    "passThroughFlags": ["--test"],
+    "stop": "First non-option operand or --; do not inspect subsequent arguments.",
+    "rejectNewPreloads": "Unknown/malformed option prefix, eval/print/loader/compact flags or existing unsupported shell region rejects all preload candidates of that node segment, including valid preloads before the rejected option. Preserve ordinary outer command credit; opaque shell segments preserve their ordinary no-credit rule.",
+    "module": "Use existing package-specifier classifier, normalize recognized external subpaths, no executable mapping or installed resolution. Existing dependency/devDependency gate only; no missing from scripts."
+  },
+  "evidenceProposal": {
+    "kind": "script",
+    "via": "node-preload",
+    "file": "package.json",
+    "pointer": "/scripts/check",
+    "command": "Exact dequoted preload module selector (e.g. @sample/preload/esm), excluding the option prefix.",
+    "occurrence": "Ordinal among accepted external candidate events over the entire script, before declaration, deduplication or exclusion filtering. Outer node and first eligible preload are 0 and 1 only when no earlier accepted events exist. For eslint . && node -r preload-alpha they are eslint=0, node=1, preload-alpha=2; an earlier undeclared command also consumes its ordinal. Internal/builtin/unsupported module values produce no external event. No source offsets are invented.",
+    "step102Amendments": [
+      "EVIDENCE_CONTRACT script via enum/command/occurrence/sort rank",
+      "CLI_AND_JSON_CONTRACT script via description",
+      "report-v1.schema.json script via enum; add conformance examples/controls"
+    ]
+  },
+  "cases": [
+    {
+      "id": "require-separated",
+      "scripts": {
+        "check": "node -r preload-alpha ./entry.cjs"
+      },
+      "devDependencies": {
+        "preload-alpha": "*",
+        "preload-decoy": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha", "preload-decoy"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-decoy"],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 1
+    },
+    {
+      "id": "require-long",
+      "scripts": {
+        "check": "node --require preload-alpha ./entry.cjs"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 0
+    },
+    {
+      "id": "require-equals",
+      "scripts": {
+        "check": "node --require=preload-alpha ./entry.cjs"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 0
+    },
+    {
+      "id": "import-equals-subpath",
+      "scripts": {
+        "check": "node --test --import=@sample/preload/esm tests.cjs"
+      },
+      "devDependencies": {
+        "@sample/preload": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["@sample/preload"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 0
+    },
+    {
+      "id": "import-separated",
+      "scripts": {
+        "check": "node --import preload-alpha/esm ./entry.cjs"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 0
+    },
+    {
+      "id": "multiple-preloads",
+      "scripts": {
+        "check": "node -r preload-alpha --import=preload-beta/esm ./entry.cjs"
+      },
+      "devDependencies": {
+        "preload-alpha": "*",
+        "preload-beta": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha", "preload-beta"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 0
+    },
+    {
+      "id": "node-candidate-preserved",
+      "scripts": {
+        "check": "node -r preload-alpha ./entry.cjs"
+      },
+      "devDependencies": {
+        "node": "*",
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 0
+    },
+    {
+      "id": "no-binary-alias-mapping",
+      "scripts": {
+        "check": "node -r tsc ./entry.cjs"
+      },
+      "devDependencies": {
+        "tsc": "*",
+        "typescript": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["tsc", "typescript"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["typescript"],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 1
+    },
+    {
+      "id": "quoted-module",
+      "scripts": {
+        "check": "node --require 'preload-alpha' ./entry.cjs"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 0
+    },
+    {
+      "id": "leading-assignment",
+      "scripts": {
+        "check": "BABEL_ENV=test node -r @sample/register ./entry.cjs"
+      },
+      "devDependencies": {
+        "@sample/register": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["@sample/register"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 0
+    },
+    {
+      "id": "after-script-operand",
+      "scripts": {
+        "check": "node ./entry.cjs --require preload-alpha"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 1
+    },
+    {
+      "id": "after-double-dash",
+      "scripts": {
+        "check": "node -- --require preload-alpha"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 1
+    },
+    {
+      "id": "eval-is-opaque",
+      "scripts": {
+        "check": "node -e 'require(\"preload-alpha\")' --require preload-beta"
+      },
+      "devDependencies": {
+        "preload-alpha": "*",
+        "preload-beta": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha", "preload-beta"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha", "preload-beta"],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 1
+    },
+    {
+      "id": "unknown-flag-abandons-preloads",
+      "scripts": {
+        "check": "node -r preload-alpha --unknown --import preload-beta"
+      },
+      "devDependencies": {
+        "preload-alpha": "*",
+        "preload-beta": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha", "preload-beta"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha", "preload-beta"],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 1
+    },
+    {
+      "id": "missing-module",
+      "scripts": {
+        "check": "node --require"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 1
+    },
+    {
+      "id": "dash-module",
+      "scripts": {
+        "check": "node --require --test"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 1
+    },
+    {
+      "id": "builtin-module",
+      "scripts": {
+        "check": "node --import=node:fs"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 1
+    },
+    {
+      "id": "relative-module",
+      "scripts": {
+        "check": "node -r ./preload-alpha.cjs"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 1
+    },
+    {
+      "id": "version-specifier",
+      "scripts": {
+        "check": "node --require=preload-alpha@1"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 1
+    },
+    {
+      "id": "opaque-shell-segment",
+      "scripts": {
+        "check": "node -r preload-alpha > output.txt"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 1
+    },
+    {
+      "id": "quoted-decoy",
+      "scripts": {
+        "check": "echo 'node -r preload-alpha'"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 1
+    },
+    {
+      "id": "arbitrary-wrapper",
+      "scripts": {
+        "check": "cross-env NODE_ENV=test node -r preload-alpha"
+      },
+      "devDependencies": {
+        "cross-env": "*",
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 1
+    },
+    {
+      "id": "path-executable",
+      "scripts": {
+        "check": "./node -r preload-alpha"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 1
+    },
+    {
+      "id": "compact-flag-deferred",
+      "scripts": {
+        "check": "node -rpreload-alpha ./entry.cjs"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 1
+    },
+    {
+      "id": "undeclared-no-missing",
+      "scripts": {
+        "check": "node --require absent-preload"
+      },
+      "devDependencies": {},
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "baselineExit": 0,
+      "afterF1Exit": 0
+    },
+    {
+      "id": "peer-only-no-credit",
+      "scripts": {
+        "check": "node --require peer-preload"
+      },
+      "devDependencies": {},
+      "peerDependencies": {
+        "peer-preload": "*"
+      },
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "baselineExit": 0,
+      "afterF1Exit": 0
+    },
+    {
+      "id": "independent-next-segment",
+      "scripts": {
+        "check": "node -r preload-alpha && eslint ."
+      },
+      "devDependencies": {
+        "preload-alpha": "*",
+        "eslint": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 0
+    },
+    {
+      "id": "dependency-exclusion",
+      "scripts": {
+        "check": "node -r preload-alpha ./entry.cjs"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": ["preload-alpha"],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "baselineExit": 0,
+      "afterF1Exit": 0
+    },
+    {
+      "id": "preceding-declared-event",
+      "scripts": {
+        "check": "eslint . && node -r preload-alpha ./entry.cjs"
+      },
+      "devDependencies": {
+        "eslint": "*",
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 0,
+      "candidateEventsAfterF1": [
+        {
+          "packageName": "eslint",
+          "command": "eslint",
+          "via": "direct",
+          "occurrence": 0
+        },
+        {
+          "packageName": "node",
+          "command": "node",
+          "via": "direct",
+          "occurrence": 1
+        },
+        {
+          "packageName": "preload-alpha",
+          "command": "preload-alpha",
+          "via": "node-preload",
+          "occurrence": 2
+        }
+      ],
+      "expectedEvidenceAfterF1": {
+        "preload-alpha": [
+          {
+            "kind": "script",
+            "file": "package.json",
+            "pointer": "/scripts/check",
+            "command": "preload-alpha",
+            "via": "node-preload",
+            "occurrence": 2
+          }
+        ],
+        "eslint": [
+          {
+            "kind": "script",
+            "file": "package.json",
+            "pointer": "/scripts/check",
+            "command": "eslint",
+            "via": "direct",
+            "occurrence": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "preceding-undeclared-event",
+      "scripts": {
+        "check": "unlisted-tool && node -r preload-alpha ./entry.cjs"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 0,
+      "candidateEventsAfterF1": [
+        {
+          "packageName": "unlisted-tool",
+          "command": "unlisted-tool",
+          "via": "direct",
+          "occurrence": 0
+        },
+        {
+          "packageName": "node",
+          "command": "node",
+          "via": "direct",
+          "occurrence": 1
+        },
+        {
+          "packageName": "preload-alpha",
+          "command": "preload-alpha",
+          "via": "node-preload",
+          "occurrence": 2
+        }
+      ],
+      "expectedEvidenceAfterF1": {
+        "preload-alpha": [
+          {
+            "kind": "script",
+            "file": "package.json",
+            "pointer": "/scripts/check",
+            "command": "preload-alpha",
+            "via": "node-preload",
+            "occurrence": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "repeated-same-preload",
+      "scripts": {
+        "check": "node -r preload-alpha -r preload-alpha ./entry.cjs"
+      },
+      "devDependencies": {
+        "preload-alpha": "*"
+      },
+      "peerDependencies": {},
+      "source": "",
+      "ignoreDependencies": [],
+      "baseline": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["preload-alpha"],
+        "missingDependencies": []
+      },
+      "afterF1": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "baselineExit": 1,
+      "afterF1Exit": 0,
+      "candidateEventsAfterF1": [
+        {
+          "packageName": "node",
+          "command": "node",
+          "via": "direct",
+          "occurrence": 0
+        },
+        {
+          "packageName": "preload-alpha",
+          "command": "preload-alpha",
+          "via": "node-preload",
+          "occurrence": 1
+        },
+        {
+          "packageName": "preload-alpha",
+          "command": "preload-alpha",
+          "via": "node-preload",
+          "occurrence": 2
+        }
+      ],
+      "expectedEvidenceAfterF1": {
+        "preload-alpha": [
+          {
+            "kind": "script",
+            "file": "package.json",
+            "pointer": "/scripts/check",
+            "command": "preload-alpha",
+            "via": "node-preload",
+            "occurrence": 1
+          },
+          {
+            "kind": "script",
+            "file": "package.json",
+            "pointer": "/scripts/check",
+            "command": "preload-alpha",
+            "via": "node-preload",
+            "occurrence": 2
+          }
+        ]
+      }
+    }
+  ],
+  "investigationExamples": [
+    {
+      "id": "cross-env-wrapper",
+      "manifest": {
+        "devDependencies": {
+          "cross-env": "*",
+          "wrapped-tool": "*"
+        },
+        "scripts": {
+          "check": "cross-env MODE=test wrapped-tool"
+        }
+      },
+      "source": "",
+      "currentExpected": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["wrapped-tool"],
+        "missingDependencies": []
+      },
+      "disposition": "unsupported-pattern; not present in pinned corpus; deferred, no recursive wrapper feature selected"
+    },
+    {
+      "id": "require-resolve-literal",
+      "manifest": {
+        "dependencies": {
+          "resolve-target": "*"
+        }
+      },
+      "source": "const located = require.resolve('resolve-target');\n",
+      "sourceFile": "index.cjs",
+      "currentExpected": {
+        "unusedDependencies": ["resolve-target"],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "disposition": "unsupported-pattern; no corpus occurrence; deferred, no new source reference enum selected"
+    },
+    {
+      "id": "ambient-node-types",
+      "manifest": {
+        "devDependencies": {
+          "@types/node": "*"
+        }
+      },
+      "source": "const bytes = Buffer.from([1]);\n",
+      "sourceFile": "index.ts",
+      "currentExpected": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["@types/node"],
+        "missingDependencies": []
+      },
+      "disposition": "unsupported-pattern present in two corpus roots; blanket inference excluded; retain explicit limitation"
+    },
+    {
+      "id": "local-require-parameter",
+      "manifest": {},
+      "source": "function local(require) { return require('parameter-decoy'); }\n",
+      "sourceFile": "index.cjs",
+      "currentExpected": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "disposition": "already supported parameter ownership; no correction selected"
+    },
+    {
+      "id": "local-require-variable",
+      "manifest": {
+        "type": "module"
+      },
+      "source": "const require = (value) => value;\nrequire('local-decoy');\n",
+      "sourceFile": "index.mjs",
+      "currentExpected": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": ["local-decoy"]
+      },
+      "disposition": "unsupported general lexical binding; not present in corpus; defer resolver/scope expansion"
+    }
+  ]
+}
