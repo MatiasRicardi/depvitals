@@ -1,7 +1,7 @@
 /**
  * Read-only derivation of the production executable-to-package catalog, shared by the Step 54 tests.
  *
- * The catalog in `src/scanner/scriptUsage.ts` intentionally exposes only `findPackageScriptUsage`, so
+ * The catalog in `src/scanner/scriptUsage.ts` stays private behind the usage collector/projection, so
  * the tests need the mapping as data (counts, grouping per mapped package, fixture coverage) without
  * widening that module surface. The source file is therefore read as inert text: nothing is imported
  * here from it, nothing is executed, and nothing is written back. The parsers are pure string
