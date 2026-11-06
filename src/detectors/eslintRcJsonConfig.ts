@@ -50,12 +50,17 @@
 import { lstat, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
-import { loadProjectManifest, ProjectManifestError } from '../scanner/projectManifest.js';
+import {
+  loadProjectManifest,
+  ProjectManifestError,
+  type ProjectManifest,
+} from '../scanner/projectManifest.js';
 import { SourceFilesError } from '../scanner/sourceFiles.js';
 import {
   collectEslintConfigUsage,
   readLegacyEslintPrecedence,
   type EslintConfigOccurrence,
+  type LegacyEslintPrecedence,
 } from './eslintManifestConfig.js';
 
 /**
@@ -128,12 +133,10 @@ export async function collectEslintRcJsonUsage(
     return [];
   }
 
-  let declaredPackageNames: ReadonlySet<string>;
+  let manifest: ProjectManifest;
 
   try {
-    const manifest = await loadProjectManifest(root);
-
-    declaredPackageNames = manifest.declaredDependencyNames;
+    manifest = await loadProjectManifest(root);
   } catch (error) {
     if (error instanceof ProjectManifestError || error instanceof SourceFilesError) {
       // Manifest failures stay with the manifest loader and the analyzer, which report them as they
@@ -143,6 +146,18 @@ export async function collectEslintRcJsonUsage(
 
     throw error;
   }
+
+  return collectEslintRcJsonUsageForManifest(manifest, precedence);
+}
+
+/** Read the active rc using the same validated inventory and precedence as the other channels. */
+export async function collectEslintRcJsonUsageForManifest(
+  manifest: ProjectManifest,
+  precedence: LegacyEslintPrecedence,
+): Promise<readonly EslintConfigOccurrence[]> {
+  if (precedence.hardBarrier) return [];
+  const root = manifest.root;
+  const declaredPackageNames = manifest.declaredDependencyNames;
 
   // Reuse the on-disk entry name when the legacy `.eslintrc.json` was found under a different
   // casing, so the reader opens the file that actually exists instead of assuming the canonical

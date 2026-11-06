@@ -1,5 +1,5 @@
 /**
- * Asynchronous CLI orchestration for `v0.1.0`.
+ * Asynchronous CLI orchestration.
  *
  * `runCli` turns parsed arguments into a plain {@link CliResult}. It performs no process I/O of its
  * own: it never writes to stdout/stderr and never touches `process`. The thin adapter in
@@ -7,9 +7,8 @@
  *
  * The responsibilities here are:
  * - delegate argument validation to the pure {@link parseCliArgs};
- * - hand the configuration-only package names recognized in the project to the analyzer, which is
- *   the only component allowed to turn evidence into an unused/missing category;
- * - run the static dependency scan with `analyzeProject`;
+ * - prepare one validated root/policy/detector context for the analyzer, which alone owns findings;
+ * - run the static dependency scan with `analyzeProjectWithContext`;
  * - render the report with the pure terminal reporter;
  * - decide the scan exit code from `hasDependencyIssues`, not from the report string;
  * - convert operational failures into a concise CLI error result.
@@ -18,13 +17,16 @@
  * `src/core`, and the reporter stays in `src/reporters`.
  */
 
-import { readProjectConfig, ProjectConfigError } from '../config/readProjectConfig.js';
-import { AnalysisError, type AnalysisResult, analyzeProject } from '../core/analyzeProject.js';
-import { findEslintManifestUsage } from '../detectors/eslintManifestConfig.js';
-import { EslintRcJsonError, findEslintRcJsonUsage } from '../detectors/eslintRcJsonConfig.js';
-import { findJestManifestUsage } from '../detectors/jestManifestConfig.js';
+import { ProjectConfigError } from '../config/readProjectConfig.js';
+import {
+  AnalysisError,
+  type AnalysisResult,
+  analyzeProjectWithContext,
+} from '../core/analyzeProject.js';
+import { createScanContext } from '../core/scanContext.js';
+import { EslintRcJsonError } from '../detectors/eslintRcJsonConfig.js';
 import { formatTerminalReport, hasDependencyIssues } from '../reporters/terminalReporter.js';
-import { loadProjectManifest, ProjectManifestError } from '../scanner/projectManifest.js';
+import { ProjectManifestError } from '../scanner/projectManifest.js';
 import { SourceFilesError } from '../scanner/sourceFiles.js';
 
 import { parseCliArgs } from './parseCliArgs.js';
@@ -98,16 +100,8 @@ async function runScan(projectPath: string): Promise<CliResult> {
   let result: AnalysisResult;
 
   try {
-    // Validate mandatory root metadata, then the selected-root policy, before detector reads.
-    await loadProjectManifest(projectPath);
-    const config = await readProjectConfig(projectPath);
-
-    // Legacy ESLint configuration contributes configuration-only names. They are passed through the
-    // analyzer's config handoff, which merges them into `usedNames` only, so they can suppress an
-    // unused finding and can never create a missing one.
-    const configUsedNames = await collectConfigUsedNames(projectPath);
-
-    result = await analyzeProject(projectPath, { ...config, configUsedNames });
+    const context = await createScanContext(projectPath);
+    result = await analyzeProjectWithContext(context);
   } catch (error) {
     if (isOperationalError(error)) {
       return { exitCode: 1, stdout: '', stderr: `${error.message}\n` };
@@ -123,24 +117,6 @@ async function runScan(projectPath: string): Promise<CliResult> {
   const hasIssues = hasDependencyIssues(result);
 
   return { exitCode: hasIssues ? 1 : 0, stdout: formatTerminalReport(result), stderr: '' };
-}
-
-/**
- * Collect the configuration-only package names of one project.
- *
- * Both legacy ESLint sources share one precedence computation: a hard barrier disables both, and
- * otherwise `.eslintrc.json` wins over the `package.json#eslintConfig` block, so the two readers are
- * mutually exclusive and the union never combines contradictory configuration. The `package.json#jest`
- * reader is independent of the ESLint rules but obeys the same style of guard, producing nothing once
- * a root `jest.config.*` file exists. The analyzer re-validates and sorts the merged hints, so no
- * ordering is imposed here.
- */
-async function collectConfigUsedNames(projectPath: string): Promise<ReadonlySet<string>> {
-  const manifestNames = await findEslintManifestUsage(projectPath);
-  const eslintRcJsonNames = await findEslintRcJsonUsage(projectPath);
-  const jestNames = await findJestManifestUsage(projectPath);
-
-  return new Set<string>([...manifestNames, ...eslintRcJsonNames, ...jestNames]);
 }
 
 /**

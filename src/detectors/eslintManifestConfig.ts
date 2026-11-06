@@ -182,6 +182,13 @@ export async function readLegacyEslintPrecedence(
     };
   }
 
+  return legacyEslintPrecedenceFromEntries(entries);
+}
+
+/** Pure precedence over validated root entry names, shared by one CLI scan. */
+export function legacyEslintPrecedenceFromEntries(
+  entries: readonly string[],
+): LegacyEslintPrecedence {
   const has = (names: ReadonlySet<string>): boolean =>
     entries.some((entry) => names.has(entry.toLowerCase()));
   // The legacy `.eslintrc.json` name is matched case-insensitively (Windows/macOS resolve the

@@ -258,6 +258,11 @@ export async function hasRootJestConfigEntry(root: string): Promise<boolean> {
     return false;
   }
 
+  return hasRootJestConfigEntries(entries);
+}
+
+/** Pure barrier decision for a shared per-scan root listing. */
+export function hasRootJestConfigEntries(entries: readonly string[]): boolean {
   return entries.some((entry) => JEST_CONFIG_ENTRY_NAMES.has(entry.toLowerCase()));
 }
 
