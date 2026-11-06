@@ -19,6 +19,8 @@
  * template interpolations (`${...}`) is still lexed, so specifiers there are found.
  */
 
+import type { SourceEvidence } from '../core/evidence.js';
+
 /**
  * The kind of module construct a specifier came from.
  */
@@ -31,6 +33,13 @@ export type ModuleSpecifierOccurrence = {
   readonly specifier: string;
   readonly kind: ModuleSpecifierKind;
 };
+
+/** A retained occurrence measured in the original, unnormalized UTF-16 source text. */
+export type PositionedModuleSpecifierOccurrence = ModuleSpecifierOccurrence & {
+  readonly position: Readonly<SourceEvidence['position']>;
+};
+
+type OffsetModuleSpecifierOccurrence = ModuleSpecifierOccurrence & { readonly offset: number };
 
 /**
  * Error code for the module specifier scanner.
@@ -83,6 +92,20 @@ export function extractModuleSpecifiers(
   source: string,
   options: ExtractModuleSpecifiersOptions = {},
 ): readonly ModuleSpecifierOccurrence[] {
+  return collectModuleSpecifiers(source, options).map(({ specifier, kind }) => ({
+    specifier,
+    kind,
+  }));
+}
+
+/**
+ * Authoritative occurrence collector. The lexer must finish successfully before locations escape.
+ * Recognition is shared with the legacy projection above; no additional extraction is performed.
+ */
+export function collectModuleSpecifiers(
+  source: string,
+  options: ExtractModuleSpecifiersOptions = {},
+): readonly PositionedModuleSpecifierOccurrence[] {
   const jsx = options.jsx ?? false;
   // Ambiguous input gets one non-interpreting lexical probe and one definitive extraction. No
   // source reread, parser retry after an exception, or repeated per-statement suffix scans.
@@ -90,12 +113,35 @@ export function extractModuleSpecifiers(
     options.module === 'detect'
       ? tokenize(source, jsx, false, true).some((token) => token.moduleSignal === true)
       : (options.module ?? false);
-  return interpret(tokenize(source, jsx, module));
+  const occurrences = interpret(tokenize(source, jsx, module));
+  let cursor = 0;
+  let line = 1;
+  let column = 1;
+  // Interpreter output is in literal encounter order. Each original UTF-16 unit is visited at
+  // most once, except a bounded CRLF lookahead; no per-occurrence prefix/suffix scan is needed.
+  return occurrences.map(({ specifier, kind, offset }) => {
+    while (cursor < offset) {
+      const character = source[cursor++];
+      if (character === '\r') {
+        if (source[cursor] === '\n') cursor++;
+        line++;
+        column = 1;
+      } else if (character === '\n' || character === '\u2028' || character === '\u2029') {
+        line++;
+        column = 1;
+      } else {
+        column++;
+      }
+    }
+    return { specifier, kind, position: { offset, line, column } };
+  });
 }
 
 /* -------------------------------------------------------------------------- */
 /* Tokenizer                                                                  */
 /* -------------------------------------------------------------------------- */
+
+type StringToken = Extract<Token, { kind: 'string' }>;
 
 type RequireScope = {
   readonly parent: RequireScope | undefined;
@@ -4042,8 +4088,8 @@ function isRegexStart(
 /**
  * Walk the significant tokens and record specifiers for the required import/export/require forms.
  */
-function interpret(tokens: readonly Token[]): ModuleSpecifierOccurrence[] {
-  const occurrences: ModuleSpecifierOccurrence[] = [];
+function interpret(tokens: readonly Token[]): OffsetModuleSpecifierOccurrence[] {
+  const occurrences: OffsetModuleSpecifierOccurrence[] = [];
   const n = tokens.length;
   let closingDelimiters: ReadonlyMap<number, number> | undefined;
   const closingDelimiter = (openIndex: number): number | undefined => {
@@ -4142,7 +4188,7 @@ function isMemberName(tokens: readonly Token[], i: number): boolean {
 function handleImport(
   tokens: readonly Token[],
   i: number,
-  occurrences: ModuleSpecifierOccurrence[],
+  occurrences: OffsetModuleSpecifierOccurrence[],
   closingDelimiter: (openIndex: number) => number | undefined,
 ): number {
   const next = tokens[i + 1];
@@ -4159,7 +4205,7 @@ function handleImport(
 
   // `import 'pkg'`
   if (next?.kind === 'string') {
-    occurrences.push({ specifier: next.value, kind: 'import' });
+    occurrences.push({ specifier: next.value, kind: 'import', offset: next.offset });
     return i + 2;
   }
 
@@ -4168,7 +4214,11 @@ function handleImport(
     const specifier = dynamicImportSpecifier(tokens, i + 2, closingDelimiter);
 
     if (specifier !== undefined) {
-      occurrences.push({ specifier, kind: 'dynamic-import' });
+      occurrences.push({
+        specifier: specifier.value,
+        kind: 'dynamic-import',
+        offset: specifier.offset,
+      });
       return i + 3;
     }
 
@@ -4185,7 +4235,7 @@ function handleImport(
 function handleExport(
   tokens: readonly Token[],
   i: number,
-  occurrences: ModuleSpecifierOccurrence[],
+  occurrences: OffsetModuleSpecifierOccurrence[],
 ): number {
   // Member names share the same boundary rule as import and require.
   if (isMemberName(tokens, i)) {
@@ -4198,14 +4248,14 @@ function handleExport(
 function scanImportSource(
   tokens: readonly Token[],
   i: number,
-  occurrences: ModuleSpecifierOccurrence[],
+  occurrences: OffsetModuleSpecifierOccurrence[],
   kind: ModuleSpecifierKind,
 ): number {
   const sourceIndex =
     kind === 'export-from' ? exportSourceIndex(tokens, i) : importSourceIndex(tokens, i);
   const source = sourceIndex === undefined ? undefined : tokens[sourceIndex];
   if (source?.kind === 'string' && sourceIndex !== undefined) {
-    occurrences.push({ specifier: source.value, kind });
+    occurrences.push({ specifier: source.value, kind, offset: source.offset });
     return sourceIndex + 1;
   }
   return i + 1;
@@ -4337,7 +4387,7 @@ function exportSourceIndex(tokens: readonly Token[], exportIndex: number): numbe
 function handleRequire(
   tokens: readonly Token[],
   i: number,
-  occurrences: ModuleSpecifierOccurrence[],
+  occurrences: OffsetModuleSpecifierOccurrence[],
 ): number {
   // `obj.require(...)`: not the global CommonJS require.
   if (isMemberName(tokens, i)) {
@@ -4351,7 +4401,7 @@ function handleRequire(
     const specifier = soleStringSpecifier(tokens, i + 2);
 
     if (specifier !== undefined) {
-      occurrences.push({ specifier, kind: 'require' });
+      occurrences.push({ specifier: specifier.value, kind: 'require', offset: specifier.offset });
       return i + 3;
     }
   }
@@ -4517,7 +4567,7 @@ function dynamicImportSpecifier(
   tokens: readonly Token[],
   argIndex: number,
   closingDelimiter: (openIndex: number) => number | undefined,
-): string | undefined {
+): StringToken | undefined {
   const sole = soleStringSpecifier(tokens, argIndex);
 
   if (sole !== undefined) {
@@ -4542,16 +4592,16 @@ function dynamicImportSpecifier(
 
   const next = isPunct(tokens[optionsClose + 1], ',') ? optionsClose + 2 : optionsClose + 1;
 
-  return isPunct(tokens[next], ')') ? specifier.value : undefined;
+  return isPunct(tokens[next], ')') ? specifier : undefined;
 }
 
 /**
- * The decoded string at `argIndex` when it is the only argument of the surrounding call, that is
+ * The string token at `argIndex` when it is the only argument of the surrounding call, that is
  * when it is a string followed by an optional trailing comma and `)`. Returns undefined otherwise,
  * so a dynamic argument (e.g. `'pkg-' + name`) or a call with extra arguments (e.g.
  * `require('pkg', ctx)`) never yields a static specifier.
  */
-function soleStringSpecifier(tokens: readonly Token[], argIndex: number): string | undefined {
+function soleStringSpecifier(tokens: readonly Token[], argIndex: number): StringToken | undefined {
   const arg = tokens[argIndex];
   const closingIndex = isPunct(tokens[argIndex + 1], ',') ? argIndex + 2 : argIndex + 1;
   const closing = tokens[closingIndex];
@@ -4564,7 +4614,7 @@ function soleStringSpecifier(tokens: readonly Token[], argIndex: number): string
     return undefined;
   }
 
-  return arg.value;
+  return arg;
 }
 
 /* -------------------------------------------------------------------------- */
