@@ -4,6 +4,11 @@ import { ProjectConfigError } from './projectConfigError.js';
 const COMPONENT = '[A-Za-z0-9][A-Za-z0-9._-]*';
 const IDENTIFIER = new RegExp(`^(?:${COMPONENT}|@${COMPONENT}/${COMPONENT})$`, 'u');
 
+/** Shared exact-root grammar for dependency exclusions and explanation input; no normalization. */
+export function isExactPackageRoot(name: string): boolean {
+  return name.length <= 214 && IDENTIFIER.exec(name)?.[0] === name;
+}
+
 /**
  * Preserve exact case and spelling; validate whole entries before sorting/deduplicating.
  * This bounded grammar is independent of source subpath normalization and builtin classification.
@@ -14,7 +19,7 @@ export function normalizeIgnoreDependencies(
   configPath: string,
 ): readonly string[] {
   for (const [index, name] of rawNames.entries()) {
-    if (name.length > 214 || IDENTIFIER.exec(name)?.[0] !== name) {
+    if (!isExactPackageRoot(name)) {
       throw new ProjectConfigError(
         `${configPath} field ignoreDependencies[${String(index)}] must be an exact package root (name or @scope/name), at most 214 characters; components must start with ASCII alphanumeric and contain only ASCII alphanumeric, '.', '_' or '-'`,
         'invalid-shape',
