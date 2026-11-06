@@ -36,6 +36,13 @@ import { readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import {
+  compareEvidence,
+  compareStrings,
+  jsonPointer,
+  type ConfigEvidence,
+} from '../core/evidence.js';
+
+import {
   loadProjectManifest,
   ProjectManifestError,
   readManifestText,
@@ -209,25 +216,68 @@ export function findEslintConfigUsage(
   eslintConfig: unknown,
   declaredPackageNames: ReadonlySet<string>,
 ): ReadonlySet<string> {
-  if (!isPlainRecord(eslintConfig)) {
-    return new Set<string>();
-  }
+  return new Set(
+    collectEslintConfigUsage(eslintConfig, declaredPackageNames).map(
+      ({ packageName }) => packageName,
+    ),
+  );
+}
 
-  const candidates: string[] = [
-    ...matchTable(extendsValues(eslintConfig['extends']), EXTENDS_PACKAGE_NAMES),
-    ...matchTable(pluginsValues(eslintConfig['plugins']), PLUGIN_PACKAGE_NAMES),
-  ];
+/** Internal package owner and the exact recognized configuration occurrence. */
+export type EslintConfigOccurrence = {
+  readonly packageName: string;
+  readonly evidence: ConfigEvidence;
+};
 
-  const used = new Set<string>();
-
-  for (const candidate of candidates) {
-    if (declaredPackageNames.has(candidate)) {
-      used.add(candidate);
+/**
+ * Pure collector shared by the manifest/rc readers and the later validated-context handoff.
+ * Location comes from the reader, not a string search. Array indices are retained before filtering.
+ */
+export function collectEslintConfigUsage(
+  eslintConfig: unknown,
+  declaredPackageNames: ReadonlySet<string>,
+  location: { readonly file: string; readonly pointerTokens: readonly string[] } = {
+    file: 'package.json',
+    pointerTokens: ['eslintConfig'],
+  },
+): readonly EslintConfigOccurrence[] {
+  if (!isPlainRecord(eslintConfig)) return [];
+  const occurrences: EslintConfigOccurrence[] = [];
+  const collectField = (field: 'extends' | 'plugins', table: ReadonlyMap<string, string>): void => {
+    const add = (value: unknown, index?: number): void => {
+      if (typeof value !== 'string') return;
+      const packageName = table.get(value);
+      if (packageName !== undefined && declaredPackageNames.has(packageName)) {
+        occurrences.push({
+          packageName,
+          evidence: {
+            kind: 'config',
+            file: location.file,
+            pointer: jsonPointer(
+              ...location.pointerTokens,
+              field,
+              ...(index === undefined ? [] : [String(index)]),
+            ),
+            value,
+            detector: 'eslint',
+          },
+        });
+      }
+    };
+    const value = eslintConfig[field];
+    if (field === 'extends' && typeof value === 'string') {
+      add(value);
+    } else if (Array.isArray(value)) {
+      for (const [index, item] of value.entries()) add(item, index);
     }
-  }
-
-  // Rebuilt from sorted names so iteration is deterministic for every input.
-  return new Set<string>([...used].sort(compareNames));
+  };
+  collectField('extends', EXTENDS_PACKAGE_NAMES);
+  collectField('plugins', PLUGIN_PACKAGE_NAMES);
+  // A field/index identifies exactly one item; repeated values at other indices stay distinct.
+  return occurrences.sort(
+    (a, b) =>
+      compareStrings(a.packageName, b.packageName) || compareEvidence(a.evidence, b.evidence),
+  );
 }
 
 /**
@@ -250,11 +300,20 @@ export function findEslintConfigUsage(
  * @param projectRoot - Project directory to inspect; resolved to an absolute path.
  */
 export async function findEslintManifestUsage(projectRoot: string): Promise<ReadonlySet<string>> {
+  return new Set(
+    (await collectEslintManifestUsage(projectRoot)).map(({ packageName }) => packageName),
+  );
+}
+
+/** Collect active manifest facts using the same mandatory gates and reads as the legacy wrapper. */
+export async function collectEslintManifestUsage(
+  projectRoot: string,
+): Promise<readonly EslintConfigOccurrence[]> {
   const root = resolve(projectRoot);
 
   const precedence = await readLegacyEslintPrecedence(root);
   if (precedence.hardBarrier || precedence.legacyRcByName) {
-    return new Set<string>();
+    return [];
   }
 
   let packageJsonPath: string;
@@ -266,13 +325,16 @@ export async function findEslintManifestUsage(projectRoot: string): Promise<Read
     declaredPackageNames = manifest.declaredDependencyNames;
   } catch (error) {
     if (error instanceof ProjectManifestError || error instanceof SourceFilesError) {
-      return new Set<string>();
+      return [];
     }
 
     throw error;
   }
 
-  return findEslintConfigUsage(await readEslintConfigValue(packageJsonPath), declaredPackageNames);
+  return collectEslintConfigUsage(
+    await readEslintConfigValue(packageJsonPath),
+    declaredPackageNames,
+  );
 }
 
 /**
@@ -338,82 +400,8 @@ async function readEslintConfigValue(packageJsonPath: string): Promise<unknown> 
 }
 
 /**
- * The string values of `extends`, which ESLint accepts as one string or as an array.
- *
- * Non-string array entries contribute nothing on their own, so a malformed array still yields no
- * evidence for the malformed entries. Any other shape (number, object, `null`, ...) contributes
- * nothing at all.
- */
-function extendsValues(value: unknown): readonly string[] {
-  if (typeof value === 'string') {
-    return [value];
-  }
-
-  return stringItems(value);
-}
-
-/**
- * The string values of `plugins`, which ESLint accepts only as an array.
- *
- * A bare string such as `"react"` is not a valid `plugins` value and is deliberately not accepted,
- * so a typo-shaped value never becomes evidence.
- */
-function pluginsValues(value: unknown): readonly string[] {
-  return stringItems(value);
-}
-
-/**
- * The string entries of an array value; a non-array value contributes nothing.
- */
-function stringItems(value: unknown): readonly string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.filter((entry): entry is string => typeof entry === 'string');
-}
-
-/**
- * Look every value up in one fixed allowlist table.
- *
- * Lookup is exact-string only: no prefix, suffix, substring or case-insensitive matching, so
- * `prettier/react`, `eslint-config-unknown` and `React` never match an entry.
- */
-function matchTable(
-  values: readonly string[],
-  table: ReadonlyMap<string, string>,
-): readonly string[] {
-  const matched: string[] = [];
-
-  for (const value of values) {
-    const mapped = table.get(value);
-
-    if (mapped !== undefined) {
-      matched.push(mapped);
-    }
-  }
-
-  return matched;
-}
-
-/**
  * A JSON object (not an array, not `null`) whose keys are strings.
  */
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/**
- * Locale-independent lexicographic ordering, so the same configuration always yields the same order.
- */
-function compareNames(a: string, b: string): number {
-  if (a < b) {
-    return -1;
-  }
-
-  if (a > b) {
-    return 1;
-  }
-
-  return 0;
 }
