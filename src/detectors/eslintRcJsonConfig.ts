@@ -3,7 +3,7 @@
  *
  * This module adds exactly one static data source to the ESLint rules proven in Step 57: the single
  * file `<projectRoot>/.eslintrc.json`. Its parsed JSON document is handed to the same pure matcher
- * ({@link findEslintConfigUsage}) that reads `package.json#eslintConfig`, so the fixed allowlists,
+ * ({@link collectEslintConfigUsage}) that reads `package.json#eslintConfig`, so the fixed allowlists,
  * the exact-string lookup and the "declared packages only" rule are reused instead of duplicated.
  * The result is a set of configuration-only package names for the Step 56 analyzer seam, so a
  * recognized name can only suppress an `unused` finding and can never create a `missing` one.
@@ -21,7 +21,7 @@
  *   document, so it is removed before parsing;
  * - traverse parent directories, nested packages or workspaces looking for further config files, or
  *   resolve `extends` references to other configuration files;
- * - read anything besides the `extends`/`plugins` subset that {@link findEslintConfigUsage} accepts;
+ * - read anything besides the `extends`/`plugins` subset that {@link collectEslintConfigUsage} accepts;
  *   every other ESLint field (`env`, `globals`, `rules`, `parserOptions`, `overrides`, ...) is
  *   ignored, and no unknown value produces evidence;
  * - report anything about a package the manifest does not declare, or mutate the analyzed project.
@@ -52,7 +52,11 @@ import { join, resolve } from 'node:path';
 
 import { loadProjectManifest, ProjectManifestError } from '../scanner/projectManifest.js';
 import { SourceFilesError } from '../scanner/sourceFiles.js';
-import { findEslintConfigUsage, readLegacyEslintPrecedence } from './eslintManifestConfig.js';
+import {
+  collectEslintConfigUsage,
+  readLegacyEslintPrecedence,
+  type EslintConfigOccurrence,
+} from './eslintManifestConfig.js';
 
 /**
  * The one file name this reader looks for, relative to the resolved project root.
@@ -105,6 +109,15 @@ export class EslintRcJsonError extends Error {
  * parsed as JSON. Absent, skipped and unusable-but-parsable files return the empty set.
  */
 export async function findEslintRcJsonUsage(projectRoot: string): Promise<ReadonlySet<string>> {
+  return new Set(
+    (await collectEslintRcJsonUsage(projectRoot)).map(({ packageName }) => packageName),
+  );
+}
+
+/** Retain the active rc entry's actual casing and pointers without additional filesystem reads. */
+export async function collectEslintRcJsonUsage(
+  projectRoot: string,
+): Promise<readonly EslintConfigOccurrence[]> {
   const root = resolve(projectRoot);
 
   // A hard barrier disables every legacy hint, external file included. Precedence is computed once
@@ -112,7 +125,7 @@ export async function findEslintRcJsonUsage(projectRoot: string): Promise<Readon
   // and the two legacy sources are never combined into one hint set.
   const precedence = await readLegacyEslintPrecedence(root);
   if (precedence.hardBarrier) {
-    return new Set<string>();
+    return [];
   }
 
   let declaredPackageNames: ReadonlySet<string>;
@@ -125,7 +138,7 @@ export async function findEslintRcJsonUsage(projectRoot: string): Promise<Readon
     if (error instanceof ProjectManifestError || error instanceof SourceFilesError) {
       // Manifest failures stay with the manifest loader and the analyzer, which report them as they
       // always have; this detector never duplicates that diagnosis.
-      return new Set<string>();
+      return [];
     }
 
     throw error;
@@ -139,7 +152,7 @@ export async function findEslintRcJsonUsage(projectRoot: string): Promise<Readon
   const text = await readEslintRcText(eslintRcPath);
 
   if (text === undefined) {
-    return new Set<string>();
+    return [];
   }
 
   let parsed: unknown;
@@ -157,7 +170,10 @@ export async function findEslintRcJsonUsage(projectRoot: string): Promise<Readon
 
   // The whole document is the legacy config object, so the proven matcher is reused verbatim. A
   // top-level value that is not an object simply matches nothing, and nothing undeclared is added.
-  return findEslintConfigUsage(parsed, declaredPackageNames);
+  return collectEslintConfigUsage(parsed, declaredPackageNames, {
+    file: eslintRcFilename,
+    pointerTokens: [],
+  });
 }
 
 /**
