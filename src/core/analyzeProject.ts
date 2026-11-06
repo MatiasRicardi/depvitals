@@ -63,6 +63,7 @@ import {
 } from '../scanner/moduleSpecifiers.js';
 import { classifyPackageSpecifier, isPackageSelfReference } from '../scanner/packageSpecifier.js';
 import { collectPackageScriptUsage } from '../scanner/scriptUsage.js';
+import { isExactPackageRoot } from '../config/ignoreDependencies.js';
 import type { ScanContext } from './scanContext.js';
 import {
   declarationGroupsFor,
@@ -230,6 +231,61 @@ export async function analyzeProjectDetailed(
 /** Pure legacy projection; no collection, reclassification or input reads. */
 export function projectAnalysisResult(result: DetailedAnalysisResult): AnalysisResult {
   return legacyResult(result.projectRoot, result.findings);
+}
+
+/** Internal package-local outcome; effective scan policy remains available to later reporters. */
+export type PackageExplanation = {
+  readonly projectRoot: string;
+  readonly config: DetailedAnalysisResult['config'];
+  readonly findings: AnalysisFindings;
+  readonly counts: Readonly<Record<FindingCategory, number>>;
+  readonly packages: readonly [PackageFact];
+  readonly query: { readonly packageName: string; readonly known: boolean };
+  readonly exitCode: 0 | 1;
+};
+
+/** Project only completed scan facts. This function performs no collection or resolution. */
+export function projectPackageExplanation(
+  result: DetailedAnalysisResult,
+  packageName: string,
+): PackageExplanation {
+  if (!isExactPackageRoot(packageName)) {
+    throw new TypeError(
+      'Invalid value for --explain: expected an exact package root (name or @scope/name), at most 214 characters.',
+    );
+  }
+  const selected = result.packages.find((pkg) => pkg.name === packageName);
+  const known = selected !== undefined;
+  const pkg: PackageFact = selected ?? {
+    name: packageName,
+    status: 'unknown',
+    declaredIn: [],
+    excluded: false,
+    underlyingFindings: [],
+    findings: [],
+    evidence: [],
+  };
+  const findings: AnalysisFindings = {
+    unusedDependencies: result.findings.unusedDependencies.filter((name) => name === packageName),
+    unusedDevDependencies: result.findings.unusedDevDependencies.filter(
+      (name) => name === packageName,
+    ),
+    missingDependencies: result.findings.missingDependencies.filter((name) => name === packageName),
+  };
+  const counts = {
+    unusedDependencies: findings.unusedDependencies.length,
+    unusedDevDependencies: findings.unusedDevDependencies.length,
+    missingDependencies: findings.missingDependencies.length,
+  };
+  return {
+    projectRoot: result.projectRoot,
+    config: result.config,
+    findings,
+    counts,
+    packages: [pkg],
+    query: { packageName, known },
+    exitCode: !known || Object.values(counts).some((count) => count > 0) ? 1 : 0,
+  };
 }
 
 type CollectedUsage = {
