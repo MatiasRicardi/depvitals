@@ -60,6 +60,12 @@ export type ProjectManifest = {
   selfReference: PackageSelfReferenceScope;
 };
 
+/** Validated root inventory and its already-parsed JSON, scoped to one read. */
+export type ProjectManifestData = {
+  readonly manifest: ProjectManifest;
+  readonly raw: Readonly<Record<string, unknown>>;
+};
+
 /** The package-type hint declared by one package scope, or `undefined` when no manifest exists. */
 export type PackageTypeHint = {
   packageType: string | undefined;
@@ -107,6 +113,11 @@ export class ProjectManifestError extends Error {
  * @throws {SourceFilesError} when the selected root is linked or is not a directory.
  */
 export async function loadProjectManifest(projectRoot: string): Promise<ProjectManifest> {
+  return (await loadProjectManifestData(projectRoot)).manifest;
+}
+
+/** Read and validate root metadata once while retaining raw detector fields. */
+export async function loadProjectManifestData(projectRoot: string): Promise<ProjectManifestData> {
   const root = resolve(projectRoot);
   const packageJsonPath = join(root, MANIFEST_FILENAME);
 
@@ -230,7 +241,7 @@ function isNotFoundError(error: unknown): boolean {
 /**
  * Parse manifest text into the internal model.
  */
-function parseManifest(root: string, packageJsonPath: string, text: string): ProjectManifest {
+function parseManifest(root: string, packageJsonPath: string, text: string): ProjectManifestData {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -271,7 +282,7 @@ function parseManifest(root: string, packageJsonPath: string, text: string): Pro
     selfReference: createPackageSelfReferenceScope(parsed),
   };
 
-  return name === undefined ? manifest : { ...manifest, name };
+  return { manifest: name === undefined ? manifest : { ...manifest, name }, raw: parsed };
 }
 
 function readOptionalString(manifest: Record<string, unknown>, key: string): string | undefined {

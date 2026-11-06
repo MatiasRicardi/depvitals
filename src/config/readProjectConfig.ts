@@ -29,6 +29,13 @@ const CONFIG_FILENAME = 'depvitals.config.json';
  * Stable entry checks do not claim adversarial protection against replacement between I/O calls.
  */
 export async function readRawProjectConfig(projectRoot: string): Promise<RawProjectConfig> {
+  return (await readRawConfigWithEntries(projectRoot)).raw;
+}
+
+/** Preserve canonical-entry checks and errors while sharing this read's entry names. */
+async function readRawConfigWithEntries(
+  projectRoot: string,
+): Promise<{ raw: RawProjectConfig; rootEntries: readonly string[] }> {
   const root = resolve(projectRoot);
   const path = join(root, CONFIG_FILENAME);
   await assertReadableRoot(root);
@@ -40,7 +47,8 @@ export async function readRawProjectConfig(projectRoot: string): Promise<RawProj
   } catch (error) {
     throw unreadable(path, error);
   }
-  if (!entries.includes(CONFIG_FILENAME)) return emptyConfig();
+  if (!entries.includes(CONFIG_FILENAME))
+    return { raw: emptyConfig(), rootEntries: Object.freeze(entries) };
 
   let info;
   try {
@@ -80,10 +88,13 @@ export async function readRawProjectConfig(projectRoot: string): Promise<RawProj
     }
   }
   const config = parsed as Record<string, unknown>;
-  return Object.freeze({
-    ignorePaths: readStrings(config['ignorePaths'], 'ignorePaths', path),
-    ignoreDependencies: readStrings(config['ignoreDependencies'], 'ignoreDependencies', path),
-  });
+  return {
+    raw: Object.freeze({
+      ignorePaths: readStrings(config['ignorePaths'], 'ignorePaths', path),
+      ignoreDependencies: readStrings(config['ignoreDependencies'], 'ignoreDependencies', path),
+    }),
+    rootEntries: Object.freeze(entries),
+  };
 }
 
 function readStrings(
@@ -132,10 +143,20 @@ export type ProjectConfig = {
 
 /** Read once, validate all path/name rules, and return no partial configuration on failure. */
 export async function readProjectConfig(projectRoot: string): Promise<ProjectConfig> {
-  const raw = await readRawProjectConfig(projectRoot);
+  return (await readProjectConfigSnapshot(projectRoot)).config;
+}
+
+/** Per-scan policy and entry names; not an atomic filesystem snapshot or a global cache. */
+export async function readProjectConfigSnapshot(
+  projectRoot: string,
+): Promise<{ config: ProjectConfig; rootEntries: readonly string[] }> {
+  const { raw, rootEntries } = await readRawConfigWithEntries(projectRoot);
   const path = join(resolve(projectRoot), CONFIG_FILENAME);
-  return Object.freeze({
-    ignorePaths: normalizeIgnorePaths(raw.ignorePaths, path),
-    ignoreDependencies: normalizeIgnoreDependencies(raw.ignoreDependencies, path),
-  });
+  return {
+    config: Object.freeze({
+      ignorePaths: normalizeIgnorePaths(raw.ignorePaths, path),
+      ignoreDependencies: normalizeIgnoreDependencies(raw.ignoreDependencies, path),
+    }),
+    rootEntries,
+  };
 }

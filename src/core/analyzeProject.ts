@@ -54,11 +54,16 @@ import {
   loadPackageScope,
   loadProjectManifest,
   type PackageScopeMetadata,
+  type ProjectManifest,
 } from '../scanner/projectManifest.js';
 import { discoverSourceFiles } from '../scanner/sourceFiles.js';
-import { extractModuleSpecifiers } from '../scanner/moduleSpecifiers.js';
+import {
+  collectModuleSpecifiers,
+  type PositionedModuleSpecifierOccurrence,
+} from '../scanner/moduleSpecifiers.js';
 import { classifyPackageSpecifier, isPackageSelfReference } from '../scanner/packageSpecifier.js';
-import { findPackageScriptUsage } from '../scanner/scriptUsage.js';
+import { collectPackageScriptUsage } from '../scanner/scriptUsage.js';
+import type { ScanContext } from './scanContext.js';
 
 /**
  * The structured outcome of a dependency analysis.
@@ -158,8 +163,21 @@ export async function analyzeProject(
   projectRoot: string,
   options: AnalysisOptions = {},
 ): Promise<AnalysisResult> {
-  const manifest = await loadProjectManifest(projectRoot);
+  return analyzeManifest(await loadProjectManifest(projectRoot), options);
+}
 
+/** Analyze one prepared CLI context without reloading metadata or activating detectors for legacy callers. */
+export async function analyzeProjectWithContext(context: ScanContext): Promise<AnalysisResult> {
+  return analyzeManifest(context.manifest, {
+    ...context.config,
+    configUsedNames: new Set(context.configEvidence.map(({ packageName }) => packageName)),
+  });
+}
+
+async function analyzeManifest(
+  manifest: ProjectManifest,
+  options: AnalysisOptions,
+): Promise<AnalysisResult> {
   const sourceFiles = await discoverSourceFiles(manifest.root, {
     ignorePaths: options.ignorePaths,
   });
@@ -175,7 +193,8 @@ export async function analyzeProject(
     const scope = await packageScopeForDirectory(dirname(file), scopeByDirectory);
     const specifiers = await readAndExtract(file, scope.packageType);
 
-    for (const specifier of specifiers) {
+    for (const occurrence of specifiers) {
+      const specifier = occurrence.specifier;
       if (isPackageSelfReference(specifier, scope.selfReference)) continue;
       const classified = classifyPackageSpecifier(specifier);
 
@@ -192,7 +211,8 @@ export async function analyzeProject(
     Object.keys(manifest.devDependencies),
   ]);
 
-  const scriptUsedNames = findPackageScriptUsage(manifest.scripts, declaredCandidates);
+  const scriptFacts = collectPackageScriptUsage(manifest.scripts, declaredCandidates);
+  const scriptUsedNames = scriptFacts.map(({ packageName }) => packageName);
 
   // Configuration evidence never reaches `sourceUsedNames`, which is the only input able to produce
   // a missing finding; it can only make `usedNames` bigger and therefore suppress unused findings.
@@ -251,7 +271,7 @@ async function packageScopeForDirectory(
 async function readAndExtract(
   file: string,
   packageType: string | undefined,
-): Promise<readonly string[]> {
+): Promise<readonly PositionedModuleSpecifierOccurrence[]> {
   let source: string;
 
   try {
@@ -296,11 +316,11 @@ async function readAndExtract(
   }
 
   try {
-    const occurrences = extractModuleSpecifiers(source, {
+    const occurrences = collectModuleSpecifiers(source, {
       jsx: usesJsxSyntax(file, source),
       module: sourceModuleMode(file, packageType),
     });
-    return occurrences.map((occurrence) => occurrence.specifier);
+    return occurrences;
   } catch (error) {
     if (error instanceof Error && error.name === 'ModuleSpecifierError') {
       throw new AnalysisError(
