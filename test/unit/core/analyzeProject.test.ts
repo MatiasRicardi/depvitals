@@ -646,3 +646,19 @@ it('preserves legacy finding arithmetic across four declaration groups', async (
   expect(result.unusedDevDependencies).toEqual(['sharedUnused']);
   expect(result.missingDependencies).toEqual(['missing']);
 });
+
+it('keeps script evidence gated to dep/dev declarations before collision ownership', async () => {
+  const result = await analyzeTemporaryProject(
+    {
+      dependencies: { 'gulp-cli': '1', node: '1', unused: '1' },
+      devDependencies: { eslint: '1' },
+      peerDependencies: { gulp: '1' },
+      optionalDependencies: { preload: '1' },
+      scripts: { test: 'gulp && eslint && node -r preload && unknown-command' },
+    },
+    {},
+  );
+  expect(result.unusedDependencies).toEqual(['unused']);
+  expect(result.unusedDevDependencies).toEqual([]);
+  expect(result.missingDependencies).toEqual([]);
+});

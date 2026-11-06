@@ -42,6 +42,13 @@
  * literal closing delimiter. Unknown headers discard the unproven remainder.
  */
 
+import {
+  compareEvidence,
+  compareStrings,
+  jsonPointer,
+  type ScriptEvidence,
+} from '../core/evidence.js';
+
 import { classifyPackageSpecifier } from './packageSpecifier.js';
 
 /**
@@ -377,17 +384,58 @@ export function findPackageScriptUsage(
   scripts: Readonly<Record<string, string>>,
   declaredPackageNames: ReadonlySet<string>,
 ): ReadonlySet<string> {
-  const used = new Set<string>();
+  return new Set(
+    collectPackageScriptUsage(scripts, declaredPackageNames).map(({ packageName }) => packageName),
+  );
+}
 
-  for (const command of Object.values(scripts)) {
-    for (const candidate of collectScriptCandidates(command, declaredPackageNames)) {
-      if (declaredPackageNames.has(candidate)) {
-        used.add(candidate);
+/** Internal package owner plus the exact script evidence that belongs to it. */
+export type PackageScriptOccurrence = {
+  readonly packageName: string;
+  readonly evidence: ScriptEvidence;
+};
+
+type ScriptCandidate = {
+  readonly packageName: string;
+  readonly command: string;
+  readonly via: ScriptEvidence['via'];
+};
+
+/**
+ * Authoritative script collector. Ordinals enumerate existing candidate events over the entire
+ * script, before the declaration gate. Exact key/ordinal pairs already distinguish occurrences;
+ * repeated selectors and independent script keys must not be collapsed into one fact.
+ */
+export function collectPackageScriptUsage(
+  scripts: Readonly<Record<string, string>>,
+  declaredPackageNames: ReadonlySet<string>,
+): readonly PackageScriptOccurrence[] {
+  const occurrences: PackageScriptOccurrence[] = [];
+  for (const [key, script] of Object.entries(scripts)) {
+    const pointer = jsonPointer('scripts', key);
+    for (const [occurrence, candidate] of collectScriptCandidates(
+      script,
+      declaredPackageNames,
+    ).entries()) {
+      if (declaredPackageNames.has(candidate.packageName)) {
+        occurrences.push({
+          packageName: candidate.packageName,
+          evidence: {
+            kind: 'script',
+            file: 'package.json',
+            pointer,
+            command: candidate.command,
+            via: candidate.via,
+            occurrence,
+          },
+        });
       }
     }
   }
-
-  return new Set([...used].sort(compareNames));
+  return occurrences.sort(
+    (a, b) =>
+      compareStrings(a.packageName, b.packageName) || compareEvidence(a.evidence, b.evidence),
+  );
 }
 
 /**
@@ -403,8 +451,8 @@ export function findPackageScriptUsage(
 function collectScriptCandidates(
   command: string,
   declaredPackageNames: ReadonlySet<string>,
-): readonly string[] {
-  const candidates: string[] = [];
+): readonly ScriptCandidate[] {
+  const candidates: ScriptCandidate[] = [];
 
   for (const segment of splitSegments(command)) {
     // An unsupported segment is never partially trusted, not even its leading command.
@@ -420,7 +468,7 @@ function collectScriptCandidates(
 
     const runnerPackage = matchRunnerPackage(significant);
     if (runnerPackage !== undefined) {
-      candidates.push(runnerPackage);
+      candidates.push({ packageName: runnerPackage, command: runnerPackage, via: 'runner' });
       continue;
     }
 
@@ -446,11 +494,16 @@ function collectScriptCandidates(
       // the same command never marks two competing providers as used.
       const mapped = BINARY_TO_PACKAGE.get(commandName);
       if (mapped === undefined) {
-        candidates.push(commandName);
+        candidates.push({ packageName: commandName, command: commandName, via: 'direct' });
       } else if (COLLISION_SENSITIVE_BINARIES.has(commandName)) {
-        candidates.push(declaredPackageNames.has(commandName) ? commandName : mapped);
+        const exact = declaredPackageNames.has(commandName);
+        candidates.push({
+          packageName: exact ? commandName : mapped,
+          command: commandName,
+          via: exact ? 'direct' : 'mapping',
+        });
       } else {
-        candidates.push(mapped);
+        candidates.push({ packageName: mapped, command: commandName, via: 'mapping' });
       }
     }
   }
@@ -1027,19 +1080,4 @@ function isRegionWordBoundary(ch: string | undefined): boolean {
  */
 function isWhitespace(ch: string): boolean {
   return ch === ' ' || ch === '\t' || ch === '\r' || ch === '\f' || ch === '\v';
-}
-
-/**
- * Locale-independent lexicographic ordering, so the same scripts always yield the same order.
- */
-function compareNames(a: string, b: string): number {
-  if (a < b) {
-    return -1;
-  }
-
-  if (a > b) {
-    return 1;
-  }
-
-  return 0;
 }
