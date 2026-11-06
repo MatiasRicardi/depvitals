@@ -303,12 +303,12 @@ describe('formatTerminalExplanation', () => {
       '  source "src/a.ts":1:4 export-from "example/a"',
       '  source "src/a.ts":2:4 dynamic-import "example/b"',
       '  source "src/z.ts":3:8 require "example/sub"',
-      '  script "package.json"#/scripts/a~1~0 direct "example" (occurrence 0)',
-      '  script "package.json"#/scripts/a~1~0 mapping "tool" (occurrence 1)',
-      '  script "package.json"#/scripts/a~1~0 runner "example" (occurrence 2)',
-      '  script "package.json"#/scripts/z node-preload "example/sub" (occurrence 3)',
-      '  config ".ESLINTRC.JSON"#/extends/1 eslint "prettier"',
-      '  config "package.json"#/jest/preset jest "ts-jest"',
+      '  script "package.json"#"/scripts/a~1~0" direct "example" (occurrence 0)',
+      '  script "package.json"#"/scripts/a~1~0" mapping "tool" (occurrence 1)',
+      '  script "package.json"#"/scripts/a~1~0" runner "example" (occurrence 2)',
+      '  script "package.json"#"/scripts/z" node-preload "example/sub" (occurrence 3)',
+      '  config ".ESLINTRC.JSON"#"/extends/1" eslint "prettier"',
+      '  config "package.json"#"/jest/preset" jest "ts-jest"',
     ]);
     expect(output).toContain(
       'Declared in: dependencies, devDependencies, peerDependencies, optionalDependencies\n',
@@ -371,11 +371,11 @@ describe('formatTerminalExplanation', () => {
       String.raw`  source "src/\"x\\\u0009.cjs":7:9 require "pkg\u000d\u000a\u009b31m"` + '\n',
     );
     expect(output).toContain(
-      String.raw`  script "package.json"#/scripts/a\u000a\u001b[0m direct "tool\"\\\u0000" (occurrence 4)` +
+      String.raw`  script "package.json"#"/scripts/a\u000a\u001b[0m" direct "tool\"\\\u0000" (occurrence 4)` +
         '\n',
     );
     expect(output).toContain(
-      String.raw`  config "cfg\u007f\u0085.json"#/x~1y\u000d jest "value\u001b]0;title\u0007"` +
+      String.raw`  config "cfg\u007f\u0085.json"#"/x~1y\u000d" jest "value\u001b]0;title\u0007"` +
         '\n',
     );
     expect(output).toContain(String.raw`  Ignored source paths: "a\u0009b\"\\"` + '\n');
@@ -383,6 +383,39 @@ describe('formatTerminalExplanation', () => {
     expect(output.replaceAll('\n', '')).not.toMatch(/\p{Cc}/u);
     expect(output.split('\n')).toHaveLength(20);
   });
+
+  it.each(['script', 'config'] as const)(
+    'distinguishes newlines from literal Unicode escape text in %s pointers',
+    (kind) => {
+      const pointers = ['/scripts/a\nb', String.raw`/scripts/a\u000ab`];
+      const evidence: Evidence[] = pointers.map((pointer) =>
+        kind === 'script'
+          ? {
+              kind,
+              file: 'package.json',
+              pointer,
+              via: 'direct',
+              command: 'example',
+              occurrence: 0,
+            }
+          : { kind, file: 'package.json', pointer, detector: 'jest', value: 'example' },
+      );
+      const output = formatTerminalExplanation(explanation({ evidence }));
+      const rows = output.split('\n').filter((line) => line.startsWith(`  ${kind} `));
+      expect(rows).toEqual(
+        kind === 'script'
+          ? [
+              String.raw`  script "package.json"#"/scripts/a\u000ab" direct "example" (occurrence 0)`,
+              String.raw`  script "package.json"#"/scripts/a\\u000ab" direct "example" (occurrence 0)`,
+            ]
+          : [
+              String.raw`  config "package.json"#"/scripts/a\u000ab" jest "example"`,
+              String.raw`  config "package.json"#"/scripts/a\\u000ab" jest "example"`,
+            ],
+      );
+      expect(new Set(rows).size).toBe(2);
+    },
+  );
 
   it.each(Array.from({ length: 65 }, (_, i) => (i < 32 ? i : i + 95)))(
     'escapes display control U+%i without raw output',

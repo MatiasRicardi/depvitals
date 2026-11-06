@@ -145,9 +145,9 @@ function renderEvidence(evidence: Evidence): string {
     case 'source':
       return `  source ${file}:${String(evidence.position.line)}:${String(evidence.position.column)} ${evidence.reference} ${quoteTerminalValue(evidence.specifier)}`;
     case 'script':
-      return `  script ${file}#${escapeControlCharacters(evidence.pointer)} ${evidence.via} ${quoteTerminalValue(evidence.command)} (occurrence ${String(evidence.occurrence)})`;
+      return `  script ${file}#${quoteTerminalValue(evidence.pointer)} ${evidence.via} ${quoteTerminalValue(evidence.command)} (occurrence ${String(evidence.occurrence)})`;
     case 'config':
-      return `  config ${file}#${escapeControlCharacters(evidence.pointer)} ${evidence.detector} ${quoteTerminalValue(evidence.value)}`;
+      return `  config ${file}#${quoteTerminalValue(evidence.pointer)} ${evidence.detector} ${quoteTerminalValue(evidence.value)}`;
   }
 }
 
