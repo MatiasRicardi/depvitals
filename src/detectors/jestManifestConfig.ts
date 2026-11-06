@@ -11,9 +11,9 @@
  * - execute Jest, `import()`/`require()` its configuration loader, or evaluate any target code;
  * - implement the Jest configuration schema. Only `preset`, `testEnvironment` and `transform` are
  *   read, and only through the fixed allowlists below;
- * - read the `transform` map *keys*. Every key of that map is a regular expression selecting the
- *   files a transformer applies to, so a key is a pattern and never a package name, even when it
- *   literally reads `"ts-jest"`; no regular expression is ever evaluated here;
+ * - use `transform` map keys as package evidence. Keys are retained only in JSON pointers; they
+ *   select the transformer field and never name a package, even when a key literally reads
+ *   `"ts-jest"`. No regular expression is evaluated here;
  * - expand Jest shorthands. In particular `testEnvironment: "jsdom"` is *not* credited to
  *   `jest-environment-jsdom`: whether that shorthand is a package reference at all depends on the
  *   Jest major version in use, which DepVitals does not read, so it stays outside the supported
@@ -39,6 +39,13 @@
 
 import { readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
+
+import {
+  compareEvidence,
+  compareStrings,
+  jsonPointer,
+  type ConfigEvidence,
+} from '../core/evidence.js';
 
 import {
   loadProjectManifest,
@@ -123,26 +130,66 @@ export function findJestConfigUsage(
   jestConfig: unknown,
   declaredPackageNames: ReadonlySet<string>,
 ): ReadonlySet<string> {
-  if (!isPlainRecord(jestConfig)) {
-    return new Set<string>();
-  }
+  return new Set(
+    collectJestConfigUsage(jestConfig, declaredPackageNames).map(({ packageName }) => packageName),
+  );
+}
 
-  const candidates: string[] = [
-    ...matchAllowedPackage(jestConfig['preset'], PRESET_PACKAGE_NAMES),
-    ...matchAllowedPackage(jestConfig['testEnvironment'], TEST_ENVIRONMENT_PACKAGE_NAMES),
-    ...matchTransformValues(jestConfig['transform'], TRANSFORM_PACKAGE_NAMES),
-  ];
+/** Internal package owner plus one exact recognized Jest configuration value. */
+export type JestConfigOccurrence = {
+  readonly packageName: string;
+  readonly evidence: ConfigEvidence;
+};
 
-  const used = new Set<string>();
-
-  for (const candidate of candidates) {
-    if (declaredPackageNames.has(candidate)) {
-      used.add(candidate);
+/** Pure collector for standalone readers and the later shared validated-context handoff. */
+export function collectJestConfigUsage(
+  jestConfig: unknown,
+  declaredPackageNames: ReadonlySet<string>,
+): readonly JestConfigOccurrence[] {
+  if (!isPlainRecord(jestConfig)) return [];
+  const occurrences: JestConfigOccurrence[] = [];
+  const add = (
+    value: unknown,
+    allowedPackages: ReadonlySet<string>,
+    pointerTokens: readonly string[],
+  ): void => {
+    if (typeof value !== 'string') return;
+    for (const packageName of matchAllowedPackage(value, allowedPackages)) {
+      if (declaredPackageNames.has(packageName)) {
+        occurrences.push({
+          packageName,
+          evidence: {
+            kind: 'config',
+            file: 'package.json',
+            pointer: jsonPointer('jest', ...pointerTokens),
+            value,
+            detector: 'jest',
+          },
+        });
+      }
+    }
+  };
+  add(jestConfig['preset'], PRESET_PACKAGE_NAMES, ['preset']);
+  add(jestConfig['testEnvironment'], TEST_ENVIRONMENT_PACKAGE_NAMES, ['testEnvironment']);
+  const transform = jestConfig['transform'];
+  if (isPlainRecord(transform)) {
+    for (const [key, value] of Object.entries(transform)) {
+      // Keys identify fields only. A tuple must have exactly two items and object-shaped options;
+      // those options remain opaque, and only its first item can supply a recognized value.
+      if (Array.isArray(value)) {
+        if (value.length === 2 && isPlainRecord(value[1])) {
+          add(value[0], TRANSFORM_PACKAGE_NAMES, ['transform', key, '0']);
+        }
+      } else {
+        add(value, TRANSFORM_PACKAGE_NAMES, ['transform', key]);
+      }
     }
   }
-
-  // Rebuilt from sorted names so iteration is deterministic for every input.
-  return new Set<string>([...used].sort(compareNames));
+  // Different fields and transform keys remain distinct, even when their package/value repeats.
+  return occurrences.sort(
+    (a, b) =>
+      compareStrings(a.packageName, b.packageName) || compareEvidence(a.evidence, b.evidence),
+  );
 }
 
 /**
@@ -160,10 +207,19 @@ export function findJestConfigUsage(
  * @param projectRoot - Project directory to inspect; resolved to an absolute path.
  */
 export async function findJestManifestUsage(projectRoot: string): Promise<ReadonlySet<string>> {
+  return new Set(
+    (await collectJestManifestUsage(projectRoot)).map(({ packageName }) => packageName),
+  );
+}
+
+/** Retain manifest facts through the existing barrier, validation and text-read path. */
+export async function collectJestManifestUsage(
+  projectRoot: string,
+): Promise<readonly JestConfigOccurrence[]> {
   const root = resolve(projectRoot);
 
   if (await hasRootJestConfigEntry(root)) {
-    return new Set<string>();
+    return [];
   }
 
   let packageJsonPath: string;
@@ -175,13 +231,13 @@ export async function findJestManifestUsage(projectRoot: string): Promise<Readon
     declaredPackageNames = manifest.declaredDependencyNames;
   } catch (error) {
     if (error instanceof ProjectManifestError || error instanceof SourceFilesError) {
-      return new Set<string>();
+      return [];
     }
 
     throw error;
   }
 
-  return findJestConfigUsage(await readJestConfigValue(packageJsonPath), declaredPackageNames);
+  return collectJestConfigUsage(await readJestConfigValue(packageJsonPath), declaredPackageNames);
 }
 
 /**
@@ -263,83 +319,8 @@ function matchAllowedPackage(
 }
 
 /**
- * The allowlisted packages named by the *values* of one `jest.transform` map.
- *
- * Only values are read: `Object.values` is used precisely so that a key can never become evidence.
- * Every key of a Jest transform map is a regular expression such as `"^.+\\.tsx?$"`, and a key that
- * happens to read `"ts-jest"` is still only a pattern, so it credits nothing. A `transform` field
- * that is not a plain JSON object (an array, a string, a number, `null`, absent) contributes nothing.
- */
-function matchTransformValues(
-  transform: unknown,
-  allowedPackages: ReadonlySet<string>,
-): readonly string[] {
-  if (!isPlainRecord(transform)) {
-    return [];
-  }
-
-  const matches: string[] = [];
-
-  for (const value of Object.values(transform)) {
-    matches.push(...matchTransformValue(value, allowedPackages));
-  }
-
-  return matches;
-}
-
-/**
- * The allowlisted package named by one `jest.transform` value, if any.
- *
- * Exactly two shapes are supported, and no others:
- *
- * - the transformer string itself, `"ts-jest"`, matched by the same rules as the other supported
- *   Jest fields - the value is classified first and must then be an exact member of
- *   `allowedPackages`, so `"./local-transform.js"`, `"<rootDir>/transform.js"`, `"file:./t.js"`,
- *   `""`, `"ts jest"`, `"ts-jest-extras"` and every other module yield nothing. As in `preset`, a
- *   literal subpath of an allowlisted package collapses to its package root
- *   (`"ts-jest/preprocessor.js"`, the historical ts-jest transformer path), because the first path
- *   segment still names the package that provides the transformer;
- * - the `[transformer, options]` tuple: exactly two elements, the second a JSON options object, the
- *   first matched as above. The options object is only checked for being an object and is never
- *   inspected, so a supported package name that appears only inside it - as a label or an option
- *   value - is not evidence.
- *
- * A one- or three-element array, a non-object second tuple element, an object used in place of the
- * whole value or any other shape is outside the supported subset and yields nothing.
- */
-function matchTransformValue(
-  value: unknown,
-  allowedPackages: ReadonlySet<string>,
-): readonly string[] {
-  if (Array.isArray(value)) {
-    if (value.length !== 2 || !isPlainRecord(value[1])) {
-      return [];
-    }
-
-    return matchAllowedPackage(value[0], allowedPackages);
-  }
-
-  return matchAllowedPackage(value, allowedPackages);
-}
-
-/**
  * A JSON object (not an array, not `null`) whose keys are strings.
  */
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/**
- * Locale-independent lexicographic ordering, so the same configuration always yields the same order.
- */
-function compareNames(a: string, b: string): number {
-  if (a < b) {
-    return -1;
-  }
-
-  if (a > b) {
-    return 1;
-  }
-
-  return 0;
 }
