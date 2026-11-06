@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "tool": {
+    "name": "depvitals",
+    "version": "0.4.0"
+  },
+  "mode": "scan",
+  "project": {
+    "root": "/example/project"
+  },
+  "scope": {
+    "sourceExtensions": [".cjs", ".cts", ".js", ".jsx", ".mjs", ".mts", ".ts", ".tsx"],
+    "excludedDirectories": [
+      ".cache",
+      ".git",
+      ".next",
+      ".nuxt",
+      ".turbo",
+      "build",
+      "coverage",
+      "dist",
+      "node_modules",
+      "out"
+    ],
+    "ignorePaths": [],
+    "ignoreDependencies": []
+  },
+  "findings": {
+    "unusedDependencies": ["unused"],
+    "unusedDevDependencies": ["unused-tool"],
+    "missingDependencies": ["missing"]
+  },
+  "counts": {
+    "unusedDependencies": 1,
+    "unusedDevDependencies": 1,
+    "missingDependencies": 1
+  },
+  "packages": [
+    {
+      "name": "missing",
+      "status": "missing",
+      "declaredIn": [],
+      "excluded": false,
+      "underlyingFindings": ["missingDependencies"],
+      "findings": ["missingDependencies"],
+      "evidence": [
+        {
+          "kind": "source",
+          "file": "src/index.ts",
+          "reference": "import",
+          "specifier": "missing",
+          "position": {
+            "offset": 17,
+            "line": 1,
+            "column": 18
+          }
+        }
+      ]
+    },
+    {
+      "name": "unused",
+      "status": "unused",
+      "declaredIn": ["dependencies"],
+      "excluded": false,
+      "underlyingFindings": ["unusedDependencies"],
+      "findings": ["unusedDependencies"],
+      "evidence": []
+    },
+    {
+      "name": "unused-tool",
+      "status": "unused",
+      "declaredIn": ["devDependencies"],
+      "excluded": false,
+      "underlyingFindings": ["unusedDevDependencies"],
+      "findings": ["unusedDevDependencies"],
+      "evidence": []
+    }
+  ],
+  "query": null
+}
