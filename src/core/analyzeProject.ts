@@ -64,6 +64,16 @@ import {
 import { classifyPackageSpecifier, isPackageSelfReference } from '../scanner/packageSpecifier.js';
 import { collectPackageScriptUsage } from '../scanner/scriptUsage.js';
 import type { ScanContext } from './scanContext.js';
+import {
+  declarationGroupsFor,
+  evidencePath,
+  FINDING_CATEGORIES,
+  sortedUniqueEvidence,
+  type Evidence,
+  type FindingCategory,
+  type PackageFact,
+  type PackageStatus,
+} from './evidence.js';
 
 /**
  * The structured outcome of a dependency analysis.
@@ -82,6 +92,22 @@ export type AnalysisResult = {
   unusedDevDependencies: readonly string[];
   /** External packages referenced by source but not declared anywhere, sorted alphabetically. */
   missingDependencies: readonly string[];
+};
+
+/** Internal categories before or after dependency policy; no additional finding kind. */
+export type AnalysisFindings = Pick<
+  AnalysisResult,
+  'unusedDependencies' | 'unusedDevDependencies' | 'missingDependencies'
+>;
+
+/** Complete internal scan facts. Presentation projects explicit fields instead of serializing this object. */
+export type DetailedAnalysisResult = {
+  readonly projectRoot: string;
+  readonly manifest: ProjectManifest;
+  readonly config: ScanContext['config'];
+  readonly underlyingFindings: AnalysisFindings;
+  readonly findings: AnalysisFindings;
+  readonly packages: readonly PackageFact[];
 };
 
 /**
@@ -163,23 +189,68 @@ export async function analyzeProject(
   projectRoot: string,
   options: AnalysisOptions = {},
 ): Promise<AnalysisResult> {
-  return analyzeManifest(await loadProjectManifest(projectRoot), options);
+  const manifest = await loadProjectManifest(projectRoot);
+  const usage = await collectUsage(manifest, options.ignorePaths);
+  // Legacy names-only hints keep their finding semantics without creating fictional provenance.
+  const used = unionNames([
+    [...usage.usedNames],
+    [...normalizeConfigHints(options.configUsedNames)],
+  ]);
+  const underlying = classifyFindings(manifest, usage.sourceUsedNames, used);
+  return legacyResult(
+    manifest.root,
+    applyDependencyPolicy(underlying, new Set(options.ignoreDependencies ?? [])),
+  );
 }
 
-/** Analyze one prepared CLI context without reloading metadata or activating detectors for legacy callers. */
+/** Keep the small CLI/legacy result projection while collecting the same complete scan facts. */
 export async function analyzeProjectWithContext(context: ScanContext): Promise<AnalysisResult> {
-  return analyzeManifest(context.manifest, {
-    ...context.config,
-    configUsedNames: new Set(context.configEvidence.map(({ packageName }) => packageName)),
-  });
+  return projectAnalysisResult(await analyzeProjectDetailed(context));
 }
 
-async function analyzeManifest(
+/** Detailed analysis accepts eligible typed facts only, never the legacy names-only hint seam. */
+export async function analyzeProjectDetailed(
+  context: ScanContext,
+): Promise<DetailedAnalysisResult> {
+  const { manifest, config } = context;
+  const usage = await collectUsage(manifest, config.ignorePaths, context.configEvidence);
+  const underlyingFindings = classifyFindings(manifest, usage.sourceUsedNames, usage.usedNames);
+  const ignored = new Set(config.ignoreDependencies);
+  const findings = applyDependencyPolicy(underlyingFindings, ignored);
+  return {
+    projectRoot: manifest.root,
+    manifest,
+    config,
+    underlyingFindings,
+    findings,
+    packages: packageFacts(manifest, usage.evidence, ignored, underlyingFindings, findings),
+  };
+}
+
+/** Pure legacy projection; no collection, reclassification or input reads. */
+export function projectAnalysisResult(result: DetailedAnalysisResult): AnalysisResult {
+  return legacyResult(result.projectRoot, result.findings);
+}
+
+type CollectedUsage = {
+  readonly sourceUsedNames: ReadonlySet<string>;
+  readonly usedNames: ReadonlySet<string>;
+  readonly evidence: ReadonlyMap<string, readonly Evidence[]>;
+};
+
+async function collectUsage(
   manifest: ProjectManifest,
-  options: AnalysisOptions,
-): Promise<AnalysisResult> {
+  ignorePaths: AnalysisOptions['ignorePaths'],
+  configFacts: ScanContext['configEvidence'] = [],
+): Promise<CollectedUsage> {
+  const evidence = new Map<string, Evidence[]>();
+  const add = (name: string, fact: Evidence): void => {
+    const facts = evidence.get(name);
+    if (facts === undefined) evidence.set(name, [fact]);
+    else facts.push(fact);
+  };
   const sourceFiles = await discoverSourceFiles(manifest.root, {
-    ignorePaths: options.ignorePaths,
+    ignorePaths,
   });
 
   // External package roots referenced by source files, collapsed to their package root.
@@ -191,15 +262,23 @@ async function analyzeManifest(
 
   for (const file of sourceFiles) {
     const scope = await packageScopeForDirectory(dirname(file), scopeByDirectory);
-    const specifiers = await readAndExtract(file, scope.packageType);
+    const occurrences = await readAndExtract(file, scope.packageType);
+    const relativeFile = evidencePath(manifest.root, file);
 
-    for (const occurrence of specifiers) {
+    for (const occurrence of occurrences) {
       const specifier = occurrence.specifier;
       if (isPackageSelfReference(specifier, scope.selfReference)) continue;
       const classified = classifyPackageSpecifier(specifier);
 
       if (classified.kind === 'external') {
         sourceUsedNames.add(classified.packageName);
+        add(classified.packageName, {
+          kind: 'source',
+          file: relativeFile,
+          reference: occurrence.kind,
+          specifier,
+          position: occurrence.position,
+        });
       }
     }
   }
@@ -211,33 +290,95 @@ async function analyzeManifest(
     Object.keys(manifest.devDependencies),
   ]);
 
-  const scriptFacts = collectPackageScriptUsage(manifest.scripts, declaredCandidates);
-  const scriptUsedNames = scriptFacts.map(({ packageName }) => packageName);
+  for (const fact of collectPackageScriptUsage(manifest.scripts, declaredCandidates)) {
+    add(fact.packageName, fact.evidence);
+  }
+  for (const fact of configFacts) {
+    // Config facts cannot enlarge the external inventory with undeclared packages.
+    if (manifest.declaredDependencyNames.has(fact.packageName))
+      add(fact.packageName, fact.evidence);
+  }
+  return { sourceUsedNames, usedNames: new Set(evidence.keys()), evidence };
+}
 
-  // Configuration evidence never reaches `sourceUsedNames`, which is the only input able to produce
-  // a missing finding; it can only make `usedNames` bigger and therefore suppress unused findings.
-  const configUsedNames = normalizeConfigHints(options.configUsedNames);
-
-  const usedNames = unionNames([[...sourceUsedNames], [...scriptUsedNames], [...configUsedNames]]);
-
-  const unusedDependencies = declaredMinus(Object.keys(manifest.dependencies), usedNames);
-
-  const unusedDevDependencies = declaredMinus(Object.keys(manifest.devDependencies), usedNames);
-
-  // An external root is missing only when it is absent from every declared dependency section.
-  // Peer/optional declarations therefore suppress false missing results.
-  const missingDependencies = declaredMinus([...sourceUsedNames], manifest.declaredDependencyNames);
-
-  // Exclusions are policy, not evidence: classify against the complete inventory first so script
-  // collisions and all other packages keep their ordinary meaning. Retained sources must already
-  // have been read and parsed successfully before any finding can be suppressed.
-  const ignoredDependencies = new Set(options.ignoreDependencies ?? []);
+/** Existing formulas, evaluated against full inventory before dependency exclusions. */
+function classifyFindings(
+  manifest: ProjectManifest,
+  sourceUsedNames: ReadonlySet<string>,
+  usedNames: ReadonlySet<string>,
+): AnalysisFindings {
   return {
-    projectRoot: manifest.root,
-    unusedDependencies: unusedDependencies.filter((name) => !ignoredDependencies.has(name)),
-    unusedDevDependencies: unusedDevDependencies.filter((name) => !ignoredDependencies.has(name)),
-    missingDependencies: missingDependencies.filter((name) => !ignoredDependencies.has(name)),
+    unusedDependencies: declaredMinus(Object.keys(manifest.dependencies), usedNames),
+    unusedDevDependencies: declaredMinus(Object.keys(manifest.devDependencies), usedNames),
+    missingDependencies: declaredMinus([...sourceUsedNames], manifest.declaredDependencyNames),
   };
+}
+
+function applyDependencyPolicy(
+  underlying: AnalysisFindings,
+  ignored: ReadonlySet<string>,
+): AnalysisFindings {
+  return {
+    unusedDependencies: underlying.unusedDependencies.filter((name) => !ignored.has(name)),
+    unusedDevDependencies: underlying.unusedDevDependencies.filter((name) => !ignored.has(name)),
+    missingDependencies: underlying.missingDependencies.filter((name) => !ignored.has(name)),
+  };
+}
+
+function legacyResult(projectRoot: string, findings: AnalysisFindings): AnalysisResult {
+  return {
+    projectRoot,
+    unusedDependencies: findings.unusedDependencies,
+    unusedDevDependencies: findings.unusedDevDependencies,
+    missingDependencies: findings.missingDependencies,
+  };
+}
+
+function categoryMembership(
+  findings: AnalysisFindings,
+): Record<FindingCategory, ReadonlySet<string>> {
+  return {
+    unusedDependencies: new Set(findings.unusedDependencies),
+    unusedDevDependencies: new Set(findings.unusedDevDependencies),
+    missingDependencies: new Set(findings.missingDependencies),
+  };
+}
+
+function packageFacts(
+  manifest: ProjectManifest,
+  evidenceByPackage: ReadonlyMap<string, readonly Evidence[]>,
+  ignored: ReadonlySet<string>,
+  underlying: AnalysisFindings,
+  visible: AnalysisFindings,
+): readonly PackageFact[] {
+  const underlyingMembership = categoryMembership(underlying);
+  const visibleMembership = categoryMembership(visible);
+  const names = unionNames([
+    [...manifest.declaredDependencyNames],
+    [...evidenceByPackage.keys()],
+    [...ignored],
+  ]);
+  return [...names].map((name) => {
+    const declaredIn = declarationGroupsFor(name, manifest);
+    const excluded = ignored.has(name);
+    const underlyingFindings = FINDING_CATEGORIES.filter((category) =>
+      underlyingMembership[category].has(name),
+    );
+    const findings = FINDING_CATEGORIES.filter((category) => visibleMembership[category].has(name));
+    const evidence = sortedUniqueEvidence(evidenceByPackage.get(name) ?? []);
+    const status: PackageStatus = excluded
+      ? 'excluded'
+      : underlyingFindings.includes('missingDependencies')
+        ? 'missing'
+        : underlyingFindings.length > 0
+          ? 'unused'
+          : evidence.length > 0
+            ? 'used'
+            : declaredIn.length > 0
+              ? 'declared'
+              : 'unknown';
+    return { name, status, declaredIn, excluded, underlyingFindings, findings, evidence };
+  });
 }
 
 /**
