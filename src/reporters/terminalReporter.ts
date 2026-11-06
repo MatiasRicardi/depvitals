@@ -1,9 +1,9 @@
 /**
  * Deterministic terminal reporter.
  *
- * Renders an {@link AnalysisResult} as plain terminal text and nothing else: the module performs no
+ * Renders legacy findings or a completed package explanation as plain terminal text. The module performs no
  * process I/O, never imports `node:process`, never writes to a stream, never assigns an exit code,
- * and never reads the filesystem. It is a pure `AnalysisResult -> string` transformation, so the
+ * and never reads the filesystem. Both formatters are pure transformations, so the
  * exact output is fully testable and can be reused by any future presentation layer.
  *
  * The `v0.1.0` output is intentionally plain. It contains exactly:
@@ -11,7 +11,7 @@
  * - one section per non-empty findings category, in a fixed order;
  * - the clean-project message when there are no findings at all.
  *
- * It deliberately does not contain colors, symbols, spinners, tables, terminal-width detection,
+ * The legacy scan deliberately does not contain colors, symbols, spinners, tables, terminal-width detection,
  * links, prompts, source locations, advice, remediation commands, dependency counts, project paths
  * or any summary footer. Those belong to later releases, if they are added at all.
  *
@@ -31,7 +31,15 @@
  * responsibility, so a duplicated name inside a category would be rendered twice by design.
  */
 
-import type { AnalysisResult } from '../core/analyzeProject.js';
+import type { AnalysisResult, PackageExplanation } from '../core/analyzeProject.js';
+
+import {
+  compareEvidence,
+  DECLARATION_GROUPS,
+  FINDING_CATEGORIES,
+  type Evidence,
+  type PackageStatus,
+} from '../core/evidence.js';
 
 /** Heading printed as the first line of every report. */
 const HEADER = 'DepVitals';
@@ -74,6 +82,78 @@ export function formatTerminalReport(result: AnalysisResult): string {
   const sections = findingsSections(result).filter((section) => section.names.length > 0);
 
   return `${HEADER}\n\n${sections.map(renderSection).join('\n\n')}\n`;
+}
+
+const EXPLANATION_REASONS: Readonly<Record<PackageStatus, string>> = {
+  used: 'Supported usage evidence was found within the effective scope.',
+  unused:
+    'No supported usage evidence was found within the effective scope. Review before removing the package.',
+  missing:
+    'Supported source evidence references this package, but no dependency group declares it.',
+  excluded:
+    'An exact ignoreDependencies rule suppresses findings for this package. Exclusion is not usage evidence.',
+  declared:
+    'Declared only in peerDependencies and/or optionalDependencies without supported usage evidence. These groups are not checked for unused.',
+  unknown:
+    'No declaration, supported source reference or dependency exclusion was found for this package.',
+};
+
+/** Render one completed package projection without collection, classification or process I/O. */
+export function formatTerminalExplanation(result: PackageExplanation): string {
+  const pkg = result.packages[0];
+  const evidence = [...pkg.evidence].sort(compareEvidence);
+  const summary = [
+    `Package: ${escapeControlCharacters(pkg.name)}`,
+    `Status: ${pkg.status}`,
+    `Declared in: ${orderedSummary(pkg.declaredIn, DECLARATION_GROUPS)}`,
+    `Excluded: ${pkg.excluded ? 'yes' : 'no'}`,
+    `Underlying findings: ${orderedSummary(pkg.underlyingFindings, FINDING_CATEGORIES)}`,
+    `Findings: ${orderedSummary(pkg.findings, FINDING_CATEGORIES)}`,
+  ].join('\n');
+  const evidenceSection = [
+    `Evidence (${String(evidence.length)})`,
+    ...(evidence.length === 0 ? ['  none'] : evidence.map(renderEvidence)),
+  ].join('\n');
+  const scope = [
+    'Scope',
+    `  Ignored source paths: ${quotedRules(result.config.ignorePaths)}`,
+    `  Ignored dependency names: ${quotedRules(result.config.ignoreDependencies)}`,
+  ].join('\n');
+  return (
+    [HEADER, summary, EXPLANATION_REASONS[pkg.status], evidenceSection, scope].join('\n\n') + '\n'
+  );
+}
+
+function orderedSummary<T extends string>(values: readonly T[], order: readonly T[]): string {
+  return values.length === 0
+    ? 'none'
+    : [...values]
+        .sort((a, b) => order.indexOf(a) - order.indexOf(b))
+        .map(escapeControlCharacters)
+        .join(', ');
+}
+
+function quotedRules(values: readonly string[]): string {
+  return values.length === 0
+    ? 'none'
+    : [...values].sort(compareNames).map(quoteTerminalValue).join(', ');
+}
+
+function renderEvidence(evidence: Evidence): string {
+  const file = quoteTerminalValue(evidence.file);
+  switch (evidence.kind) {
+    case 'source':
+      return `  source ${file}:${String(evidence.position.line)}:${String(evidence.position.column)} ${evidence.reference} ${quoteTerminalValue(evidence.specifier)}`;
+    case 'script':
+      return `  script ${file}#${quoteTerminalValue(evidence.pointer)} ${evidence.via} ${quoteTerminalValue(evidence.command)} (occurrence ${String(evidence.occurrence)})`;
+    case 'config':
+      return `  config ${file}#${quoteTerminalValue(evidence.pointer)} ${evidence.detector} ${quoteTerminalValue(evidence.value)}`;
+  }
+}
+
+/** Quote printable text first, then reuse the legacy control escape without double-escaping it. */
+function quoteTerminalValue(value: string): string {
+  return '"' + escapeControlCharacters(value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')) + '"';
 }
 
 /**
