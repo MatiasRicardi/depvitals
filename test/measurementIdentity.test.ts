@@ -16,9 +16,10 @@ type InputIdentity = {
   rootEntries: readonly string[];
   files: readonly BuildFile[];
 };
-const { identifyInputs, verifyMeasuredArchive } = (await import(
+const { identifyBuild, identifyInputs, verifyMeasuredArchive } = (await import(
   new URL('../scripts/measurementIdentity.mjs', import.meta.url).href
 )) as {
+  identifyBuild: (root: string) => readonly BuildFile[];
   identifyInputs: (root: string, sources: readonly string[]) => InputIdentity;
   verifyMeasuredArchive: (
     packPath: string,
@@ -51,9 +52,35 @@ function currentFiles(root: string): Map<string, Buffer> {
   );
 }
 function build(root: string): readonly BuildFile[] {
-  return [
-    { path: 'dist/cli/index.js', sha256: digest(readFileSync(join(root, 'dist/cli/index.js'))) },
-  ];
+  return identifyBuild(root);
+}
+
+const schemaAssets = [
+  'schemas/report-v1.schema.json',
+  'schemas/README.md',
+  'schemas/examples/README.md',
+  ...[
+    'scan-clean',
+    'scan-findings',
+    'explain-missing',
+    'explain-excluded',
+    'explain-unknown',
+    'explain-node-preload',
+  ].map((name) => `schemas/examples/${name}.json`),
+];
+function addSchemaAssets(root: string): Map<string, Buffer> {
+  writeFileSync(
+    join(root, 'package.json'),
+    JSON.stringify({ name: 'fixture', version: '0.2.0', files: ['dist', 'schemas'] }),
+  );
+  const files = currentFiles(root);
+  for (const path of schemaAssets) {
+    const bytes = readFileSync(new URL('../' + path, import.meta.url));
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    writeFileSync(join(root, path), bytes);
+    files.set(path, bytes);
+  }
+  return files;
 }
 
 /** Test-owned ustar writer. Buffers are inspected as data, never extracted/executed. */
@@ -166,6 +193,57 @@ describe('measurement input identity', () => {
 });
 
 describe('measurement archive binding', () => {
+  it('accepts the complete packaged schema shape alongside dist and root files', async () => {
+    await fixture((root) => {
+      const files = addSchemaAssets(root);
+      const result = verifyMeasuredArchive(archive(root, files), root, build(root));
+      expect(result.fileCount).toBe(13);
+      expect(build(root).map((file) => file.path)).toEqual(
+        ['dist/cli/index.js', ...schemaAssets].sort(),
+      );
+    });
+  });
+  it.each(schemaAssets)('rejects stale archive bytes for schema asset %s', async (path) => {
+    await fixture((root) => {
+      const files = addSchemaAssets(root);
+      files.set(path, Buffer.from('stale asset'));
+      expect(() => verifyMeasuredArchive(archive(root, files), root, build(root))).toThrow(
+        `Archive file differs from measured build: ${path}`,
+      );
+    });
+  });
+  it.each(['missing', 'extra'])(
+    'rejects %s schema assets despite valid pack metadata',
+    async (kind) => {
+      await fixture((root) => {
+        const files = addSchemaAssets(root);
+        if (kind === 'missing') files.delete('schemas/examples/scan-clean.json');
+        else files.set('schemas/stale.json', Buffer.from('{}'));
+        expect(() => verifyMeasuredArchive(archive(root, files), root, build(root))).toThrow(
+          'Archive file set differs from measured build',
+        );
+      });
+    },
+  );
+  it('observes schema changes during measurement instead of accepting a stale identity', async () => {
+    await fixture((root) => {
+      const files = addSchemaAssets(root);
+      const before = build(root);
+      writeFileSync(join(root, 'schemas/README.md'), 'Changed after measurement');
+      expect(build(root)).not.toEqual(before);
+      expect(() => verifyMeasuredArchive(archive(root, files), root, build(root))).toThrow(
+        'Archive file differs from measured build: schemas/README.md',
+      );
+    });
+  });
+
+  it('rejects a missing schema directory when the package declares it', async () => {
+    await fixture((root) => {
+      addSchemaAssets(root);
+      rmSync(join(root, 'schemas'), { recursive: true });
+      expect(() => build(root)).toThrow();
+    });
+  });
   it('accepts an adjacent archive matching metadata, the build and all packaged root files', async () => {
     await fixture((root) => {
       const path = archive(root);
@@ -265,7 +343,7 @@ describe('measurement archive binding', () => {
       writeFileSync(join(root, path), 'long path');
       const files = currentFiles(root);
       files.set(path, Buffer.from('long path'));
-      const measured = [...build(root), { path, sha256: digest('long path') }];
+      const measured = build(root);
       expect(verifyMeasuredArchive(archive(root, files), root, measured).fileCount).toBe(5);
     });
   });
