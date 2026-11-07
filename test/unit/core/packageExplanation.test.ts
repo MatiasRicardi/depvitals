@@ -208,16 +208,15 @@ describe('completed exact-package explanation projection', () => {
     },
   );
 
-  it('keeps explanation and format flags unavailable through the actual CLI', async () => {
-    for (const args of [
-      ['--explain', 'used', root],
-      [root, '--format', 'json'],
-    ]) {
-      const result = await runCli(args, { cwd: root, version: '0.3.0' });
-      expect(result.exitCode).toBe(1);
-      expect(result.stdout).toBe('');
-      expect(result.stderr).toContain('Unknown option:');
-    }
+  it('connects explanation and JSON flags to the completed package facts', async () => {
+    const query = await runCli(['--explain', 'used', root], { cwd: root, version: '0.3.0' });
+    expect(query.exitCode).toBe(0);
+    expect(query.stderr).toBe('');
+    expect(query.stdout).toContain('Package: used\nStatus: used\n');
+    const scan = await runCli([root, '--format', 'json'], { cwd: root, version: '0.3.0' });
+    expect(scan.exitCode).toBe(1);
+    expect(scan.stderr).toBe('');
+    expect(scan.stdout).toContain('"mode": "scan"');
   });
 });
 

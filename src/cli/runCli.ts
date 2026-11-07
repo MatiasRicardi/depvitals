@@ -8,8 +8,8 @@
  * The responsibilities here are:
  * - delegate argument validation to the pure {@link parseCliArgs};
  * - prepare one validated root/policy/detector context for the analyzer, which alone owns findings;
- * - run the static dependency scan with `analyzeProjectWithContext`;
- * - render the report with the pure terminal reporter;
+ * - run one full detailed dependency scan;
+ * - render the selected terminal or JSON scan/query projection;
  * - decide the scan exit code from `hasDependencyIssues`, not from the report string;
  * - convert operational failures into a concise CLI error result.
  *
@@ -20,16 +20,22 @@
 import { ProjectConfigError } from '../config/readProjectConfig.js';
 import {
   AnalysisError,
-  type AnalysisResult,
-  analyzeProjectWithContext,
+  analyzeProjectDetailed,
+  projectAnalysisResult,
+  projectPackageExplanation,
 } from '../core/analyzeProject.js';
 import { createScanContext } from '../core/scanContext.js';
 import { EslintRcJsonError } from '../detectors/eslintRcJsonConfig.js';
-import { formatTerminalReport, hasDependencyIssues } from '../reporters/terminalReporter.js';
+import {
+  formatTerminalExplanation,
+  formatTerminalReport,
+  hasDependencyIssues,
+} from '../reporters/terminalReporter.js';
 import { ProjectManifestError } from '../scanner/projectManifest.js';
 import { SourceFilesError } from '../scanner/sourceFiles.js';
 
-import { parseCliArgs } from './parseCliArgs.js';
+import { formatJsonReport } from '../reporters/jsonReporter.js';
+import { parseCliArgs, type ParsedCommand } from './parseCliArgs.js';
 
 /**
  * The rendered CLI result: an exit code and the text to write to each stream. Exactly one of
@@ -57,12 +63,14 @@ const HELP_MESSAGE = [
   'A simple, lightweight dependency health checker for Node.js projects.',
   '',
   'Usage:',
-  '  depvitals [project]',
+  '  depvitals [project] [--format terminal|json] [--explain <package>]',
   '',
   'Arguments:',
   '  project          Project directory to analyze (default: current directory)',
   '',
   'Options:',
+  '  --format <format>    Output format: terminal or json (default: terminal)',
+  '  --explain <package>  Explain one exact package root (default: full scan)',
   '  -h, --help       Show help',
   '  -v, --version    Show version',
 ].join('\n');
@@ -85,7 +93,7 @@ export async function runCli(args: readonly string[], options: CliOptions): Prom
     case 'error':
       return { exitCode: 1, stdout: '', stderr: `${command.message}\n` };
     case 'scan':
-      return await runScan(command.projectPath);
+      return await runScan(command, options.version);
   }
 }
 
@@ -96,27 +104,38 @@ export async function runCli(args: readonly string[], options: CliOptions): Prom
  * empty stdout). Any other thrown value is surfaced through a generic fallback message so the CLI
  * never leaks internal error objects and never leaves an unhandled rejection.
  */
-async function runScan(projectPath: string): Promise<CliResult> {
-  let result: AnalysisResult;
-
+async function runScan(
+  command: Extract<ParsedCommand, { kind: 'scan' }>,
+  version: string,
+): Promise<CliResult> {
+  const projectPath = command.projectPath;
   try {
     const context = await createScanContext(projectPath);
-    result = await analyzeProjectWithContext(context);
-  } catch (error) {
-    if (isOperationalError(error)) {
-      return { exitCode: 1, stdout: '', stderr: `${error.message}\n` };
+    const detailed = await analyzeProjectDetailed(context);
+    if (command.explain !== undefined) {
+      const result = projectPackageExplanation(detailed, command.explain);
+      return {
+        exitCode: result.exitCode,
+        stdout:
+          command.format === 'json'
+            ? formatJsonReport({ mode: 'explain', result }, version)
+            : formatTerminalExplanation(result),
+        stderr: '',
+      };
     }
-
+    const result = projectAnalysisResult(detailed);
     return {
-      exitCode: 1,
-      stdout: '',
-      stderr: `${unexpectedErrorMessage(projectPath, error)}\n`,
+      exitCode: hasDependencyIssues(result) ? 1 : 0,
+      stdout:
+        command.format === 'json'
+          ? formatJsonReport({ mode: 'scan', result: detailed }, version)
+          : formatTerminalReport(result),
+      stderr: '',
     };
+  } catch (error) {
+    if (isOperationalError(error)) return { exitCode: 1, stdout: '', stderr: `${error.message}\n` };
+    return { exitCode: 1, stdout: '', stderr: `${unexpectedErrorMessage(projectPath, error)}\n` };
   }
-
-  const hasIssues = hasDependencyIssues(result);
-
-  return { exitCode: hasIssues ? 1 : 0, stdout: formatTerminalReport(result), stderr: '' };
 }
 
 /**

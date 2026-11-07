@@ -415,7 +415,7 @@ async function main() {
 
     writeFileSync(
       join(cleanDir, 'package.json'),
-      `${JSON.stringify({ name: 'smoke-clean', version: '0.0.0', dependencies: { lodash: '4.17.21' } }, null, 2)}\n`,
+      `${JSON.stringify({ name: 'smoke-clean', version: '0.0.0', dependencies: { lodash: '4.17.21' }, peerDependencies: { 'peer-only': '*' } }, null, 2)}\n`,
     );
     writeFileSync(
       join(cleanDir, 'index.js'),
@@ -1066,6 +1066,97 @@ require('real');`,
         check(`audit ${name} stderr empty`, result.stderr === '', result.stderr);
       }
     }
+    for (const [directory, expectedExit] of [
+      [cleanDir, 0],
+      [findingsDir, 1],
+    ]) {
+      const result = runInstalledCli(binPath, consumerDir, ['--format', 'json', directory]);
+      const document = JSON.parse(result.stdout);
+      check(
+        `JSON scan streams/status: ${directory}`,
+        result.status === expectedExit && result.stderr === '',
+      );
+      check(
+        `JSON scan envelope: ${directory}`,
+        document.schemaVersion === 1 &&
+          document.tool.version === rootVersion &&
+          document.mode === 'scan' &&
+          document.query === null &&
+          document.project.root === directory,
+      );
+      check(
+        `JSON scan counts and exact serialization: ${directory}`,
+        Object.entries(document.findings).every(
+          ([key, names]) => document.counts[key] === names.length,
+        ) && result.stdout === JSON.stringify(document, null, 2) + '\n',
+      );
+    }
+    for (const [directory, name, status, expectedExit] of [
+      [findingsDir, 'lodash', 'used', 0],
+      [findingsDir, 'unused-dep', 'unused', 1],
+      [findingsDir, 'missing-pkg', 'missing', 1],
+      [configuredDir, 'selected', 'excluded', 0],
+      [cleanDir, 'peer-only', 'declared', 0],
+      [cleanDir, 'absent', 'unknown', 1],
+    ]) {
+      for (const format of ['terminal', 'json']) {
+        const result = runInstalledCli(binPath, consumerDir, [
+          directory,
+          '--explain',
+          name,
+          '--format',
+          format,
+        ]);
+        check(
+          `explain ${name}/${format} streams/status`,
+          result.status === expectedExit && result.stderr === '',
+        );
+        if (format === 'json') {
+          const document = JSON.parse(result.stdout);
+          check(
+            `explain ${name} package-local JSON`,
+            document.mode === 'explain' &&
+              document.query.packageName === name &&
+              document.query.known === (status !== 'unknown') &&
+              document.packages.length === 1 &&
+              document.packages[0].status === status &&
+              Object.values(document.findings).every((names) =>
+                names.every((value) => value === name),
+              ),
+          );
+        } else
+          check(
+            `explain ${name} human summary`,
+            result.stdout.includes(`Package: ${name}\nStatus: ${status}\n`),
+          );
+      }
+    }
+    for (const format of ['terminal', 'json']) {
+      const result = runInstalledCli(binPath, consumerDir, [
+        invalidTemplateDir,
+        '--format',
+        format,
+        '--explain',
+        'real',
+      ]);
+      check(
+        `explanation fatal-source channels ${format}`,
+        result.status === 1 && result.stdout === '' && result.stderr.includes('index.ts'),
+      );
+    }
+    const duplicateFormat = runInstalledCli(binPath, consumerDir, [
+      '--format',
+      'json',
+      '--format',
+      'json',
+    ]);
+    check(
+      'duplicate format is an argument error',
+      duplicateFormat.status === 1 &&
+        duplicateFormat.stdout === '' &&
+        duplicateFormat.stderr.includes('Option --format may be specified only once.'),
+    );
+
     const configuredCwd = runInstalledCli(binPath, configuredDir, []);
     check(
       'configured no-args scan uses cwd policy',
@@ -1140,6 +1231,29 @@ require('real');`,
       'noninteractive scan makes no notifier cache or transport requests',
       !existsSync(marker) && !existsSync(cacheRoot),
     );
+
+    const ttyProbe = join(observerDir, 'force-tty.mjs');
+    writeFileSync(ttyProbe, 'process.stdout.isTTY = true; process.stderr.isTTY = true;\n');
+    const isolatedEnv = {
+      ...observerEnv,
+      NODE_OPTIONS: observerEnv.NODE_OPTIONS + ` --import=${pathToFileURL(ttyProbe).href}`,
+    };
+    for (const args of [
+      [cleanDir, '--format', 'json'],
+      [findingsDir, '--explain', 'lodash'],
+      [findingsDir, '--format', 'json', '--explain', 'missing-pkg'],
+      [invalidTemplateDir, '--format', 'json', '--explain', 'real'],
+      ['--help'],
+      ['--unknown'],
+    ]) {
+      const result = run(binPath, args, consumerDir, isolatedEnv);
+      check(
+        `isolated mode never emits notifier: ${args.join(' ')}`,
+        !result.stderr.includes('New DepVitals version available:') &&
+          !existsSync(marker) &&
+          !existsSync(cacheRoot),
+      );
+    }
 
     // Capture the fixtures again after every scan, then compare the complete before-and-after
     // snapshots so added, deleted, and modified files are all detected.
