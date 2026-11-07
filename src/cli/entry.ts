@@ -100,11 +100,20 @@ async function collectNotice(
   result: CliResult,
   options: CliEntryOptions,
 ): Promise<string | undefined> {
+  const command = parseCliArgs(args, options.cwd);
+  if (
+    command.kind !== 'scan' ||
+    command.format === 'json' ||
+    command.explain !== undefined ||
+    result.stdout.length === 0 ||
+    result.stderr.length > 0
+  )
+    return undefined;
   try {
     const collect = options.updateNotice ?? collectUpdateNotice;
 
     const notice = await collect({
-      commandKind: commandKindOf(args, options.cwd, result),
+      commandKind: 'scan',
       currentVersion: options.version,
       env: options.env,
       stdoutTTY: options.stdout.isTTY === true,
@@ -116,31 +125,4 @@ async function collectNotice(
     // An optional notification never becomes a failure of its own.
     return undefined;
   }
-}
-
-/**
- * Classify the invocation in the vocabulary the eligibility predicate expects.
- *
- * The argument parser is the single source of truth for `help`, `version` and usage errors, so it is
- * consulted again here (a pure, deterministic function of the same arguments and the same working
- * directory) instead of widening {@link CliResult}, whose three keys are pinned by the contract gate.
- * A parsed `scan` is then split by what the scan produced: {@link runCli} renders a report whenever
- * the scan completed - clean or with findings - and leaves stdout empty for an operational failure,
- * so an empty report means the scan never finished and nothing may be suggested to the user.
- *
- * Only the literal kind crosses the boundary; the parsed project path stays here and is never passed
- * into notifier code.
- */
-function commandKindOf(
-  args: readonly string[],
-  cwd: string,
-  result: CliResult,
-): UpdateNoticeRequest['commandKind'] {
-  const command = parseCliArgs(args, cwd);
-
-  if (command.kind !== 'scan') {
-    return command.kind;
-  }
-
-  return result.stdout.length === 0 ? 'scan-failure' : 'scan';
 }

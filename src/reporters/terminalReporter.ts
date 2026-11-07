@@ -195,7 +195,7 @@ function renderSection(section: Section): string {
  * The scan is written as explicit code points instead of a control-character regex range so the
  * ESLint `no-control-regex` rule stays meaningful.
  */
-function escapeControlCharacters(value: string): string {
+export function escapeControlCharacters(value: string): string {
   let out = '';
 
   for (let index = 0; index < value.length; index += 1) {

@@ -218,13 +218,9 @@ describe('runCliEntry: stdout and the exit status stay byte-identical to the pre
 
       const stderr = textOf(outcome.writes, 'stderr');
 
-      if (before.stderr.length === 0) {
-        expect(stderr).toBe(NOTICE);
-      } else {
-        // The diagnostic keeps its exact bytes; the notice is appended after it, never before it.
-        expect(stderr.startsWith(before.stderr)).toBe(true);
-        expect(stderr.endsWith(NOTICE)).toBe(true);
-      }
+      const eligible = entry.label === 'a clean scan' || entry.label === 'a scan with findings';
+      expect(stderr).toBe(before.stderr + (eligible ? NOTICE : ''));
+      expect(notice.requests).toHaveLength(eligible ? 1 : 0);
     },
   );
 });
@@ -253,8 +249,8 @@ describe('runCliEntry: the notifier is told which command completed, and nothing
 
     await run(entry.argv, { updateNotice: notice.updateNotice });
 
-    expect(notice.requests).toHaveLength(1);
-    expect(notice.requests[0]?.commandKind).toBe(entry.commandKind);
+    expect(notice.requests).toHaveLength(entry.commandKind === 'scan' ? 1 : 0);
+    if (entry.commandKind === 'scan') expect(notice.requests[0]?.commandKind).toBe('scan');
   });
 
   it('forwards the version, the environment and the two stream flags, and no project path', async () => {
@@ -413,7 +409,7 @@ describe('runCliEntry: a misbehaving notifier cannot change a scan', () => {
     expect(failed.exitCode).toBe(1);
     expect(textOf(failed.writes, 'stdout')).toBe('');
     expect(textOf(failed.writes, 'stderr')).toContain('No package.json found at');
-    expect(textOf(failed.writes, 'stderr').endsWith(NOTICE)).toBe(true);
+    expect(textOf(failed.writes, 'stderr')).not.toContain(NOTICE);
   });
 });
 

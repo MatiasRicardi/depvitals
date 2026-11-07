@@ -333,16 +333,8 @@ describe('configuration and notifier eligibility', () => {
             .mock.calls.filter(([path]) => String(path).startsWith(cacheDir));
           expect(cacheChecks).toHaveLength(eligible ? 1 : 0);
           expect(existsSync(cacheDir)).toBe(false);
-          expect(updateNotice).toHaveBeenCalledTimes(1);
-          expect(updateNotice.mock.calls[0]?.[0].commandKind).toBe(
-            kind === 'invalid-config'
-              ? 'scan-failure'
-              : eligible
-                ? 'scan'
-                : kind === 'argument-error'
-                  ? 'error'
-                  : kind,
-          );
+          expect(updateNotice).toHaveBeenCalledTimes(eligible ? 1 : 0);
+          if (eligible) expect(updateNotice.mock.calls[0]?.[0].commandKind).toBe('scan');
           if (kind === 'invalid-config') {
             expect(result).toBe(1);
             expect(stdout).toBe('');

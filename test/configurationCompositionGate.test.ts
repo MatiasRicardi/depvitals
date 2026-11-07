@@ -142,21 +142,24 @@ async function adapter(
     },
     updateNotice,
   });
-  expect(updateNotice).toHaveBeenCalledTimes(1);
-  expect(Object.keys(updateNotice.mock.calls[0]?.[0] ?? {}).sort()).toEqual([
-    'commandKind',
-    'currentVersion',
-    'env',
-    'stderrTTY',
-    'stdoutTTY',
-  ]);
-  expect(updateNotice).toHaveBeenCalledWith({
-    commandKind: failure ? 'scan-failure' : 'scan',
-    currentVersion: VERSION,
-    env: {},
-    stdoutTTY: true,
-    stderrTTY: true,
-  });
+  if (failure) expect(updateNotice).not.toHaveBeenCalled();
+  else {
+    expect(updateNotice).toHaveBeenCalledTimes(1);
+    expect(Object.keys(updateNotice.mock.calls[0]?.[0] ?? {}).sort()).toEqual([
+      'commandKind',
+      'currentVersion',
+      'env',
+      'stderrTTY',
+      'stdoutTTY',
+    ]);
+    expect(updateNotice).toHaveBeenCalledWith({
+      commandKind: 'scan',
+      currentVersion: VERSION,
+      env: {},
+      stdoutTTY: true,
+      stderrTTY: true,
+    });
+  }
   expect({ exitCode, stdout, stderr }).toEqual({
     ...expected,
     stderr: expected.stderr + (failure ? '' : '\nInjected offline notice\n'),

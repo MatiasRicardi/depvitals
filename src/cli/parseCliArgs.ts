@@ -1,5 +1,5 @@
 /**
- * Pure, deterministic argument parsing for the `v0.1.0` CLI.
+ * Pure, deterministic CLI argument parsing.
  *
  * This module only validates the argument shape and resolves the selected project path. It never
  * touches the filesystem, never calls the analyzer, and never accesses `process`, so the parsing
@@ -9,19 +9,22 @@
  * - no arguments            -> scan the injected `cwd`
  * - exactly one positional  -> scan the resolved project directory
  * - exactly one meta flag   -> help or version (exit 0, no scan)
- * - anything else           -> a deterministic error message
+ * - separated format/explain options may surround the single project path
+ * - malformed or unsupported shapes produce a deterministic error message
  *
  * `--help`/`-h`/`--version`/`-v` must stay standalone: combining them with any other token, or
  * combining them with each other, is rejected rather than given precedence.
  */
 
 import { resolve } from 'node:path';
+import { isExactPackageRoot } from '../config/ignoreDependencies.js';
+import { escapeControlCharacters } from '../reporters/terminalReporter.js';
 
 /** The command selected after parsing the arguments. */
 export type ParsedCommand =
   | { kind: 'help' }
   | { kind: 'version' }
-  | { kind: 'scan'; projectPath: string }
+  | { kind: 'scan'; projectPath: string; format?: 'terminal' | 'json'; explain?: string }
   | { kind: 'error'; message: string };
 
 /** Help/version flags that must be used alone. */
@@ -47,58 +50,59 @@ const TOO_MANY_ARGUMENTS = 'Too many arguments: expected at most one project pat
  *   the default project when no argument is supplied.
  */
 export function parseCliArgs(args: readonly string[], cwd: string): ParsedCommand {
-  if (args.length === 0) {
-    return { kind: 'scan', projectPath: cwd };
-  }
-
-  if (args.length === 1) {
-    const arg = args[0];
-
-    // An empty string (or the unreachable undefined) is an explicit, invalid positional: it must
-    // not silently become `cwd`.
-    if (arg === undefined || arg === '') {
-      return { kind: 'error', message: INVALID_EMPTY_PROJECT_PATH };
-    }
-
-    if (HELP_FLAGS.has(arg)) {
-      return { kind: 'help' };
-    }
-
-    if (VERSION_FLAGS.has(arg)) {
-      return { kind: 'version' };
-    }
-
-    // Anything else that is not an option is treated as a project path.
-    if (!arg.startsWith('-')) {
-      return { kind: 'scan', projectPath: resolve(cwd, arg) };
-    }
-
-    return { kind: 'error', message: unknownOptionMessage(arg) };
-  }
-
-  // Two or more tokens: help/version must remain standalone, so any meta flag combined with
-  // additional tokens (including other meta flags) is rejected as used alone.
+  if (args.length === 1 && HELP_FLAGS.has(args[0] ?? '')) return { kind: 'help' };
+  if (args.length === 1 && VERSION_FLAGS.has(args[0] ?? '')) return { kind: 'version' };
   const metaFlag = args.find((arg) => HELP_FLAGS.has(arg) || VERSION_FLAGS.has(arg));
-  if (metaFlag !== undefined) {
-    return { kind: 'error', message: metaFlagMustBeUsedAlone(metaFlag) };
-  }
+  if (metaFlag !== undefined) return { kind: 'error', message: metaFlagMustBeUsedAlone(metaFlag) };
 
-  // No meta flag: reject unknown options before falling back to the positional rule, so an unknown
-  // flag is reported even when it appears alongside a positional path.
-  const unknownOption = args.find((arg) => arg.startsWith('-'));
-  if (unknownOption !== undefined) {
-    return { kind: 'error', message: unknownOptionMessage(unknownOption) };
+  let format: 'terminal' | 'json' | undefined;
+  let explain: string | undefined;
+  const paths: string[] = [];
+  const error = (body: string): ParsedCommand => ({ kind: 'error', message: body + '\n' + HINT });
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? '';
+    if (arg === '--format' || arg === '--explain') {
+      if (
+        (arg === '--format' && format !== undefined) ||
+        (arg === '--explain' && explain !== undefined)
+      ) {
+        return error(`Option ${arg} may be specified only once.`);
+      }
+      const value = args[index + 1];
+      if (value === undefined || value === '' || value.startsWith('-'))
+        return error(`Option ${arg} requires a value.`);
+      if (arg === '--format') {
+        if (value !== 'terminal' && value !== 'json')
+          return error(
+            `Invalid value for --format: ${escapeControlCharacters(value)}. Expected terminal or json.`,
+          );
+        format = value;
+      } else {
+        if (!isExactPackageRoot(value))
+          return error(
+            'Invalid value for --explain: expected an exact package root (name or @scope/name), at most 214 characters.',
+          );
+        explain = value;
+      }
+      index += 1;
+    } else if (arg.startsWith('-')) return { kind: 'error', message: unknownOptionMessage(arg) };
+    else paths.push(arg);
   }
-
-  // Remaining tokens are all positionals, which is more than one.
-  return { kind: 'error', message: TOO_MANY_ARGUMENTS };
+  if (paths.length > 1) return { kind: 'error', message: TOO_MANY_ARGUMENTS };
+  if (paths[0] === '') return { kind: 'error', message: INVALID_EMPTY_PROJECT_PATH };
+  return {
+    kind: 'scan',
+    projectPath: paths[0] === undefined ? cwd : resolve(cwd, paths[0]),
+    ...(format === undefined ? {} : { format }),
+    ...(explain === undefined ? {} : { explain }),
+  };
 }
 
 /**
  * The error message for an unrecognized option.
  */
 function unknownOptionMessage(option: string): string {
-  return `Unknown option: ${option}\n${HINT}`;
+  return `Unknown option: ${escapeControlCharacters(option)}\n${HINT}`;
 }
 
 /**

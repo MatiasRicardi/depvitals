@@ -70,12 +70,14 @@ const HELP =
     'A simple, lightweight dependency health checker for Node.js projects.',
     '',
     'Usage:',
-    '  depvitals [project]',
+    '  depvitals [project] [--format terminal|json] [--explain <package>]',
     '',
     'Arguments:',
     '  project          Project directory to analyze (default: current directory)',
     '',
     'Options:',
+    '  --format <format>    Output format: terminal or json (default: terminal)',
+    '  --explain <package>  Explain one exact package root (default: full scan)',
     '  -h, --help       Show help',
     '  -v, --version    Show version',
   ].join('\n') + '\n';
@@ -401,7 +403,6 @@ describe('Step 62: every unimplemented option is still rejected explicitly', () 
     '--config',
     '--why',
     '--json',
-    '--format',
     '--format=json',
     '--format=text',
     '--output',
@@ -446,15 +447,11 @@ describe('Step 62: every unimplemented option is still rejected explicitly', () 
     });
   });
 
-  it('does not let a rejected option consume a following value', async () => {
-    // The bare `--format` form is already pinned by the table above; the value form proves the
-    // rejected option is never treated as an option that takes an argument.
-    const result = await runCli(['--format', 'json'], { version: VERSION, cwd: tmpdir() });
-
-    expect({ exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr }).toEqual({
+  it('requires a separated value for --format', async () => {
+    expect(await runCli(['--format'], { version: VERSION, cwd: tmpdir() })).toEqual({
       exitCode: 1,
       stdout: '',
-      stderr: "Unknown option: --format\nRun 'depvitals --help' for available commands.\n",
+      stderr: "Option --format requires a value.\nRun 'depvitals --help' for available commands.\n",
     });
   });
 

@@ -445,7 +445,7 @@ describe('JSON report v1', () => {
     });
   });
 
-  it('never produces partial JSON after a later retained-source failure and leaves flags inactive', async () => {
+  it('never produces partial JSON after a later retained-source failure in both terminal and JSON modes', async () => {
     const root = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'depvitals-json-failure-')));
     try {
       await fs.writeFile(join(root, 'package.json'), '{"dependencies":{"known":"1"}}');
