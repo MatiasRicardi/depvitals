@@ -160,7 +160,7 @@ describe('script evidence collection', () => {
     ]);
   });
 
-  it('keeps preloads and nested wrappers outside Step105 recognition', () => {
+  it('adds the Node preload ordinal without recognizing nested wrappers', () => {
     const result = collectPackageScriptUsage(
       { test: 'node -r preload && cross-env NODE_ENV=test eslint && eslint' },
       new Set(['node', 'preload', 'cross-env', 'eslint']),
@@ -174,7 +174,7 @@ describe('script evidence collection', () => {
           pointer: '/scripts/test',
           command: 'cross-env',
           via: 'direct',
-          occurrence: 1,
+          occurrence: 2,
         },
       },
       {
@@ -185,7 +185,7 @@ describe('script evidence collection', () => {
           pointer: '/scripts/test',
           command: 'eslint',
           via: 'direct',
-          occurrence: 2,
+          occurrence: 3,
         },
       },
       {
@@ -199,7 +199,73 @@ describe('script evidence collection', () => {
           occurrence: 0,
         },
       },
+      {
+        packageName: 'preload',
+        evidence: {
+          kind: 'script',
+          file: 'package.json',
+          pointer: '/scripts/test',
+          command: 'preload',
+          via: 'node-preload',
+          occurrence: 1,
+        },
+      },
     ]);
+  });
+
+  it.each(["-r ''", '--import=', '--require --test', '--loader loader', '-p expression'])(
+    'discards the entire invalid preload batch for %s and retains outer/next events',
+    (suffix) => {
+      const result = collectPackageScriptUsage(
+        { test: `node -r preload ${suffix} operand && eslint` },
+        new Set(['node', 'preload', 'eslint', 'operand']),
+      );
+      expect(result.map(({ packageName, evidence }) => [packageName, evidence.occurrence])).toEqual(
+        [
+          ['eslint', 1],
+          ['node', 0],
+        ],
+      );
+    },
+  );
+
+  it.each(["''", '-'])('stops at operand %s and skips nonexternal module ordinals', (operand) => {
+    const result = collectPackageScriptUsage(
+      {
+        test: `"node" --test -r fs --require=./entry.cjs --import=pkg@1 -r preload ${operand} --import=decoy && eslint`,
+      },
+      new Set(['node', 'preload', 'decoy', 'eslint']),
+    );
+    expect(result.map(({ packageName, evidence }) => [packageName, evidence.occurrence])).toEqual([
+      ['eslint', 2],
+      ['node', 0],
+      ['preload', 1],
+    ]);
+  });
+
+  it('retains the final ordinal of a long supported prefix and skips operand arguments', () => {
+    const preloads = 8192;
+    const facts = collectPackageScriptUsage(
+      {
+        check:
+          'node ' +
+          '-r preload '.repeat(preloads) +
+          './entry.cjs ' +
+          '--import=decoy '.repeat(preloads),
+      },
+      new Set(['preload', 'decoy']),
+    );
+    expect(facts).toHaveLength(preloads);
+    expect(facts.at(-1)?.evidence.occurrence).toBe(preloads);
+    expect(facts.every(({ packageName }) => packageName === 'preload')).toBe(true);
+  });
+
+  it('retains the outer legacy candidate when an empty word precedes node', () => {
+    const result = collectPackageScriptUsage(
+      { test: `'' node -r preload` },
+      new Set(['node', 'preload']),
+    );
+    expect(result.map(({ packageName }) => packageName)).toEqual(['node']);
   });
 
   it.each([

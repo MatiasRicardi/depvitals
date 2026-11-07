@@ -29,6 +29,7 @@
  *   `bin` fields and it is not framework support - any other executable keeps exact-name matching;
  * - the five documented package-runner forms count (`npx`, `npm exec`, `pnpm exec`, `pnpm dlx`,
  *   `yarn dlx`) with the package in its immediate position;
+ * - the supported option prefix of exact `node` commands can credit explicit preload modules;
  * - leading POSIX environment assignments (`NODE_ENV=test`, `FOO=1 BAR=2`) are skipped;
  * - quoted tokens keep their content, so separators and text inside quotes are not misread.
  *
@@ -441,8 +442,8 @@ export function collectPackageScriptUsage(
 /**
  * Collect the package-name candidates referenced by a single script command.
  *
- * Each shell segment contributes at most one candidate: the package supplied to a supported runner
- * form, or the segment's first effective command token when that token is exactly a package name.
+ * Each shell segment can contribute its ordinary command or runner candidate. An exact Node
+ * command can also contribute its accepted preload candidates, after the outer command.
  * Segments containing unsupported shell syntax contribute nothing.
  *
  * `declaredPackageNames` is only used to resolve collision-sensitive executables, which need to know
@@ -460,7 +461,9 @@ function collectScriptCandidates(
       continue;
     }
 
-    const significant = skipLeadingAssignments(segment.tokens);
+    // Existing command and runner matching skips empty dequoted words. Node option
+    // parsing needs the original words so an empty module operand cannot disappear.
+    const significant = skipLeadingAssignments(segment.tokens.filter(({ value }) => value !== ''));
 
     if (significant.length === 0) {
       continue;
@@ -506,9 +509,47 @@ function collectScriptCandidates(
         candidates.push({ packageName: mapped, command: commandName, via: 'mapping' });
       }
     }
+
+    if (commandName === 'node') {
+      const node = skipLeadingAssignments(segment.tokens);
+      if (node[0]?.value === 'node') {
+        for (const preload of collectNodePreloads(node)) candidates.push(preload);
+      }
+    }
   }
 
   return candidates;
+}
+
+/** Stage a Node segment's preloads until its complete supported prefix is known. */
+function collectNodePreloads(tokens: readonly Token[]): readonly ScriptCandidate[] {
+  const preloads: ScriptCandidate[] = [];
+  for (let index = 1; index < tokens.length; index += 1) {
+    const option = tokens[index]?.value ?? '';
+    // A lone dash is the script operand for stdin.
+    if (option === '-' || option === '--' || !option.startsWith('-')) break;
+    if (option === '--test') continue;
+
+    let selector: string | undefined;
+    if (option === '-r' || option === '--require' || option === '--import') {
+      index += 1;
+      selector = tokens[index]?.value;
+      if (selector?.startsWith('-')) return [];
+    } else if (option.startsWith('--require=') || option.startsWith('--import=')) {
+      selector = option.slice(option.indexOf('=') + 1);
+    }
+    if (selector === undefined || selector === '') return [];
+
+    const classification = classifyPackageSpecifier(selector);
+    if (classification.kind === 'external') {
+      preloads.push({
+        packageName: classification.packageName,
+        command: selector,
+        via: 'node-preload',
+      });
+    }
+  }
+  return preloads;
 }
 
 /**
@@ -576,7 +617,7 @@ function matchRunnerPackage(significant: readonly Token[]): string | undefined {
  */
 function splitSegments(script: string): readonly Segment[] {
   const segments: Segment[] = [];
-  let tokens: readonly Token[] = [];
+  let tokens: Token[] = [];
   let unsupported = false;
   let i = 0;
   const length = script.length;
@@ -657,9 +698,7 @@ function splitSegments(script: string): readonly Segment[] {
     if (scanned.unsupported) {
       unsupported = true;
     }
-    if (scanned.text.length > 0) {
-      tokens = [...tokens, { value: scanned.text }];
-    }
+    tokens.push({ value: scanned.text });
     i = scanned.next;
   }
 
