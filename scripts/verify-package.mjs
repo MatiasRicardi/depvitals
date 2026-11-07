@@ -44,8 +44,23 @@ import { archiveFiles } from './measurementIdentity.mjs';
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const ROOT = resolve(SCRIPT_PATH, '..', '..');
 
+const SCHEMA_FILES = [
+  'schemas/report-v1.schema.json',
+  'schemas/README.md',
+  'schemas/examples/README.md',
+  ...[
+    'scan-clean',
+    'scan-findings',
+    'explain-missing',
+    'explain-excluded',
+    'explain-unknown',
+    'explain-node-preload',
+  ].map((name) => `schemas/examples/${name}.json`),
+];
+
 /** Required files that must be present inside the packaged `package/` tree. */
 const REQUIRED_FILES = [
+  ...SCHEMA_FILES.map((file) => `package/${file}`),
   'package/package.json',
   'package/README.md',
   'package/LICENSE',
@@ -294,6 +309,28 @@ async function main() {
       check(`contains ${required}`, entries.includes(required));
     }
 
+    for (const file of SCHEMA_FILES) {
+      check(
+        `archive schema asset matches checkout: ${file}`,
+        packedFiles.get(file)?.equals(readFileSync(join(ROOT, file))) === true,
+      );
+    }
+    const schema = JSON.parse(packedFiles.get('schemas/report-v1.schema.json').toString('utf8'));
+    check(
+      'public schema is Draft 7 report version 1',
+      schema.$schema === 'http://json-schema.org/draft-07/schema#' &&
+        schema.properties?.schemaVersion?.const === 1,
+    );
+    for (const file of SCHEMA_FILES.filter(
+      (file) => file.startsWith('schemas/examples/') && file.endsWith('.json'),
+    )) {
+      const example = JSON.parse(packedFiles.get(file).toString('utf8'));
+      check(
+        `normative example is parseable report v1: ${file}`,
+        example.schemaVersion === 1 && ['scan', 'explain'].includes(example.mode),
+      );
+    }
+
     const forbidden = entries.find((entry) =>
       FORBIDDEN_PREFIXES.some((prefix) => entry.startsWith(`package/${prefix}`)),
     );
@@ -320,6 +357,12 @@ async function main() {
       existsSync(join(consumerDir, 'node_modules', 'depvitals', 'package.json')),
     );
     const installedRoot = join(consumerDir, 'node_modules', 'depvitals');
+    for (const file of SCHEMA_FILES) {
+      check(
+        `installed schema asset matches archive: ${file}`,
+        readFileSync(join(installedRoot, file)).equals(packedFiles.get(file)),
+      );
+    }
     const installedManifest = JSON.parse(readFileSync(join(installedRoot, 'package.json'), 'utf8'));
     check(
       'installed manifest has no runtime or optional dependencies',

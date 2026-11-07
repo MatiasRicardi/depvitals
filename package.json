@@ -30,7 +30,8 @@
   "homepage": "https://github.com/MatiasRicardi/depvitals#readme",
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "schemas"
   ],
   "bin": {
     "depvitals": "./dist/cli/index.js"

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "tool": {
+    "name": "depvitals",
+    "version": "0.4.0"
+  },
+  "mode": "explain",
+  "project": {
+    "root": "/example/project"
+  },
+  "scope": {
+    "sourceExtensions": [".cjs", ".cts", ".js", ".jsx", ".mjs", ".mts", ".ts", ".tsx"],
+    "excludedDirectories": [
+      ".cache",
+      ".git",
+      ".next",
+      ".nuxt",
+      ".turbo",
+      "build",
+      "coverage",
+      "dist",
+      "node_modules",
+      "out"
+    ],
+    "ignorePaths": [],
+    "ignoreDependencies": []
+  },
+  "findings": {
+    "unusedDependencies": [],
+    "unusedDevDependencies": [],
+    "missingDependencies": []
+  },
+  "counts": {
+    "unusedDependencies": 0,
+    "unusedDevDependencies": 0,
+    "missingDependencies": 0
+  },
+  "packages": [
+    {
+      "name": "absent",
+      "status": "unknown",
+      "declaredIn": [],
+      "excluded": false,
+      "underlyingFindings": [],
+      "findings": [],
+      "evidence": []
+    }
+  ],
+  "query": {
+    "packageName": "absent",
+    "known": false
+  }
+}

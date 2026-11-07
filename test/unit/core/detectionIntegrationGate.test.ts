@@ -524,6 +524,7 @@ describe('Step 62: the analysis path has no network or execution capability', ()
       'detectors/eslintRcJsonConfig.ts',
       'detectors/jestManifestConfig.ts',
       'index.ts',
+      'reporters/jsonReporter.ts',
       'reporters/terminalReporter.ts',
       'scanner/moduleSpecifiers.ts',
       'scanner/packageSpecifier.ts',

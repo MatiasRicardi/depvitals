@@ -42,6 +42,33 @@ export function identifyInputs(root, sources) {
   return { sha256: hash(JSON.stringify({ rootEntries, files })), rootEntries, files };
 }
 
+/** Hash built code and selected packaged schema assets; retain legacy dist-only identities. */
+export function identifyBuild(root) {
+  const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  const directories = ['dist'];
+  if (manifest.files?.includes('schemas')) directories.push('schemas');
+  const files = [];
+  const visit = (directory) => {
+    assert(
+      lstatSync(directory).isDirectory(),
+      `Measured build must be a regular directory: ${directory}`,
+    );
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else {
+        assert(entry.isFile(), `Measured build must be a regular file: ${path}`);
+        files.push({
+          path: relative(root, path).split(sep).join('/'),
+          sha256: hash(readFileSync(path)),
+        });
+      }
+    }
+  };
+  for (const directory of directories) visit(join(root, directory));
+  return files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
 /** Inspect regular files from this package's bounded ustar archive; never extract or execute it. */
 export function archiveFiles(bytes) {
   const tar = gunzipSync(bytes);
@@ -99,7 +126,7 @@ export function archiveFiles(bytes) {
   assert.fail('Missing tar terminator');
 }
 
-/** Bind pack metadata, actual adjacent archive bytes and every packaged file to the current build. */
+/** Bind pack metadata, actual adjacent archive bytes and every packaged code/schema file to the current measured build. */
 export function verifyMeasuredArchive(packPath, root, build) {
   const metadata = JSON.parse(readFileSync(packPath, 'utf8'));
   assert(Array.isArray(metadata) && metadata.length === 1, 'Expected one npm pack result');

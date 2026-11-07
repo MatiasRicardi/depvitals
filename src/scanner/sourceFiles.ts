@@ -60,6 +60,17 @@ const IGNORED_DIRECTORY_NAMES = new Set([
   '.nuxt',
 ]);
 
+/** Pure effective defaults for report scope; never starts discovery or exposes mutable sets. */
+export function sourceDiscoveryDefaults(): {
+  sourceExtensions: readonly string[];
+  excludedDirectories: readonly string[];
+} {
+  return {
+    sourceExtensions: [...SUPPORTED_EXTENSIONS].sort(),
+    excludedDirectories: [...IGNORED_DIRECTORY_NAMES].sort(),
+  };
+}
+
 /**
  * A discovered source file as an absolute, platform-separated path, sorted lexicographically.
  */

@@ -2,17 +2,9 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { cpus, release, tmpdir } from 'node:os';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 
@@ -24,7 +16,7 @@ import { findEslintRcJsonUsage } from '../dist/detectors/eslintRcJsonConfig.js';
 import { findJestManifestUsage } from '../dist/detectors/jestManifestConfig.js';
 import { extractModuleSpecifiers } from '../dist/scanner/moduleSpecifiers.js';
 import { discoverSourceFiles } from '../dist/scanner/sourceFiles.js';
-import { identifyInputs, verifyMeasuredArchive } from './measurementIdentity.mjs';
+import { identifyBuild, identifyInputs, verifyMeasuredArchive } from './measurementIdentity.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WARMUPS = 3;
@@ -39,7 +31,6 @@ assert(
   'Supply the JSON output of npm pack --json --ignore-scripts after a clean build',
 );
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
-const portable = (path) => path.split(sep).join('/');
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
 
 function summarize(samples) {
@@ -86,21 +77,11 @@ async function scan(root, options) {
   return findings;
 }
 
-function identifyBuild(directory = join(ROOT, 'dist')) {
-  const files = [];
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) files.push(...identifyBuild(path));
-    else files.push({ path: portable(relative(ROOT, path)), sha256: hash(readFileSync(path)) });
-  }
-  return files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-}
-
 const corpusPath = join(ROOT, 'test/fixtures/measurement-corpus/corpus.json');
 const manifest = readJson(join(ROOT, 'package.json'));
 assert.equal(Object.keys(manifest.dependencies ?? {}).length, 0);
 assert.equal(Object.keys(manifest.optionalDependencies ?? {}).length, 0);
-const build = identifyBuild();
+const build = identifyBuild(ROOT);
 const packPath = resolve(process.argv[2]);
 const artifact = verifyMeasuredArchive(packPath, ROOT, build);
 const receipt = {
@@ -239,6 +220,6 @@ assert.deepEqual(
   'Archive changed during measurement',
 );
 receipt.artifact = artifact;
-assert.deepEqual(identifyBuild(), build, 'Build changed during measurement');
+assert.deepEqual(identifyBuild(ROOT), build, 'Build changed during measurement');
 receipt.processMaxRssKiB = process.resourceUsage().maxRSS;
 console.log(JSON.stringify(receipt, null, 2));
