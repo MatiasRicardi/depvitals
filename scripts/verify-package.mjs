@@ -415,7 +415,7 @@ async function main() {
 
     writeFileSync(
       join(cleanDir, 'package.json'),
-      `${JSON.stringify({ name: 'smoke-clean', version: '0.0.0', dependencies: { lodash: '4.17.21' }, peerDependencies: { 'peer-only': '*' } }, null, 2)}\n`,
+      `${JSON.stringify({ name: 'smoke-clean', version: '0.0.0', dependencies: { lodash: '4.17.21' }, peerDependencies: { 'peer-only': '*' }, devDependencies: { 'smoke-preload': '*' }, scripts: { 'check/preload': 'node --test --import=smoke-preload/register ./index.js' } }, null, 2)}\n`,
     );
     writeFileSync(
       join(cleanDir, 'index.js'),
@@ -1131,6 +1131,31 @@ require('real');`,
           );
       }
     }
+    const preload = runInstalledCli(binPath, consumerDir, [
+      cleanDir,
+      '--explain',
+      'smoke-preload',
+      '--format',
+      'json',
+    ]);
+    check('Node preload query streams/status', preload.status === 0 && preload.stderr === '');
+    const preloadDocument = JSON.parse(preload.stdout);
+    check(
+      'Node preload query keeps exact script provenance',
+      preloadDocument.query.known === true &&
+        preloadDocument.packages[0]?.status === 'used' &&
+        JSON.stringify(preloadDocument.packages[0].evidence) ===
+          JSON.stringify([
+            {
+              kind: 'script',
+              file: 'package.json',
+              pointer: '/scripts/check~1preload',
+              command: 'smoke-preload/register',
+              via: 'node-preload',
+              occurrence: 1,
+            },
+          ]),
+    );
     for (const format of ['terminal', 'json']) {
       const result = runInstalledCli(binPath, consumerDir, [
         invalidTemplateDir,
