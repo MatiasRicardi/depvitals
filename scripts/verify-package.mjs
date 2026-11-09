@@ -232,6 +232,211 @@ function snapshotsEqual(before, after) {
   return true;
 }
 
+/** Exercise the published Ubuntu/Bash recipe against the exact local archive under test. */
+function verifyCiAdoption(tarballPath, packed) {
+  const project = makeTempDir('ci-recipe');
+  const artifacts = makeTempDir('ci-artifacts');
+  const recipe = join(ROOT, 'docs/examples/ci');
+  const manifestPath = join(project, 'package.json');
+  const marker = join(artifacts, 'executed-target');
+  const sideEffect = `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`;
+  const manifest = {
+    name: 'depvitals-ci-consumer',
+    version: '1.0.0',
+    scripts: {
+      'check:dependencies': 'depvitals --format json',
+      postinstall: `node -e ${JSON.stringify(sideEffect)}`,
+    },
+  };
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+  const lock = run(
+    'npm',
+    [
+      'install',
+      '--package-lock-only',
+      '--ignore-scripts',
+      '--save-dev',
+      '--save-exact',
+      '--offline',
+      '--no-audit',
+      '--no-fund',
+      tarballPath,
+    ],
+    project,
+  );
+  check('CI recipe generates a local tarball lockfile', lock.status === 0, lock.stderr);
+  const lockPath = join(project, 'package-lock.json');
+  const lockDocument = JSON.parse(readFileSync(lockPath, 'utf8'));
+  const locked = lockDocument.packages['node_modules/depvitals'];
+  check(
+    'CI recipe locks the exact version and archive integrity',
+    locked.version === packed.version && locked.integrity === packed.integrity,
+  );
+
+  const npmCi = () =>
+    run('npm', ['ci', '--ignore-scripts', '--include=dev'], project, {
+      ...process.env,
+      npm_config_offline: 'true',
+      npm_config_audit: 'false',
+      npm_config_fund: 'false',
+    });
+  const install = npmCi();
+  check('CI recipe installs the locked local tarball', install.status === 0, install.stderr);
+  const version = runInstalledCli(resolveInstalledBin(project), project, ['--version']);
+  check(
+    'CI recipe runs the installed development version',
+    version.status === 0 && version.stdout === packed.version + '\n',
+  );
+
+  const cleanManifest = readFileSync(manifestPath, 'utf8');
+  const findingsManifest = JSON.stringify({
+    ...JSON.parse(cleanManifest),
+    dependencies: { 'ci-unused-only': '*' },
+  });
+  const sourcePath = join(project, 'index.cjs');
+  const configPath = join(project, 'depvitals.config.json');
+  const cleanSource = sideEffect + ';\n';
+  const findingsSource = cleanSource + "require('ci-missing-only');\n";
+  writeFileSync(join(project, 'eslint.config.cjs'), cleanSource);
+  const outputPaths = (directory) =>
+    ['report.json', 'diagnostics.txt', 'status.txt'].map((name) =>
+      join(directory, 'depvitals-' + name),
+    );
+  const verify = (paths) =>
+    run(process.execPath, [join(recipe, 'verify-report.mjs'), ...paths], project);
+
+  for (const row of [
+    {
+      name: 'clean',
+      manifest: cleanManifest,
+      source: cleanSource,
+      exit: 0,
+      findings: [[], [], []],
+    },
+    {
+      name: 'findings',
+      manifest: findingsManifest,
+      source: findingsSource,
+      exit: 1,
+      findings: [['ci-unused-only'], [], ['ci-missing-only']],
+    },
+    {
+      name: 'exclusion',
+      manifest: findingsManifest,
+      source: findingsSource,
+      exit: 1,
+      config: '{"ignoreDependencies":["ci-unused-only"]}',
+      findings: [[], [], ['ci-missing-only']],
+    },
+    {
+      name: 'invalid-manifest',
+      manifest: '{',
+      source: cleanSource,
+      exit: 1,
+      error: 'package.json',
+    },
+    {
+      name: 'invalid-policy',
+      manifest: cleanManifest,
+      source: cleanSource,
+      exit: 1,
+      config: '{"ignorePaths":null}',
+      error: 'depvitals.config.json',
+    },
+    {
+      name: 'invalid-source',
+      manifest: cleanManifest,
+      source: "require('unfinished",
+      exit: 1,
+      error: 'index.cjs',
+    },
+  ]) {
+    writeFileSync(manifestPath, row.manifest);
+    writeFileSync(sourcePath, row.source);
+    if (row.config === undefined) rmSync(configPath, { force: true });
+    else writeFileSync(configPath, row.config);
+    const before = snapshotFixtures([project]);
+    const reportDir = join(artifacts, row.name);
+    const capture = run('bash', [join(recipe, 'capture-report.sh'), reportDir], project, {
+      ...process.env,
+      CI: '1',
+      DEPVITALS_NO_UPDATE_CHECK: '1',
+    });
+    check(
+      `CI recipe capture leaves artifacts for ${row.name}`,
+      capture.status === 0,
+      capture.stderr,
+    );
+    const paths = outputPaths(reportDir);
+    const [report, diagnostics, status] = paths.map((path) => readFileSync(path, 'utf8'));
+    check(`CI recipe preserves scan status for ${row.name}`, status === String(row.exit) + '\n');
+    const result = verify(paths);
+    check(
+      `CI recipe enforces the outcome for ${row.name}`,
+      result.status === row.exit,
+      result.stderr,
+    );
+    if (row.error !== undefined) {
+      check(
+        `CI recipe preserves the operational diagnostic for ${row.name}`,
+        report === '' &&
+          diagnostics.includes(row.error) &&
+          result.stderr.includes('analysis failed'),
+      );
+    } else {
+      const document = JSON.parse(report);
+      check(
+        `CI recipe preserves exact findings for ${row.name}`,
+        diagnostics === '' &&
+          JSON.stringify([
+            document.findings.unusedDependencies,
+            document.findings.unusedDevDependencies,
+            document.findings.missingDependencies,
+          ]) === JSON.stringify(row.findings),
+      );
+      if (row.name === 'exclusion') {
+        const excluded = document.packages.find(({ name }) => name === 'ci-unused-only');
+        check(
+          'CI recipe preserves the exclusion as policy',
+          document.scope.ignoreDependencies.join() === 'ci-unused-only' &&
+            excluded?.status === 'excluded' &&
+            excluded.underlyingFindings.join() === 'unusedDependencies' &&
+            excluded.evidence.length === 0,
+        );
+      }
+    }
+    if (row.name === 'clean') {
+      const silent = run('npm', ['run', '--silent', 'check:dependencies'], project);
+      check(
+        'CI recipe silent package script matches direct JSON bytes',
+        silent.status === 0 && silent.stdout === report && silent.stderr === '',
+      );
+    }
+    check(
+      `CI recipe preserves project inputs for ${row.name}`,
+      snapshotsEqual(before, snapshotFixtures([project])) && !existsSync(marker),
+    );
+  }
+
+  const findingsPaths = outputPaths(join(artifacts, 'findings'));
+  writeFileSync(findingsPaths[2], '0\n');
+  const mismatch = verify(findingsPaths);
+  check(
+    'CI recipe rejects a deliberately mismatched status',
+    mismatch.status === 2 && mismatch.stderr.includes('disagrees'),
+  );
+
+  writeFileSync(manifestPath, cleanManifest);
+  rmSync(lockPath);
+  const failedInstall = npmCi();
+  check('CI recipe detects failed locked install', failedInstall.status === 1);
+  const missing = verify(outputPaths(join(artifacts, 'install-failure')));
+  check(
+    'CI recipe fails enforcement when install leaves no artifacts',
+    missing.status === 2 && missing.stderr.includes('missing or unreadable'),
+  );
+}
+
 async function main() {
   const rootVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
 
@@ -1286,6 +1491,9 @@ require('real');`,
 
     // The scanner must not mutate the fixtures it reads.
     check('scan does not mutate the fixtures', snapshotsEqual(before, after));
+
+    // The documented recipe targets Ubuntu Bash, as does the required package-smoke job.
+    if (process.platform !== 'win32') verifyCiAdoption(tarballPath, packed);
 
     console.log(`\nAll ${checksPassed} checks passed.`);
   } catch (error) {

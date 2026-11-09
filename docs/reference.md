@@ -173,6 +173,12 @@ npx depvitals
 
 These examples run the npm release; use `node dist/cli/index.js` from a local checkout to test unreleased behavior.
 
+## CI consumer recipe
+
+The [fixed-version GitHub Actions recipe](examples/ci/README.md) targets the v0.4.0 release.
+It captures the scan report, diagnostic and status as separate artifacts and enforces the scan
+outcome after upload. The recipe includes a local tarball substitution for candidate verification.
+
 ## Errors and remaining limits
 
 Completed reports use stdout; operational diagnostics use stderr with no misleading partial clean report. Exit codes are 0 for clean/help/version and 1 for findings/errors. An optional notice uses stderr after the report without altering its exit status.
