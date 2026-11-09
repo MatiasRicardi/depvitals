@@ -620,6 +620,13 @@ describe('Step 62: the whole CLI matrix runs offline', () => {
     { label: 'version', argv: ['--version'], project: null },
     { label: 'a clean project', argv: [clean], project: clean },
     { label: 'a project with findings', argv: [basic], project: basic },
+    { label: 'a JSON scan', argv: ['--format', 'json', basic], project: basic },
+    { label: 'a terminal explanation', argv: [basic, '--explain', 'moment'], project: basic },
+    {
+      label: 'a JSON explanation',
+      argv: ['--explain', 'moment', basic, '--format', 'json'],
+      project: basic,
+    },
     { label: 'script usage', argv: [scriptUsage], project: scriptUsage },
     { label: 'a workspace parent', argv: [workspaceParent], project: workspaceParent },
     { label: 'an unanalyzable source', argv: [invalidSource], project: invalidSource },
