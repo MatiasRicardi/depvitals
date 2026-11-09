@@ -77,38 +77,32 @@ may be relocated by explicitly updating the map; identity is based on contents, 
 }
 ```
 
-From the DepVitals checkout, build with the repository's exact locked pnpm. Record the reviewed full
-source SHA, confirm product source/package/lock/workspace equivalence to the intended baseline, and
-create a tool descriptor from the current source and complete emitted build. `identifyTool` records
-bytes and a caller-reviewed SHA; it does not prove that a build was generated from that source. A
-successful version probe alone is insufficient. For example, after the applicable build/checks:
+Build the exact `v0.3.0` tag in a separate checkout with its locked toolchain. Confirm the clean
+checkout and the full source SHA `f9302f19ae48498487c8801be199e13da3d15990` before building.
+Run the following commands from the **current evaluator checkout**, setting `baseline_root` to the
+absolute path of the separate build. The current evaluator's `identifyTool` reads the baseline's
+source, build and metadata. Its SHA argument identifies the source you verified before building.
 
 ```sh
-pnpm run build
-git rev-parse HEAD
-```
-
-With that inspected SHA supplied explicitly, this development-only Node snippet writes the descriptor
-outside the scanned roots (replace the placeholder with the reviewed 40-character SHA):
-
-```js
+baseline_root=/absolute/path/to/depvitals-v0.3.0
+node --input-type=module - "$baseline_root" <<'JS'
 import { writeFileSync } from 'node:fs';
 import { identifyTool } from './scripts/evaluate-corpus.mjs';
-const identity = identifyTool(process.cwd(), '<reviewed-full-source-sha>');
-writeFileSync('/tmp/depvitals-tool-identity.json', JSON.stringify(identity, null, 2) + '\n');
-```
 
-Then invoke the evaluator. The output parent must already exist; the output must be new and outside
-all mapped exports and the tool's source/build. Evaluation never replaces an existing receipt:
+const identity = identifyTool(process.argv[2], 'f9302f19ae48498487c8801be199e13da3d15990');
+writeFileSync('/tmp/depvitals-baseline-tool.json', JSON.stringify(identity, null, 2) + '\n');
+JS
 
-```sh
 node scripts/evaluate-corpus.mjs \
   --manifest test/fixtures/external-corpus/manifest.json \
   --roots /tmp/depvitals-corpus-roots.json \
-  --tool-root "$PWD" \
-  --tool-identity /tmp/depvitals-tool-identity.json \
+  --tool-root "$baseline_root" \
+  --tool-identity /tmp/depvitals-baseline-tool.json \
   --output /tmp/depvitals-baseline-observations.json
 ```
+
+Use an existing output parent outside all mapped exports and the tool's source/build directories.
+Evaluation requires a new output path and preserves existing receipts.
 
 The evaluator verifies the entire corpus before running any subprocess. It captures status, signal,
 stdout and stderr through the ordinary built CLI, checks all target inputs and tool bytes before/after,
