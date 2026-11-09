@@ -8,6 +8,8 @@
  *   request is appended to that file as its endpoint. When `DEPVITALS_TEST_RESPONSE_LATEST` is also
  *   set, the recorder answers with a canned dist-tag document; otherwise it fails loudly instead of
  *   resolving. Either way no real network access happens in a test.
+ * - `DEPVITALS_TEST_CACHE_ACCESS_FILE` - records cache filesystem operations under the redirected
+ *   cache root without changing their result.
  * - `DEPVITALS_TEST_FORCE_TTY=1` - reports both output streams as interactive, so a spawned child can
  *   be eligibility-positive while its output is still captured over a pipe. Without it the child stays
  *   non-interactive, which is the piped-CLI case itself.
@@ -22,7 +24,34 @@
  * belong to the test harness alone: no file under `src/` reads a `DEPVITALS_TEST_*` variable.
  */
 
-const { appendFileSync } = await import('node:fs');
+import { appendFileSync } from 'node:fs';
+import fs from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
+import { sep } from 'node:path';
+
+const cacheAccessFile = process.env['DEPVITALS_TEST_CACHE_ACCESS_FILE'];
+const cacheRoots = ['XDG_CACHE_HOME', 'LOCALAPPDATA', 'HOME', 'USERPROFILE']
+  .map((key) => process.env[key])
+  .filter(Boolean);
+
+if (cacheAccessFile) {
+  for (const operation of ['lstat', 'readFile', 'mkdir', 'writeFile', 'rename', 'rm']) {
+    const original = fs[operation];
+    fs[operation] = (...args) => {
+      if (
+        args.some(
+          (path) =>
+            typeof path === 'string' &&
+            cacheRoots.some((root) => path === root || path.startsWith(root + sep)),
+        )
+      ) {
+        appendFileSync(cacheAccessFile, `${operation}\n`, 'utf8');
+      }
+      return original(...args);
+    };
+  }
+  syncBuiltinESMExports();
+}
 
 const requestFile = process.env['DEPVITALS_TEST_REQUEST_FILE'];
 const cannedLatest = process.env['DEPVITALS_TEST_RESPONSE_LATEST'];
@@ -55,10 +84,15 @@ if (process.env['DEPVITALS_TEST_FORCE_TTY'] === '1') {
 }
 
 if (requestFile !== undefined && requestFile !== '') {
-  globalThis.fetch = async (input) => {
+  globalThis.fetch = async (input, init) => {
     const endpoint = typeof input === 'string' ? input : String(input);
 
-    appendFileSync(requestFile, `${endpoint}\n`, 'utf8');
+    const signalOnly = init?.signal instanceof AbortSignal && Object.keys(init).length === 1;
+    appendFileSync(
+      requestFile,
+      signalOnly ? `${endpoint}\n` : 'unexpected request options\n',
+      'utf8',
+    );
 
     if (stallMode === 'fetch') {
       return neverSettles();

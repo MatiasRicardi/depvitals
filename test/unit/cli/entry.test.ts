@@ -193,15 +193,48 @@ describe('runCliEntry: the report is printed before the optional notice', () => 
   });
 });
 
-describe('runCliEntry: stdout and the exit status stay byte-identical to the pre-change CLI', () => {
-  const invocations: readonly { label: string; argv: readonly string[] }[] = [
-    { label: 'a clean scan', argv: [join(ANALYSIS_FIXTURES, 'clean')] },
-    { label: 'a scan with findings', argv: [join(ANALYSIS_FIXTURES, 'basic')] },
+describe('runCliEntry: preserves the report and gates the collector', () => {
+  const clean = join(ANALYSIS_FIXTURES, 'clean');
+  const findings = join(ANALYSIS_FIXTURES, 'basic');
+  const failed = join(ANALYSIS_FIXTURES, 'invalid-source');
+  const invocations: readonly { label: string; argv: readonly string[]; eligible?: true }[] = [
+    { label: 'a clean scan', argv: [clean], eligible: true },
+    { label: 'a scan with findings', argv: [findings], eligible: true },
+    {
+      label: 'an explicit terminal scan',
+      argv: ['--format', 'terminal', findings],
+      eligible: true,
+    },
+    { label: 'a clean JSON scan', argv: ['--format', 'json', clean] },
+    { label: 'a JSON scan with findings', argv: [findings, '--format', 'json'] },
+    { label: 'a failed JSON scan', argv: [failed, '--format', 'json'] },
+    ...(['terminal', 'json'] as const).flatMap((format) => [
+      {
+        label: 'a used package in ' + format,
+        argv: [findings, '--format', format, '--explain', 'lodash'],
+      },
+      {
+        label: 'an unused package in ' + format,
+        argv: ['--explain', 'moment', findings, '--format', format],
+      },
+      {
+        label: 'an unknown package in ' + format,
+        argv: [clean, '--explain', 'absent', '--format', format],
+      },
+      {
+        label: 'a failed query in ' + format,
+        argv: [failed, '--format', format, '--explain', 'lodash'],
+      },
+      {
+        label: 'an invalid query in ' + format,
+        argv: [findings, '--format', format, '--explain', 'lodash/subpath'],
+      },
+    ]),
     { label: '--help', argv: ['--help'] },
     { label: '--version', argv: ['--version'] },
     { label: 'a usage error', argv: ['--scan'] },
     { label: 'a missing manifest', argv: [MANIFEST_FIXTURES] },
-    { label: 'an unanalyzable source file', argv: [join(ANALYSIS_FIXTURES, 'invalid-source')] },
+    { label: 'an unanalyzable source file', argv: [failed] },
   ];
 
   it.each(invocations)(
@@ -218,7 +251,7 @@ describe('runCliEntry: stdout and the exit status stay byte-identical to the pre
 
       const stderr = textOf(outcome.writes, 'stderr');
 
-      const eligible = entry.label === 'a clean scan' || entry.label === 'a scan with findings';
+      const eligible = entry.eligible === true;
       expect(stderr).toBe(before.stderr + (eligible ? NOTICE : ''));
       expect(notice.requests).toHaveLength(eligible ? 1 : 0);
     },
