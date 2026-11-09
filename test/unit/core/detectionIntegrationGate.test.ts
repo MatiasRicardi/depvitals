@@ -431,25 +431,25 @@ describe('Step 62: workspace children and lockfiles stay outside the project bou
 describe('Step 62: the analysis path has no network or execution capability', () => {
   const ANALYSIS_DIRECTORIES = ['config', 'core', 'scanner', 'detectors', 'reporters'];
 
-  /** Every module specifier of the analysis path, read with the production lexer. */
-  const specifiers: readonly (readonly [string, string])[] = ANALYSIS_DIRECTORIES.flatMap(
-    (directory) =>
-      readdirSync(join(SRC, directory), { recursive: true }).map((entry) => {
-        const absolute = join(SRC, directory, String(entry));
-        const file = relative(SRC, absolute).split(/[\\/]/).join('/');
-        return [file, readFileSync(absolute, 'utf8')] as const;
-      }),
-  ).flatMap(([file, content]) =>
-    extractModuleSpecifiers(content).map((occurrence) => [file, occurrence.specifier] as const),
+  const analysisFiles = ANALYSIS_DIRECTORIES.flatMap((directory) =>
+    readdirSync(join(SRC, directory), { recursive: true }).map((entry) =>
+      join(SRC, directory, String(entry)),
+    ),
   );
+  const sources = [
+    ...analysisFiles,
+    join(SRC, 'cli', 'entry.ts'),
+    join(SRC, 'cli', 'parseCliArgs.ts'),
+    join(SRC, 'cli', 'runCli.ts'),
+  ].map((file) => [relative(SRC, file), readFileSync(file, 'utf8')] as const);
 
   /** Builtins the analysis path may use: reading files, joining paths and the builtin-package test. */
   const ALLOWED_BUILTINS = new Set(['node:fs/promises', 'node:path', 'node:module']);
 
   it('imports no builtin other than the filesystem, path and module helpers', () => {
-    const nonRelative = specifiers
-      .filter(([, specifier]) => !specifier.startsWith('.'))
-      .map(([, specifier]) => specifier);
+    const nonRelative = sources
+      .flatMap(([, content]) => extractModuleSpecifiers(content).map(({ specifier }) => specifier))
+      .filter((specifier) => !specifier.startsWith('.'));
 
     expect(nonRelative.length).toBeGreaterThan(0);
     for (const specifier of nonRelative) {
@@ -475,7 +475,7 @@ describe('Step 62: the analysis path has no network or execution capability', ()
 
     const offenders: string[] = [];
 
-    for (const [file, content] of specifiers) {
+    for (const [file, content] of sources) {
       for (const token of forbidden) {
         if (content.includes(token)) {
           offenders.push(`${file}: ${token}`);
