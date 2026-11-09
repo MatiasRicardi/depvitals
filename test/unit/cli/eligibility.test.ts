@@ -218,6 +218,8 @@ describe('isEligibleUpdateCheck', () => {
         'scan ',
         'clear-cache',
         'scan-failure-x',
+        'json',
+        'explain',
       ];
 
       for (const kind of kinds) {

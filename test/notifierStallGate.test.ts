@@ -25,7 +25,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -61,6 +61,8 @@ const CHILD_WATCHDOG_MS = 5000;
 const INELIGIBLE_VARIABLES = new Set([
   'DEPVITALS_NO_UPDATE_CHECK',
   'DEPVITALS_TEST_FORCE_TTY',
+  'DEPVITALS_TEST_STALL',
+  'NODE_OPTIONS',
   'CI',
   'GITHUB_ACTIONS',
   'GITLAB_CI',
@@ -95,6 +97,8 @@ type RunResult = {
   readonly signal: NodeJS.Signals | null;
   readonly stdout: string;
   readonly stderr: string;
+  /** Cache operations attempted by the child, including reads that leave the cache unchanged. */
+  readonly cacheAccesses: readonly string[];
   /** One entry per request the child attempted. */
   readonly requests: readonly string[];
   /** Whether the parent had to kill the child, i.e. the deadline never resolved. */
@@ -106,7 +110,11 @@ function neutralEnvironment(overrides: Readonly<Record<string, string>>): Record
   const env: Record<string, string> = {};
 
   for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined && !INELIGIBLE_VARIABLES.has(key) && !CACHE_ROOT_VARIABLES.has(key)) {
+    if (
+      value !== undefined &&
+      !INELIGIBLE_VARIABLES.has(key.toUpperCase()) &&
+      !CACHE_ROOT_VARIABLES.has(key.toUpperCase())
+    ) {
       env[key] = value;
     }
   }
@@ -115,17 +123,17 @@ function neutralEnvironment(overrides: Readonly<Record<string, string>>): Record
 }
 
 /**
- * Run the built CLI once, fully observed, inside a throwaway root that holds the request log, the
- * only cache root the child can see and the scanned project.
+ * Run the built CLI once with a throwaway root for the request log and the child cache.
  *
  * The child is started with `process.execPath` and an argument array (never a shell), so quoting
  * rules cannot differ between platforms.
  */
-async function runObserved(project: string, options: RunOptions): Promise<RunResult> {
+async function runObserved(argv: readonly string[], options: RunOptions): Promise<RunResult> {
   const root = await mkdtemp(join(tmpdir(), 'depvitals-step68-3-stall-'));
 
   try {
     const requestLog = join(root, 'requests.txt');
+    const cacheLog = join(root, 'cache-accesses.txt');
     const cacheRoot = join(root, 'cache-root');
 
     if (options.cache !== undefined) {
@@ -143,22 +151,33 @@ async function runObserved(project: string, options: RunOptions): Promise<RunRes
       HOME: join(root, 'home'),
       USERPROFILE: join(root, 'home'),
       DEPVITALS_TEST_REQUEST_FILE: requestLog,
+      DEPVITALS_TEST_CACHE_ACCESS_FILE: cacheLog,
       DEPVITALS_TEST_RESPONSE_LATEST: CANNED_LATEST,
       ...(options.stall === undefined ? {} : { DEPVITALS_TEST_STALL: options.stall }),
       ...(options.tty === false ? {} : { DEPVITALS_TEST_FORCE_TTY: '1' }),
       ...options.env,
     });
 
-    const completed = await spawnObserved(['--import', probeUrl(), BUILT_ENTRY, project], env);
+    const completed = await spawnObserved(['--import', probeUrl(), BUILT_ENTRY, ...argv], env);
 
-    const log = await readFile(requestLog, 'utf8').catch(() => '');
+    const [requests, cacheAccesses] = await Promise.all([
+      readTrace(requestLog),
+      readTrace(cacheLog),
+    ]);
 
-    return {
-      ...completed,
-      requests: log === '' ? [] : log.split('\n').filter((line) => line !== ''),
-    };
+    return { ...completed, requests, cacheAccesses };
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+}
+
+/** The child creates a trace file only when an operation actually runs. */
+async function readTrace(path: string): Promise<readonly string[]> {
+  try {
+    return (await readFile(path, 'utf8')).trimEnd().split('\n');
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return [];
+    throw error;
   }
 }
 
@@ -176,7 +195,7 @@ function probeUrl(): string {
 async function spawnObserved(
   argv: readonly string[],
   env: Record<string, string>,
-): Promise<Omit<RunResult, 'requests'>> {
+): Promise<Omit<RunResult, 'requests' | 'cacheAccesses'>> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [...argv], { env, stdio: ['ignore', 'pipe', 'pipe'] });
 
@@ -246,7 +265,7 @@ describe('Step 68.3: a notifier that never answers cannot change the exit status
     try {
       const project = await makeProject(root, projects[scenario].name, projects[scenario].manifest);
 
-      return await runObserved(project, options);
+      return await runObserved([project], options);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -327,6 +346,7 @@ describe('Step 68.3: a notifier that never answers cannot change the exit status
       expect(result.stderr).toBe('');
       expect(result.exitCode).toBe(expectedExit[scenario]);
       expect(result.requests).toEqual([]);
+      expect(result.cacheAccesses).toEqual([]);
     });
 
     it('makes no request at all in CI', async () => {
@@ -338,6 +358,7 @@ describe('Step 68.3: a notifier that never answers cannot change the exit status
       expect(result.stderr).toBe('');
       expect(result.exitCode).toBe(expectedExit[scenario]);
       expect(result.requests).toEqual([]);
+      expect(result.cacheAccesses).toEqual([]);
     });
 
     it('makes no request at all when the streams are not interactive', async () => {
@@ -353,6 +374,7 @@ describe('Step 68.3: a notifier that never answers cannot change the exit status
         expect(result.stderr).toBe('');
         expect(result.exitCode).toBe(expectedExit[scenario]);
         expect(result.requests).toEqual([]);
+        expect(result.cacheAccesses).toEqual([]);
       } finally {
         if (ambientForceTty === undefined) {
           delete process.env['DEPVITALS_TEST_FORCE_TTY'];
@@ -363,3 +385,161 @@ describe('Step 68.3: a notifier that never answers cannot change the exit status
     });
   });
 }, 30_000);
+
+describe('JSON scans and package queries bypass notifier I/O in the built CLI', () => {
+  const findings = { dependencies: { 'used-pkg': '1', 'unused-pkg': '1' } };
+  const source = "require('used-pkg');\n";
+  const broken = "require('used-pkg');\nrequire('unfinished";
+  const scenarios = [
+    {
+      label: 'clean JSON scan',
+      args: ['--format', 'json'],
+      manifest: {},
+      exit: 0,
+      stdout: '"mode": "scan"',
+    },
+    {
+      label: 'JSON scan with findings',
+      args: ['--format', 'json'],
+      manifest: findings,
+      text: source,
+      exit: 1,
+      stdout: '"unused-pkg"',
+    },
+    {
+      label: 'fatal JSON scan',
+      args: ['--format', 'json'],
+      manifest: findings,
+      text: broken,
+      exit: 1,
+      stderr: 'could not be analyzed',
+    },
+    {
+      label: 'invalid JSON scan arguments',
+      args: ['--format', 'json', '--unknown'],
+      manifest: {},
+      exit: 1,
+      stderr: 'Unknown option: --unknown',
+    },
+    ...(['terminal', 'json'] as const).flatMap((format) => [
+      {
+        label: 'used query in ' + format,
+        args: ['--format', format, '--explain', 'used-pkg'],
+        manifest: findings,
+        text: source,
+        exit: 0,
+        stdout: format === 'json' ? '"status": "used"' : 'Status: used\n',
+      },
+      {
+        label: 'unused query in ' + format,
+        args: ['--explain', 'unused-pkg', '--format', format],
+        manifest: findings,
+        text: source,
+        exit: 1,
+        stdout: format === 'json' ? '"status": "unused"' : 'Status: unused\n',
+      },
+      {
+        label: 'unknown query in ' + format,
+        args: ['--format', format, '--explain', 'absent'],
+        manifest: {},
+        exit: 1,
+        stdout: format === 'json' ? '"status": "unknown"' : 'Status: unknown\n',
+      },
+      {
+        label: 'fatal query in ' + format,
+        args: ['--explain', 'used-pkg', '--format', format],
+        manifest: findings,
+        text: broken,
+        exit: 1,
+        stderr: 'could not be analyzed',
+      },
+      {
+        label: 'invalid query in ' + format,
+        args: ['--format', format, '--explain', 'used-pkg/subpath'],
+        manifest: findings,
+        text: source,
+        exit: 1,
+        stderr: 'Invalid value for --explain',
+      },
+    ]),
+  ];
+
+  it.each(scenarios)(
+    'keeps $label isolated with both streams interactive',
+    async (scenario) => {
+      const scratch = await mkdtemp(join(tmpdir(), 'depvitals-notifier-isolation-'));
+      try {
+        const project = await makeProject(scratch, 'project', scenario.manifest);
+        if ('text' in scenario) {
+          await writeFile(join(project, 'index.cjs'), scenario.text);
+        }
+        const paths = (await readdir(project)).sort();
+        const before = await Promise.all(
+          paths.map((file) => readFile(join(project, file), 'utf8')),
+        );
+        const argv = [project, ...scenario.args];
+        const baseline = await runObserved(argv, { env: { DEPVITALS_NO_UPDATE_CHECK: '1' } });
+        expect(baseline).toMatchObject({
+          exitCode: scenario.exit,
+          signal: null,
+          timedOut: false,
+          requests: [],
+          cacheAccesses: [],
+        });
+        if ('stderr' in scenario) {
+          expect(baseline.stdout).toBe('');
+          expect(baseline.stderr).toContain(scenario.stderr);
+        } else {
+          expect(baseline.stdout).toContain(scenario.stdout);
+          expect(baseline.stderr).toBe('');
+        }
+
+        const fresh = { latest: CANNED_LATEST, checkedAt: Date.now() };
+        const stale = { latest: CANNED_LATEST, checkedAt: Date.now() - 48 * 60 * 60 * 1000 };
+        expect(await runObserved(argv, { cache: fresh, stall: 'fetch' })).toEqual(baseline);
+        expect(await runObserved(argv, { cache: stale, stall: 'body' })).toEqual(baseline);
+        expect((await readdir(project)).sort()).toEqual(paths);
+        expect(
+          await Promise.all(paths.map((file) => readFile(join(project, file), 'utf8'))),
+        ).toEqual(before);
+      } finally {
+        await rm(scratch, { recursive: true, force: true });
+      }
+    },
+    20_000,
+  );
+
+  it('observes cache reads and writes for an explicit interactive terminal scan with findings', async () => {
+    const scratch = await mkdtemp(join(tmpdir(), 'depvitals-notifier-control-'));
+    try {
+      const project = await makeProject(scratch, 'project', {
+        dependencies: { 'unused-pkg': '1' },
+      });
+      const argv = [project, '--format', 'terminal'];
+      const expected = {
+        exitCode: 1,
+        timedOut: false,
+        signal: null,
+        stdout: 'DepVitals\n\nUnused dependencies (1)\n  unused-pkg\n',
+        stderr: `\nNew DepVitals version available: ${CURRENT_VERSION} -> ${CANNED_LATEST}\nRun: npx depvitals@latest\n`,
+      };
+      const fresh = await runObserved(argv, {
+        cache: { latest: CANNED_LATEST, checkedAt: Date.now() },
+        stall: 'fetch',
+      });
+      expect(fresh).toMatchObject({ ...expected, requests: [] });
+      expect(fresh.cacheAccesses).toContain('readFile');
+      expect(fresh.cacheAccesses).not.toContain('writeFile');
+
+      const refreshed = await runObserved(argv, {
+        cache: { latest: CANNED_LATEST, checkedAt: Date.now() - 48 * 60 * 60 * 1000 },
+      });
+      expect(refreshed).toMatchObject({ ...expected, requests: [NPM_DIST_TAGS_ENDPOINT] });
+      expect(refreshed.cacheAccesses).toEqual(
+        expect.arrayContaining(['readFile', 'writeFile', 'rename']),
+      );
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  }, 15_000);
+});
