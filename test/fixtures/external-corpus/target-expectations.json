@@ -1,0 +1,111 @@
+{
+  "targetVersion": 1,
+  "baselineReviewSha256": "9bfe5627f7b252fe50b14620439ca27ab891112055749fa1abae0edb065988d5",
+  "projects": [
+    {
+      "id": "is-number",
+      "removed": [],
+      "queries": [
+        {
+          "name": "mocha",
+          "status": "used",
+          "evidence": {
+            "kind": "script",
+            "file": "package.json",
+            "pointer": "/scripts/test",
+            "command": "mocha",
+            "via": "direct",
+            "occurrence": 0
+          }
+        },
+        {
+          "name": "gulp-format-md",
+          "status": "unused",
+          "evidence": null
+        }
+      ]
+    },
+    {
+      "id": "p-limit",
+      "removed": [],
+      "queries": [
+        {
+          "name": "yocto-queue",
+          "status": "used",
+          "evidence": {
+            "kind": "source",
+            "file": "index.js",
+            "reference": "import",
+            "specifier": "yocto-queue",
+            "position": {
+              "offset": 18,
+              "line": 1,
+              "column": 19
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "ts-extras",
+      "removed": [
+        {
+          "correction": "F1",
+          "name": "tsx"
+        }
+      ],
+      "queries": [
+        {
+          "name": "tsx",
+          "status": "used",
+          "evidence": {
+            "kind": "script",
+            "file": "package.json",
+            "pointer": "/scripts/test",
+            "command": "tsx/esm",
+            "via": "node-preload",
+            "occurrence": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "preact-render-to-string",
+      "removed": [
+        {
+          "correction": "F1",
+          "name": "@babel/register"
+        }
+      ],
+      "queries": [
+        {
+          "name": "@babel/register",
+          "status": "used",
+          "evidence": {
+            "kind": "script",
+            "file": "package.json",
+            "pointer": "/scripts/bench",
+            "command": "@babel/register",
+            "via": "node-preload",
+            "occurrence": 1
+          }
+        },
+        {
+          "name": "vite",
+          "status": "missing",
+          "evidence": {
+            "kind": "source",
+            "file": "demo/vite.config.js",
+            "reference": "import",
+            "specifier": "vite",
+            "position": {
+              "offset": 29,
+              "line": 1,
+              "column": 30
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
