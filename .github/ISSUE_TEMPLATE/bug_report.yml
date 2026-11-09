@@ -6,8 +6,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        DepVitals is pre-alpha: if you cannot run a released version yet, please open a
-        discussion instead of a bug report.
+        Report the exact version or development commit you ran. JSON and package explanations
+        are available in the v0.4.0 development build. Terminal output works for earlier releases.
   - type: textarea
     id: what-happened
     attributes:
@@ -21,15 +21,26 @@ body:
     attributes:
       label: Reproduction
       description: |
-        A minimal repository (or the output of running DepVitals with `--json`) that reproduces the
-        problem. Include the `package.json` and the files involved.
+        Provide a minimal project or excerpts that reproduce the behavior. Include the selected
+        root, exact command, relevant package.json groups and scripts, policy/config files and
+        source or path layout. Include any nested manifests that affect ownership.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output and exit status
+      description: |
+        Include stdout, stderr and the numeric exit status. On a build that supports them,
+        use `--format json` for the scan and `--explain <package>` for the affected package.
+        Keep an empty stdout explicit for an operational error. Redact private paths or values.
     validations:
       required: true
   - type: input
     id: depvitals-version
     attributes:
       label: DepVitals version
-      placeholder: '0.1.0'
+      placeholder: '0.3.0 or development commit SHA'
     validations:
       required: true
   - type: input
