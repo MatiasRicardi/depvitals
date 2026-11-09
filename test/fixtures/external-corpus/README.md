@@ -77,38 +77,32 @@ may be relocated by explicitly updating the map; identity is based on contents, 
 }
 ```
 
-From the DepVitals checkout, build with the repository's exact locked pnpm. Record the reviewed full
-source SHA, confirm product source/package/lock/workspace equivalence to the intended baseline, and
-create a tool descriptor from the current source and complete emitted build. `identifyTool` records
-bytes and a caller-reviewed SHA; it does not prove that a build was generated from that source. A
-successful version probe alone is insufficient. For example, after the applicable build/checks:
+Build the exact `v0.3.0` tag in a separate checkout with its locked toolchain. Confirm the clean
+checkout and the full source SHA `f9302f19ae48498487c8801be199e13da3d15990` before building.
+Run the following commands from the **current evaluator checkout**, setting `baseline_root` to the
+absolute path of the separate build. The current evaluator's `identifyTool` reads the baseline's
+source, build and metadata. Its SHA argument identifies the source you verified before building.
 
 ```sh
-pnpm run build
-git rev-parse HEAD
-```
-
-With that inspected SHA supplied explicitly, this development-only Node snippet writes the descriptor
-outside the scanned roots (replace the placeholder with the reviewed 40-character SHA):
-
-```js
+baseline_root=/absolute/path/to/depvitals-v0.3.0
+node --input-type=module - "$baseline_root" <<'JS'
 import { writeFileSync } from 'node:fs';
 import { identifyTool } from './scripts/evaluate-corpus.mjs';
-const identity = identifyTool(process.cwd(), '<reviewed-full-source-sha>');
-writeFileSync('/tmp/depvitals-tool-identity.json', JSON.stringify(identity, null, 2) + '\n');
-```
 
-Then invoke the evaluator. The output parent must already exist; the output must be new and outside
-all mapped exports and the tool's source/build. Evaluation never replaces an existing receipt:
+const identity = identifyTool(process.argv[2], 'f9302f19ae48498487c8801be199e13da3d15990');
+writeFileSync('/tmp/depvitals-baseline-tool.json', JSON.stringify(identity, null, 2) + '\n');
+JS
 
-```sh
 node scripts/evaluate-corpus.mjs \
   --manifest test/fixtures/external-corpus/manifest.json \
   --roots /tmp/depvitals-corpus-roots.json \
-  --tool-root "$PWD" \
-  --tool-identity /tmp/depvitals-tool-identity.json \
+  --tool-root "$baseline_root" \
+  --tool-identity /tmp/depvitals-baseline-tool.json \
   --output /tmp/depvitals-baseline-observations.json
 ```
+
+Use an existing output parent outside all mapped exports and the tool's source/build directories.
+Evaluation requires a new output path and preserves existing receipts.
 
 The evaluator verifies the entire corpus before running any subprocess. It captures status, signal,
 stdout and stderr through the ordinary built CLI, checks all target inputs and tool bytes before/after,
@@ -150,10 +144,39 @@ changed identity or disagreement fails without writing a success receipt. Raw co
 this option remains available and does not certify expectations. The development-only terminal
 reader is for the frozen v0.3 baseline format; it is not a production CLI parser or detection engine.
 
-## Next review
+## Reviewed target and local cost
 
-The REVIEWED sidecar now records independent current-contract expectations and project-use assessments. Preserve raw output separately; do not derive expected arrays by copying the observed report. Review uncertainty,
-unsupported patterns, intentional exceptions and confirmed bugs separately before selecting corrections.
-No numerical accuracy or performance claim follows from this initial corpus. The synthetic corpus and
-its regressions remain maintained. Future JSON/query observations extend this same evaluator after
-those CLI interfaces exist.
+Use the same four pinned exports and root map for both builds. The target comparison uses the
+[reviewed baseline](baseline-review.json) and the separate [target expectations](target-expectations.json)
+that bind it by SHA-256. They allow only the two selected F1 removals and pin specific source and
+script evidence plus a negative config sample. The evaluator checks terminal and JSON findings,
+effective scope, package-local counts and exact sampled provenance. Each query must agree with its
+record in the full JSON scan. The baseline remains a separate terminal-only evaluation.
+
+Use two clean builds. For the baseline, build the source from the exact `v0.3.0` tag
+(`f9302f19ae48498487c8801be199e13da3d15990`) with its locked toolchain. For the target, build the
+source commit recorded in the [comparison](../../../docs/compatibility/v0.4.0.md#step-121-rerun).
+Verify source, metadata and build identities for both. Use the evaluator from the current checkout
+for both runs. After each clean build, produce an adjacent tarball and metadata without triggering
+another build or contacting the registry:
+
+```sh
+# Run in each build's root. Set pack_dir to a new absolute output directory.
+mkdir -p "$pack_dir"
+npm pack --offline --ignore-scripts --json --pack-destination "$pack_dir" > "$pack_dir/pack.json"
+```
+
+Using the arguments from the baseline recipe, add `--pack "$pack_dir/pack.json"` to the verified
+baseline invocation. For the target, replace the tool root, identity, pack and output with the
+target equivalents, and add `--reviewed-target test/fixtures/external-corpus/target-expectations.json`.
+Keep `--reviewed-baseline test/fixtures/external-corpus/baseline-review.json` for both. Without
+`--pack`, the evaluator collects results without cost samples.
+
+The measured invocations run the built CLI with a private pipe for RSS at process exit. Each
+terminal or JSON scan gets one uninstrumented reference, two warmups and five recorded samples.
+Warmups and samples must match the reference bytes and channels. Reported wall time includes
+startup, analysis, rendering and output capture. The byte count at exit is whole-process RSS.
+Query checks, identity hashing and archive validation are outside the timed intervals.
+The archive verifier binds every packaged byte to the measured build or checkout metadata.
+Keep the raw receipts and archives locally. This recipe does not install or execute target
+project code.

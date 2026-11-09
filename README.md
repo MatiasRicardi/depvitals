@@ -40,9 +40,68 @@ These commands use the npm release. Documentation on `main` can describe unrelea
 | Unused devDependencies | The same check for `devDependencies`.                                                  |
 | Missing dependencies   | Referenced by supported source imports/exports/requires, but undeclared in all groups. |
 
-**Missing means undeclared, not uninstalled. Unused is not proof of safe removal.** Review findings before editing your manifest. Peer and optional dependencies suppress missing findings and are never reported unused.
+**Missing means undeclared.** DepVitals checks the manifest and supported evidence. Review each unused finding before editing your manifest. Peer and optional dependencies suppress missing findings and are never reported unused.
 
 Reports use stdout; operational errors use stderr without a partial report. Exit **0** means clean/help/version; **1** means findings/errors. An optional update notice can use stderr without changing the status.
+
+## JSON reports and package explanations
+
+These examples target **v0.4.0 (unreleased)**. To try them before publication, use
+`node /path/to/depvitals/dist/cli/index.js` in place of `depvitals` after
+[building the development checkout](https://github.com/MatiasRicardi/depvitals/blob/main/CONTRIBUTING.md#local-setup).
+
+For example, suppose `./project` declares `unused` as a dependency and `unused-tool` as a
+devDependency, and `src/index.ts` contains `import item from 'missing';`.
+
+```sh
+depvitals ./project
+```
+
+```text
+DepVitals
+
+Unused dependencies (1)
+  unused
+
+Unused devDependencies (1)
+  unused-tool
+
+Missing dependencies (1)
+  missing
+```
+
+Run these commands from outside the selected project.
+
+```sh
+depvitals ./project --format json > depvitals-report.json
+depvitals ./project --explain missing
+depvitals --format json --explain missing ./project
+```
+
+1. Start with a full scan. This example reports findings and returns exit 1, including when stdout
+   is redirected to JSON.
+2. Explain the package and check its evidence. Here `missing` is undeclared and its explanation
+   points to the import in `src/index.ts:1:18`. Check which package owns the file and whether the
+   import belongs in that project.
+3. For an unused finding, review actual uses and test the project before changing the manifest.
+   Use an exclusion only to record a deliberate scope or reporting decision.
+
+An explanation reports one exact package. Its exit status follows that package's result. Use a full
+scan to enforce a project-wide check. The v0.4.0 [report schema and examples](https://github.com/MatiasRicardi/depvitals/blob/main/schemas/README.md)
+are shipped in the npm package under `schemas/`. See the [CLI and report contract](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#cli-and-json-reports).
+
+## CI with a fixed version
+
+After v0.4.0 is published, install it as an exact development dependency.
+
+```sh
+npm install --save-dev --save-exact depvitals@0.4.0
+```
+
+Commit the generated lockfile and use `"check:dependencies": "depvitals --format json"` in the
+manifest's `scripts`. The [tested CI recipe](https://github.com/MatiasRicardi/depvitals/blob/main/docs/examples/ci/README.md)
+captures the installed executable's report, diagnostics and status. It preserves those artifacts
+on failure and includes a local tarball substitute for development and candidate testing.
 
 ## Optional configuration
 
@@ -59,8 +118,8 @@ Requires DepVitals **0.3.0 or newer**. Create `depvitals.config.json` at the sca
 
 ## Scope and privacy
 
-Scans cover JS/TS, JSX/TSX and declaration files, literal ESM/CommonJS references, supported script commands and bounded ESLint/Jest hints. Only source evidence creates missing findings. There is no workspace aggregation, alias/tsconfig resolution, blanket `@types` inference, JSON output or automatic fix; see [supported patterns and limits](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md).
+Scans cover JS/TS, JSX/TSX and declaration files, literal ESM/CommonJS references, supported script commands and bounded ESLint/Jest hints. Only source evidence creates missing findings. There is no workspace aggregation, alias/tsconfig resolution, blanket `@types` inference or automatic fix; see [supported patterns and limits](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md).
 
-Core analysis is offline and never executes or modifies the project or inspects `node_modules`. After completed interactive scans, an optional update check requests public metadata for **DepVitals itself**, caches it outside the project and uploads no project data. CI, non-TTY, help/version and failed scans skip it. Set `DEPVITALS_NO_UPDATE_CHECK=1` to disable it; see [privacy and shell examples](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#update-notice-and-privacy).
+Core analysis is offline and never executes or modifies the project or inspects `node_modules`. After completed interactive scans, an optional update check requests public metadata for **DepVitals itself**, caches it outside the project and uploads no project data. CI, non-TTY, help/version and failed scans skip it. In v0.4.0, JSON scans and all explanations also skip it before any cache or network access. Set `DEPVITALS_NO_UPDATE_CHECK=1` to disable it; see [privacy and shell examples](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#update-notice-and-privacy).
 
 [Technical reference](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md) · [Contributing](https://github.com/MatiasRicardi/depvitals/blob/main/CONTRIBUTING.md) · [Changelog](https://github.com/MatiasRicardi/depvitals/blob/main/CHANGELOG.md) · [MIT license](https://github.com/MatiasRicardi/depvitals/blob/main/LICENSE)

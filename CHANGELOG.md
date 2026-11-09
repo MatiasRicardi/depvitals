@@ -7,7 +7,25 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Added
+
+- Versioned JSON scan reports and exact-package explanations in terminal or JSON. Explanations show
+  declaration groups, effective exclusions and source, script or configuration evidence.
+- A packaged Draft 7 schema, normative JSON examples and a tested fixed-version CI recipe that
+  preserves report, diagnostics and exit status.
+
+### Fixed
+
+- Supported explicit Node preloads in root scripts now count as usage evidence for declared packages. The four-project comparison found
+  two visible changes from v0.3.0. `tsx` and `@babel/register` ceased to be reported as unused
+  devDependencies in their respective pinned roots.
+
+### Changed
+
+- JSON scans and all explanations bypass the optional notifier. Ordinary terminal scans retain
+  their existing eligibility and project-wide exit status.
+- Documented the manual Depcheck migration, supported scope and remaining limits. See the
+  [candidate notes](docs/releases/v0.4.0.md) and [external corpus comparison](docs/compatibility/v0.4.0.md).
 
 ## [0.3.0]
 

@@ -1,0 +1,58 @@
+name: Check dependencies
+
+on: pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  depvitals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Prepare artifact location
+        id: artifacts
+        run: |
+          scratch="$(mktemp -d "$RUNNER_TEMP/depvitals.XXXXXX")"
+          printf 'directory=%s/report\n' "$scratch" >> "$GITHUB_OUTPUT"
+
+      - name: Install locked development dependencies
+        run: npm ci --ignore-scripts --include=dev
+
+      - name: Capture DepVitals result
+        env:
+          REPORT_DIR: ${{ steps.artifacts.outputs.directory }}
+        run: bash .github/depvitals/capture-report.sh "$REPORT_DIR"
+
+      - name: Upload DepVitals result
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: depvitals-report
+          path: ${{ steps.artifacts.outputs.directory || format('{0}/depvitals-unavailable', runner.temp) }}
+          if-no-files-found: warn
+
+      - name: Verify report and enforce scan outcome
+        if: always()
+        env:
+          REPORT_DIR: ${{ steps.artifacts.outputs.directory }}
+        run: |
+          : "${REPORT_DIR:?Missing artifact directory}"
+          node .github/depvitals/verify-report.mjs \
+            "$REPORT_DIR/depvitals-report.json" \
+            "$REPORT_DIR/depvitals-diagnostics.txt" \
+            "$REPORT_DIR/depvitals-status.txt"

@@ -1,4 +1,5 @@
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -10,12 +11,14 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { dirname, join, resolve } from 'node:path';
+import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { writeTestArchive } from './helpers/testArchive.js';
+
 type Snapshot = { sha256: string; entries: Record<string, unknown>[] };
-type ToolIdentity = { version: string; sourceSha: string; build: Snapshot };
+type ToolIdentity = { version: string; sourceSha: string; source: Snapshot; build: Snapshot };
 type Entry = {
   id: string;
   upstream: string;
@@ -23,6 +26,7 @@ type Entry = {
   selectedRoot: string;
   snapshot: Snapshot;
   expectationStatus: string;
+  fixedSourceExclusions?: readonly string[];
   scope: { mode: string; overlays: string[] };
 };
 type Catalog = { catalogVersion: number; projects: Entry[] };
@@ -31,6 +35,17 @@ type Input = {
   roots: Record<string, string>;
   toolRoot: string;
   toolIdentity: ToolIdentity;
+  packPath?: string;
+  reviewedBaseline?: BaselineReview;
+  reviewedTarget?: {
+    targetVersion: number;
+    baselineReviewSha256: string;
+    projects: {
+      id: string;
+      removed: { correction: string; name: string }[];
+      queries: { name: string; status: string; evidence: object | null }[];
+    }[];
+  };
 };
 type Result = {
   status: number | null;
@@ -42,7 +57,7 @@ type Result = {
 type Runner = (
   command: string,
   args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; timeout: number },
+  options: SpawnSyncOptionsWithStringEncoding & { env: NodeJS.ProcessEnv; timeout: number },
 ) => Result;
 type BaselineReview = {
   reviewVersion: number;
@@ -61,7 +76,11 @@ type BaselineReview = {
     expectedProcess: { status: number; stdout: string; stderr: string };
   }[];
 };
+type Cost = {
+  samples: { wallMs: number; exitRssBytes: number }[];
+};
 type Receipt = {
+  cost?: { warmups: number; repeats: number; artifact: { filename: string; fileCount: number } };
   tool: { version: string; source: Snapshot };
   catalogSha256: string;
   expectationsReviewed: boolean;
@@ -71,16 +90,21 @@ type Receipt = {
     stdout: string;
     stderr: string;
     nonMutationVerified: boolean;
+    cost?: Cost;
+    json?: { cost?: Cost };
   }[];
 };
-const { identifySnapshot, identifyTool, evaluateCorpus, verifyReviewedBaseline } = (await import(
-  new URL('../scripts/evaluate-corpus.mjs', import.meta.url).href
-)) as {
-  verifyReviewedBaseline: (receipt: Receipt, review: BaselineReview) => { matched: boolean };
-  identifySnapshot: (root: string) => Snapshot;
-  identifyTool: (root: string, sha: string) => ToolIdentity;
-  evaluateCorpus: (input: Input, execute?: Runner) => Receipt;
-};
+const { identifySnapshot, identifyTool, evaluateCorpus, verifyReviewedBaseline, sha256 } =
+  (await import(new URL('../scripts/evaluate-corpus.mjs', import.meta.url).href)) as {
+    sha256: (text: string) => string;
+    verifyReviewedBaseline: (receipt: Receipt, review: BaselineReview) => { matched: boolean };
+    identifySnapshot: (root: string) => Snapshot;
+    identifyTool: (root: string, sha: string) => ToolIdentity;
+    evaluateCorpus: (input: Input, execute?: Runner) => Receipt;
+  };
+const { identifyBuild } = (await import(
+  new URL('../scripts/measurementIdentity.mjs', import.meta.url).href
+)) as { identifyBuild: (root: string) => { path: string }[] };
 const toolRoot = resolve(import.meta.dirname, '..');
 const sourceSha = '8054e079aa2e2e40d3f1f41e5b2e35b4d2c7db7f';
 let scratch: string;
@@ -128,7 +152,7 @@ afterEach(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
 
-function reviewedClean(receipt: Receipt): BaselineReview {
+function reviewedClean(receipt: Pick<Receipt, 'tool' | 'catalogSha256'>): BaselineReview {
   return {
     reviewVersion: 1,
     status: 'REVIEWED',
@@ -566,5 +590,177 @@ describe('offline external corpus identities', () => {
     expect(result.stderr).toContain('outside acquired inputs');
     expect(existsSync(join(project, 'receipt.json'))).toBe(false);
     expect(readFileSync(join(project, 'package.json'), 'utf8')).toBe('{}');
+  });
+});
+
+describe('reviewed target observations', () => {
+  function target(): Input {
+    writeFileSync(
+      join(project, 'package.json'),
+      '{"devDependencies":{"preload":"*"},"scripts":{"check":"node -r preload index.cjs"}}',
+    );
+    const args = input();
+    const [entry] = args.catalog.projects;
+    if (!entry) throw new Error('Missing authored fixture');
+    entry.fixedSourceExclusions = [
+      '.cache',
+      '.git',
+      '.next',
+      '.nuxt',
+      '.turbo',
+      'build',
+      'coverage',
+      'dist',
+      'node_modules',
+      'out',
+    ];
+    const baseline = reviewedClean({
+      tool: args.toolIdentity,
+      catalogSha256: sha256(JSON.stringify(args.catalog)),
+    });
+    const [expectation] = baseline.projects;
+    if (!expectation) throw new Error('Missing authored expectation');
+    expectation.currentContractExpected.unusedDevDependencies = ['preload'];
+    expectation.expectedProcess = {
+      status: 1,
+      stdout: 'DepVitals\n\nUnused devDependencies (1)\n  preload\n',
+      stderr: '',
+    };
+    return {
+      ...args,
+      reviewedBaseline: baseline,
+      reviewedTarget: {
+        targetVersion: 1,
+        baselineReviewSha256: sha256(JSON.stringify(baseline)),
+        projects: [
+          {
+            id: entry.id,
+            removed: [{ correction: 'F1', name: 'preload' }],
+            queries: [
+              {
+                name: 'preload',
+                status: 'used',
+                evidence: {
+                  kind: 'script',
+                  file: 'package.json',
+                  pointer: '/scripts/check',
+                  command: 'preload',
+                  via: 'node-preload',
+                  occurrence: 1,
+                },
+              },
+            ],
+          },
+        ],
+      },
+    };
+  }
+
+  function measuredTarget(): Input {
+    const args = target();
+    const paths = [
+      'package.json',
+      'README.md',
+      'LICENSE',
+      ...identifyBuild(toolRoot).map(({ path }) => path),
+    ];
+    const files = new Map(paths.map((path) => [path, readFileSync(join(toolRoot, path))]));
+    const packPath = writeTestArchive(scratch, files, {
+      name: 'depvitals',
+      version: args.toolIdentity.version,
+    });
+    return { ...args, packPath };
+  }
+
+  it('records five samples with real child RSS after two warmups in each scan format', () => {
+    const measuredCalls: string[] = [];
+    const receipt = evaluateCorpus(measuredTarget(), (command, args, options) => {
+      if (args[0] === '--import')
+        measuredCalls.push(args.includes('--format') ? 'json' : 'terminal');
+      return spawnSync(command, args, options);
+    });
+    expect(receipt.cost).toMatchObject({
+      warmups: 2,
+      repeats: 5,
+      artifact: { fileCount: identifyBuild(toolRoot).length + 3 },
+    });
+    expect(measuredCalls).toEqual([
+      ...Array<string>(7).fill('terminal'),
+      ...Array<string>(7).fill('json'),
+    ]);
+    const [observation] = receipt.observations;
+    for (const cost of [observation?.cost, observation?.json?.cost]) {
+      expect(cost?.samples).toHaveLength(5);
+      for (const sample of cost?.samples ?? []) {
+        expect(sample.exitRssBytes).toBeGreaterThan(0);
+        expect(sample.wallMs).toBeGreaterThan(0);
+      }
+    }
+  }, 15_000);
+
+  it('rejects output that changes in a retained sample', () => {
+    let measuredCalls = 0;
+    expect(() =>
+      evaluateCorpus(measuredTarget(), (command, args, options) => {
+        const result = spawnSync(command, args, options);
+        if (args[0] === '--import' && ++measuredCalls === 3) {
+          return { ...result, stdout: result.stdout + 'changed\n' };
+        }
+        return result;
+      }),
+    ).toThrow('Measured output changed');
+  }, 15_000);
+
+  it('rejects archive bytes changed after the initial verification', () => {
+    const args = measuredTarget();
+    if (!args.packPath) throw new Error('Missing authored pack');
+    const archive = join(dirname(args.packPath), `depvitals-${args.toolIdentity.version}.tgz`);
+    expect(() =>
+      evaluateCorpus(args, (command, argv, options) => {
+        const result = spawnSync(command, argv, options);
+        if (argv.includes('--explain')) appendFileSync(archive, 'changed');
+        return result;
+      }),
+    ).toThrow('Archive size differs from pack metadata');
+  }, 15_000);
+
+  it('matches the reviewed F1 delta in compiled terminal, JSON scan and query', () => {
+    expect(evaluateCorpus(target())).toMatchObject({
+      mode: 'reviewed-target-observation',
+      expectationsReviewed: true,
+      observations: [
+        {
+          status: 0,
+          nonMutationVerified: true,
+          removed: [{ correction: 'F1', name: 'preload' }],
+          json: { status: 0, stderr: '' },
+          queries: [{ name: 'preload', status: 0, stderr: '' }],
+        },
+      ],
+    });
+  });
+
+  it('rejects a changed review before scanning', () => {
+    const args = target();
+    if (!args.reviewedBaseline) throw new Error('Missing authored baseline');
+    args.reviewedBaseline.reviewedBy.primary = 'changed reviewer';
+    expect(() => evaluateCorpus(args)).toThrow('Baseline review changed');
+  });
+
+  it.each(['scan', 'explain'])('rejects unrelated findings in JSON %s output', (mode) => {
+    expect(() =>
+      evaluateCorpus(target(), (command, args, options) => {
+        const result = spawnSync(command, args, { ...options, encoding: 'utf8' });
+        if (!args.includes('--format') || args.includes('--explain') !== (mode === 'explain'))
+          return result;
+        const report = JSON.parse(result.stdout) as {
+          findings: { unusedDevDependencies: string[] };
+          counts: { unusedDevDependencies: number };
+        };
+        report.findings.unusedDevDependencies = ['unrelated'];
+        report.counts.unusedDevDependencies = 1;
+        return { ...result, stdout: JSON.stringify(report, null, 2) + '\n' };
+      }),
+    ).toThrow('Target JSON findings');
   });
 });

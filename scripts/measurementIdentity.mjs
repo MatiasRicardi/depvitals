@@ -189,3 +189,26 @@ export function verifyMeasuredArchive(packPath, root, build) {
     optionalDependencies: Object.keys(manifest.optionalDependencies ?? {}),
   };
 }
+
+/** Verify every installed regular file against the already-verified archive. */
+export function verifyInstalledArchive(root, packedFiles) {
+  assert(lstatSync(root).isDirectory(), 'Installed package root must be a regular directory');
+  const files = [];
+  for (const entry of readdirSync(root, { recursive: true, withFileTypes: true })) {
+    if (entry.isDirectory()) continue;
+    const file = join(entry.parentPath, entry.name);
+    const path = relative(root, file).split(sep).join('/');
+    assert(entry.isFile(), `Installed package entry must be a regular file: ${path}`);
+    assert(packedFiles.has(path), `Unexpected installed package file: ${path}`);
+    assert(
+      packedFiles.get(path).equals(readFileSync(file)),
+      `Installed bytes differ from archive: ${path}`,
+    );
+    files.push(path);
+  }
+  assert.deepEqual(
+    files.sort(),
+    [...packedFiles.keys()].sort(),
+    'Installed file set differs from archive',
+  );
+}

@@ -2,9 +2,10 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { gzipSync } from 'node:zlib';
 
 import { describe, expect, it } from 'vitest';
+
+import { tar, writeTestArchive } from './helpers/testArchive.js';
 
 import { analyzeProject } from '../src/core/analyzeProject.js';
 import { findEslintManifestUsage } from '../src/detectors/eslintManifestConfig.js';
@@ -16,17 +17,17 @@ type InputIdentity = {
   rootEntries: readonly string[];
   files: readonly BuildFile[];
 };
-const { identifyBuild, identifyInputs, verifyMeasuredArchive } = (await import(
-  new URL('../scripts/measurementIdentity.mjs', import.meta.url).href
-)) as {
-  identifyBuild: (root: string) => readonly BuildFile[];
-  identifyInputs: (root: string, sources: readonly string[]) => InputIdentity;
-  verifyMeasuredArchive: (
-    packPath: string,
-    root: string,
-    build: readonly BuildFile[],
-  ) => { matchedBuildSha256: string; fileCount: number; archiveSha256: string };
-};
+const { identifyBuild, identifyInputs, verifyInstalledArchive, verifyMeasuredArchive } =
+  (await import(new URL('../scripts/measurementIdentity.mjs', import.meta.url).href)) as {
+    verifyInstalledArchive: (root: string, packedFiles: ReadonlyMap<string, Buffer>) => void;
+    identifyBuild: (root: string) => readonly BuildFile[];
+    identifyInputs: (root: string, sources: readonly string[]) => InputIdentity;
+    verifyMeasuredArchive: (
+      packPath: string,
+      root: string,
+      build: readonly BuildFile[],
+    ) => { matchedBuildSha256: string; fileCount: number; archiveSha256: string };
+  };
 const digest = (bytes: string | Buffer): string => createHash('sha256').update(bytes).digest('hex');
 
 function fixture(work: (root: string) => void | Promise<void>): Promise<void> {
@@ -83,42 +84,8 @@ function addSchemaAssets(root: string): Map<string, Buffer> {
   return files;
 }
 
-/** Test-owned ustar writer. Buffers are inspected as data, never extracted/executed. */
-function tar(files: ReadonlyMap<string, Buffer>, type = '0'): Buffer {
-  const blocks: Buffer[] = [];
-  for (const [path, bytes] of files) {
-    const header = Buffer.alloc(512);
-    const name = 'package/' + path;
-    const split = name.length > 100 ? name.lastIndexOf('/') : -1;
-    header.write(split < 0 ? name : name.slice(split + 1), 0, 100, 'utf8');
-    if (split >= 0) header.write(name.slice(0, split), 345, 155, 'utf8');
-    header.write('0000644\0', 100, 'ascii');
-    header.write(bytes.length.toString(8).padStart(11, '0') + '\0', 124, 'ascii');
-    header.fill(32, 148, 156);
-    header.write(type, 156, 'ascii');
-    header.write('ustar\0', 257, 'ascii');
-    const checksum = header.reduce((sum, byte) => sum + byte, 0);
-    header.write(checksum.toString(8).padStart(6, '0') + '\0 ', 148, 'ascii');
-    blocks.push(header, bytes, Buffer.alloc((512 - (bytes.length % 512)) % 512));
-  }
-  return Buffer.concat([...blocks, Buffer.alloc(1024)]);
-}
-function archive(root: string, files = currentFiles(root), tarBytes = tar(files)): string {
-  const bytes = gzipSync(tarBytes);
-  const pack = {
-    name: 'fixture',
-    version: '0.2.0',
-    filename: 'fixture-0.2.0.tgz',
-    size: bytes.length,
-    unpackedSize: [...files.values()].reduce((sum, value) => sum + value.length, 0),
-    shasum: createHash('sha1').update(bytes).digest('hex'),
-    integrity: 'sha512-' + createHash('sha512').update(bytes).digest('base64'),
-    files: [...files].map(([path, value]) => ({ path, size: value.length })),
-  };
-  const path = join(root, 'pack.json');
-  writeFileSync(path, JSON.stringify([pack]));
-  writeFileSync(join(root, pack.filename), bytes);
-  return path;
+function archive(root: string, files = currentFiles(root), tarBytes?: Buffer): string {
+  return writeTestArchive(root, files, { name: 'fixture', version: '0.2.0' }, tarBytes);
 }
 
 describe('measurement input identity', () => {
@@ -347,4 +314,28 @@ describe('measurement archive binding', () => {
       expect(verifyMeasuredArchive(archive(root, files), root, measured).fileCount).toBe(5);
     });
   });
+});
+
+describe('installed package identity', () => {
+  it.each([
+    ['missing', 'Installed file set differs from archive'],
+    ['extra', 'Unexpected installed package file'],
+    ['changed', 'Installed bytes differ from archive'],
+  ] as const)(
+    'rejects %s installed files after accepting the exact archive shape',
+    async (kind, error) => {
+      await fixture((root) => {
+        rmSync(join(root, 'index.cjs'));
+        const files = addSchemaAssets(root);
+        verifyInstalledArchive(root, files);
+        const example = join(root, 'schemas/examples/scan-clean.json');
+        if (kind === 'missing') rmSync(example);
+        if (kind === 'extra') writeFileSync(join(root, 'dist/extra.d.ts'), 'export {};');
+        if (kind === 'changed') writeFileSync(example, '{}');
+        expect(() => {
+          verifyInstalledArchive(root, files);
+        }).toThrow(error);
+      });
+    },
+  );
 });
