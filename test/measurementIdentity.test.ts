@@ -17,17 +17,17 @@ type InputIdentity = {
   rootEntries: readonly string[];
   files: readonly BuildFile[];
 };
-const { identifyBuild, identifyInputs, verifyMeasuredArchive } = (await import(
-  new URL('../scripts/measurementIdentity.mjs', import.meta.url).href
-)) as {
-  identifyBuild: (root: string) => readonly BuildFile[];
-  identifyInputs: (root: string, sources: readonly string[]) => InputIdentity;
-  verifyMeasuredArchive: (
-    packPath: string,
-    root: string,
-    build: readonly BuildFile[],
-  ) => { matchedBuildSha256: string; fileCount: number; archiveSha256: string };
-};
+const { identifyBuild, identifyInputs, verifyInstalledArchive, verifyMeasuredArchive } =
+  (await import(new URL('../scripts/measurementIdentity.mjs', import.meta.url).href)) as {
+    verifyInstalledArchive: (root: string, packedFiles: ReadonlyMap<string, Buffer>) => void;
+    identifyBuild: (root: string) => readonly BuildFile[];
+    identifyInputs: (root: string, sources: readonly string[]) => InputIdentity;
+    verifyMeasuredArchive: (
+      packPath: string,
+      root: string,
+      build: readonly BuildFile[],
+    ) => { matchedBuildSha256: string; fileCount: number; archiveSha256: string };
+  };
 const digest = (bytes: string | Buffer): string => createHash('sha256').update(bytes).digest('hex');
 
 function fixture(work: (root: string) => void | Promise<void>): Promise<void> {
@@ -314,4 +314,28 @@ describe('measurement archive binding', () => {
       expect(verifyMeasuredArchive(archive(root, files), root, measured).fileCount).toBe(5);
     });
   });
+});
+
+describe('installed package identity', () => {
+  it.each([
+    ['missing', 'Installed file set differs from archive'],
+    ['extra', 'Unexpected installed package file'],
+    ['changed', 'Installed bytes differ from archive'],
+  ] as const)(
+    'rejects %s installed files after accepting the exact archive shape',
+    async (kind, error) => {
+      await fixture((root) => {
+        rmSync(join(root, 'index.cjs'));
+        const files = addSchemaAssets(root);
+        verifyInstalledArchive(root, files);
+        const example = join(root, 'schemas/examples/scan-clean.json');
+        if (kind === 'missing') rmSync(example);
+        if (kind === 'extra') writeFileSync(join(root, 'dist/extra.d.ts'), 'export {};');
+        if (kind === 'changed') writeFileSync(example, '{}');
+        expect(() => {
+          verifyInstalledArchive(root, files);
+        }).toThrow(error);
+      });
+    },
+  );
 });
