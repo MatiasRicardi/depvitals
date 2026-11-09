@@ -35,17 +35,19 @@ export async function createScanContext(projectRoot: string): Promise<ScanContex
   const configEvidence: { readonly packageName: string; readonly evidence: ConfigEvidence }[] = [];
   if (!eslintPrecedence.hardBarrier) {
     if (eslintPrecedence.legacyRcJsonEntryName !== undefined) {
-      configEvidence.push(
-        ...(await collectEslintRcJsonUsageForManifest(manifest, eslintPrecedence)),
-      );
+      const occurrences = await collectEslintRcJsonUsageForManifest(manifest, eslintPrecedence);
+      for (const occurrence of occurrences) configEvidence.push(occurrence);
     } else if (!eslintPrecedence.legacyRcByName) {
-      configEvidence.push(
-        ...collectEslintConfigUsage(raw['eslintConfig'], manifest.declaredDependencyNames),
+      const occurrences = collectEslintConfigUsage(
+        raw['eslintConfig'],
+        manifest.declaredDependencyNames,
       );
+      for (const occurrence of occurrences) configEvidence.push(occurrence);
     }
   }
   if (!jestConfigBarrier) {
-    configEvidence.push(...collectJestConfigUsage(raw['jest'], manifest.declaredDependencyNames));
+    const occurrences = collectJestConfigUsage(raw['jest'], manifest.declaredDependencyNames);
+    for (const occurrence of occurrences) configEvidence.push(occurrence);
   }
   configEvidence.sort(
     (a, b) =>

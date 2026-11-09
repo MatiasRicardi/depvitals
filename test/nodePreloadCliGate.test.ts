@@ -142,6 +142,79 @@ describe('frozen F1 Node preload controls', () => {
     );
   });
 
+  it.each([
+    ['node --import tsx ./entry.cjs', true],
+    ['node --import tsx $NODE_FLAGS ./entry.cjs', false],
+    ['node --import tsx "$NODE_FLAGS" ./entry.cjs', false],
+    ['node --import=tsx/$ENTRY ./entry.cjs', false],
+    ['node --import "tsx/$ENTRY" ./entry.cjs', false],
+    ["node --import tsx '$NODE_FLAGS' ./entry.cjs", true],
+    ['node --import tsx ./entry.cjs $NODE_FLAGS', true],
+  ])('checks literal preload boundaries for %s', (script, used) => {
+    fixture({ devDependencies: { tsx: '1' }, scripts: { check: script } }, '', [], (root) => {
+      const scan = run(root, ['--format', 'json']);
+      const query = run(root, ['--explain', 'tsx', '--format', 'json']);
+      const expected = {
+        unusedDependencies: [],
+        unusedDevDependencies: used ? [] : ['tsx'],
+        missingDependencies: [],
+      };
+      expect(run(root, [])).toEqual({
+        status: used ? 0 : 1,
+        stdout: terminal(expected),
+        stderr: '',
+      });
+      for (const result of [scan, query]) {
+        expect(result.status).toBe(used ? 0 : 1);
+        expect(result.stderr).toBe('');
+        const report = JSON.parse(result.stdout) as JsonReport;
+        expect(report.findings).toEqual(expected);
+        expect(report.packages).toHaveLength(1);
+        expect(report.packages[0]).toMatchObject({
+          name: 'tsx',
+          status: used ? 'used' : 'unused',
+          evidence: used
+            ? [
+                {
+                  kind: 'script',
+                  file: 'package.json',
+                  pointer: '/scripts/check',
+                  command: 'tsx',
+                  via: 'node-preload',
+                  occurrence: 1,
+                },
+              ]
+            : [],
+        });
+      }
+    });
+  });
+
+  it('preserves outer and neighboring credit without consuming rejected preload ordinals', () => {
+    fixture(
+      {
+        devDependencies: { node: '1', tsx: '1', neighbor: '1' },
+        scripts: { check: 'node --import tsx $NODE_FLAGS ./entry.cjs && node -r neighbor' },
+      },
+      '',
+      [],
+      (root) => {
+        const result = run(root, ['--format', 'json']);
+        expect(result.status).toBe(1);
+        expect(result.stderr).toBe('');
+        const report = JSON.parse(result.stdout) as JsonReport;
+        expect(report.findings.unusedDevDependencies).toEqual(['tsx']);
+        expect(report.packages.find((pkg) => pkg.name === 'node')?.evidence).toMatchObject([
+          { via: 'direct', occurrence: 0 },
+          { via: 'direct', occurrence: 1 },
+        ]);
+        expect(report.packages.find((pkg) => pkg.name === 'neighbor')?.evidence).toMatchObject([
+          { via: 'node-preload', occurrence: 2 },
+        ]);
+      },
+    );
+  });
+
   it('credits a production dependency and retains the ordinal for an optional-only candidate', () => {
     fixture(
       {

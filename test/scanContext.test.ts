@@ -177,6 +177,52 @@ describe('one per-scan CLI input context', () => {
       );
     },
   );
+  it.each(['manifest ESLint', 'legacy ESLint', 'manifest Jest'] as const)(
+    'retains a large batch of %s occurrences in evidence order',
+    async (detector) => {
+      const count = 130_000;
+      const isJest = detector === 'manifest Jest';
+      const legacy = detector === 'legacy ESLint';
+      const plugins = Array<string>(count).fill('react');
+      const manifest = isJest
+        ? {
+            ...inventory,
+            jest: {
+              transform: Object.fromEntries(
+                Array.from({ length: count }, (_, index) => [String(index), 'ts-jest']),
+              ),
+            },
+          }
+        : { ...inventory, eslintConfig: { plugins } };
+      await project(
+        {
+          'package.json': JSON.stringify(manifest),
+          ...(legacy ? { '.ESLINTRC.JSON': JSON.stringify({ plugins }) } : {}),
+        },
+        async (root) => {
+          const { configEvidence } = await createScanContext(root);
+          expect(configEvidence).toHaveLength(count + 1);
+          const prefix = isJest ? '/jest/transform' : legacy ? '/plugins' : '/eslintConfig/plugins';
+          const file = legacy ? '.ESLINTRC.JSON' : 'package.json';
+          const packageName = isJest ? 'ts-jest' : 'eslint-plugin-react';
+          const start = isJest ? 1 : 0;
+          expect(configEvidence[start]).toMatchObject({
+            packageName,
+            evidence: { file, pointer: prefix + '/0', detector: isJest ? 'jest' : 'eslint' },
+          });
+          expect(configEvidence[start + count - 1]).toMatchObject({
+            packageName,
+            evidence: { file, pointer: prefix + '/99999' },
+          });
+          expect(configEvidence[isJest ? 0 : count]?.packageName).toBe(
+            isJest ? 'eslint-config-prettier' : 'ts-jest',
+          );
+        },
+      );
+    },
+    15_000,
+  );
+
   it('CLI uses the selected root from an alternate cwd, without reloading the manifest', async () => {
     await project({ 'index.cjs': "require('both');" }, async (root) => {
       const runner = join(root, 'runner');
