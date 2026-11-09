@@ -13,6 +13,37 @@ function readArtifacts(paths) {
   }
 }
 
+function verifyPackageFindings(report) {
+  const remaining = new Map(categories.map((key) => [key, new Set(report.findings[key])]));
+  for (const [key, names] of remaining) {
+    if (names.size !== report.counts[key]) throw new Error('Duplicate report findings.');
+  }
+
+  const seen = new Set();
+  for (const pkg of report.packages) {
+    if (typeof pkg?.name !== 'string' || seen.has(pkg.name) || !strings(pkg.findings)) {
+      throw new Error('Invalid package findings.');
+    }
+    seen.add(pkg.name);
+    for (const category of pkg.findings) {
+      if (!remaining.get(category)?.delete(pkg.name)) {
+        throw new Error('Package findings disagree with report findings.');
+      }
+    }
+
+    const expected = pkg.findings.includes('missingDependencies')
+      ? ['missing']
+      : pkg.findings.length > 0
+        ? ['unused']
+        : ['used', 'declared', 'excluded'];
+    if (!expected.includes(pkg.status)) throw new Error('Package status disagrees with findings.');
+  }
+
+  if ([...remaining.values()].some((names) => names.size > 0)) {
+    throw new Error('Report findings disagree with package findings.');
+  }
+}
+
 function verify(paths) {
   const [stdout, diagnostics, status] = readArtifacts(paths);
   if (status !== '0\n' && status !== '1\n') throw new Error('Invalid scan status.');
@@ -52,6 +83,7 @@ function verify(paths) {
   ) {
     throw new Error('Invalid findings or counts.');
   }
+  verifyPackageFindings(report);
   const [unused, unusedDev, missing] = categories.map((key) => report.counts[key]);
   const hasFindings = unused > 0 || unusedDev > 0 || missing > 0;
   if (status !== (hasFindings ? '1\n' : '0\n')) {

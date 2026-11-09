@@ -100,6 +100,33 @@ describe('consumer report verification', () => {
     });
   });
 
+  it.each([
+    {
+      label: 'package findings omitted from the summary',
+      report: { ...clean, packages: findings.packages },
+      status: '0\n',
+      error: 'Package findings disagree with report findings.',
+    },
+    {
+      label: 'summary findings with no package record',
+      report: { ...findings, packages: [] },
+      status: '1\n',
+      error: 'Report findings disagree with package findings.',
+    },
+    {
+      label: 'missing package status with empty visible findings',
+      report: { ...clean, packages: findings.packages.map((pkg) => ({ ...pkg, findings: [] })) },
+      status: '0\n',
+      error: 'Package status disagrees with findings.',
+    },
+  ])('rejects $label', ({ report, status, error }) => {
+    expect(verify(json(report), '', status)).toEqual({
+      status: 2,
+      stdout: '',
+      stderr: `Invalid DepVitals analysis artifacts. ${error}\n`,
+    });
+  });
+
   it('distinguishes an operational error and leaves raw diagnostics in the artifact', () => {
     expect(verify('', '::error::untrusted diagnostic\n', '1\n')).toEqual({
       status: 1,
