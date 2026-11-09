@@ -11,7 +11,9 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
+import { identifyBuild, verifyMeasuredArchive } from './measurementIdentity.mjs';
 
 export const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const json = (file) => JSON.parse(readFileSync(file, 'utf8'));
@@ -255,12 +257,183 @@ export function verifyReviewedBaseline(receipt, review) {
   };
 }
 
+const categories = ['unusedDependencies', 'unusedDevDependencies', 'missingDependencies'];
+const sourceExtensions = ['.cjs', '.cts', '.js', '.jsx', '.mjs', '.mts', '.ts', '.tsx'];
+
+/** Only the independently selected F1 removals are applied to the reviewed baseline. */
+function targetExpectations(catalog, review, target) {
+  assert.equal(target.targetVersion, 1, 'Unknown target expectation version');
+  assert.equal(review?.status, 'REVIEWED', 'Target evaluation requires a reviewed baseline');
+  assert.equal(
+    sha256(JSON.stringify(review)),
+    target.baselineReviewSha256,
+    'Baseline review changed',
+  );
+  assert.equal(
+    sha256(JSON.stringify(catalog)),
+    review.catalogSha256,
+    'Review corpus identity changed',
+  );
+  equal(
+    target.projects.map(({ id }) => id).sort(),
+    catalog.projects.map(({ id }) => id).sort(),
+    'Target expectations must cover the exact corpus',
+  );
+  equal(
+    review.projects.map(({ id }) => id).sort(),
+    catalog.projects.map(({ id }) => id).sort(),
+    'Baseline review must cover the exact corpus',
+  );
+  return new Map(
+    target.projects.map(({ id, removed, queries }) => {
+      const baseline = review.projects.find((project) => project.id === id);
+      assert(
+        baseline.currentContractExpected && baseline.expectedProcess.stderr === '',
+        `Expected a completed reviewed baseline: ${id}`,
+      );
+      const findings = structuredClone(baseline.currentContractExpected);
+      const removedNames = new Set();
+      for (const { correction, name } of removed) {
+        assert.equal(correction, 'F1', 'Unselected correction');
+        assert(!removedNames.has(name), 'Duplicate correction');
+        assert(
+          findings.unusedDevDependencies.includes(name),
+          'Correction must remove a baseline finding',
+        );
+        removedNames.add(name);
+        findings.unusedDevDependencies = findings.unusedDevDependencies.filter(
+          (pkg) => pkg !== name,
+        );
+      }
+      assert(queries.length > 0, `Missing query expectations: ${id}`);
+      for (const name of removedNames)
+        assert(
+          queries.some(
+            (query) =>
+              query.name === name &&
+              query.status === 'used' &&
+              query.evidence?.kind === 'script' &&
+              query.evidence.via === 'node-preload',
+          ),
+          'F1 removal requires expected preload evidence',
+        );
+      return [id, { findings, queries, removed, baselineStdout: baseline.expectedProcess.stdout }];
+    }),
+  );
+}
+
+function verifyTargetReport(result, root, version, mode, scope, findings, status, id) {
+  equal(
+    { status: result.status, stderr: result.stderr },
+    { status, stderr: '' },
+    `Target channels: ${id}`,
+  );
+  const report = JSON.parse(result.stdout);
+  assert.equal(result.stdout, JSON.stringify(report, null, 2) + '\n', 'Expected canonical JSON');
+  assert.equal(report.schemaVersion, 1);
+  equal(report.tool, { name: 'depvitals', version });
+  assert.equal(report.mode, mode);
+  equal(report.project, { root });
+  equal(report.scope, scope, `Target scope changed: ${id}`);
+  equal(report.findings, findings, `Target JSON findings: ${id}`);
+  equal(report.counts, Object.fromEntries(categories.map((key) => [key, findings[key].length])));
+  const names = report.packages.map(({ name }) => name);
+  equal(names, [...new Set(names)].sort(), `Package order and identity: ${id}`);
+  equal(
+    Object.fromEntries(
+      categories.map((key) => [
+        key,
+        report.packages.filter((pkg) => pkg.findings.includes(key)).map((pkg) => pkg.name),
+      ]),
+    ),
+    findings,
+    `Package findings disagree with report: ${id}`,
+  );
+  return report;
+}
+
+function observeTarget({ entry, root }, expected, version, observe) {
+  const { findings, removed, queries, baselineStdout } = expected;
+  const exit = categories.some((key) => findings[key].length > 0) ? 1 : 0;
+  const terminal = observe([root]);
+  equal({ status: terminal.status, stderr: terminal.stderr }, { status: exit, stderr: '' });
+  equal(baselineFindings(terminal.stdout), findings, `Target terminal findings: ${entry.id}`);
+  if (removed.length === 0)
+    equal(terminal.stdout, baselineStdout, `Unchanged terminal bytes: ${entry.id}`);
+  const scope = {
+    sourceExtensions,
+    excludedDirectories: entry.fixedSourceExclusions,
+    ignorePaths: [],
+    ignoreDependencies: [],
+  };
+  const scan = observe([root, '--format', 'json']);
+  const report = verifyTargetReport(scan, root, version, 'scan', scope, findings, exit, entry.id);
+  assert.equal(report.query, null);
+  const queryObservations = queries.map(({ name, status, evidence }) => {
+    const fact = report.packages.find((pkg) => pkg.name === name);
+    assert.equal(fact?.status, status, `Expected query status: ${entry.id}/${name}`);
+    if (evidence === null) equal(fact.evidence, [], `Unexpected evidence: ${entry.id}/${name}`);
+    else
+      assert(
+        fact.evidence.some((record) => JSON.stringify(record) === JSON.stringify(evidence)),
+        `Missing reviewed evidence: ${entry.id}/${name}`,
+      );
+    const result = observe([root, '--format', 'json', '--explain', name], false);
+    const local = Object.fromEntries(
+      categories.map((key) => [key, findings[key].filter((pkg) => pkg === name)]),
+    );
+    const queryExit = ['used', 'declared', 'excluded'].includes(status) ? 0 : 1;
+    const query = verifyTargetReport(
+      result,
+      root,
+      version,
+      'explain',
+      scope,
+      local,
+      queryExit,
+      entry.id + '/' + name,
+    );
+    equal(query.query, { packageName: name, known: true });
+    equal(query.packages, [fact], `Query differs from scan package: ${entry.id}/${name}`);
+    return { name, status: result.status, stdout: result.stdout, stderr: result.stderr };
+  });
+  return {
+    ...terminal,
+    findings,
+    removed,
+    json: scan,
+    queries: queryObservations,
+  };
+}
+
+const warmups = 2;
+const repeats = 5;
+// Use a private pipe so memory instrumentation cannot change either CLI output channel.
+const rssProbe =
+  'data:text/javascript,' +
+  encodeURIComponent(
+    "import { writeSync } from 'node:fs'; process.on('exit', () => writeSync(3, String(process.memoryUsage.rss())));",
+  );
+
+function summarize(samples, key) {
+  const values = samples.map((sample) => sample[key]).sort((a, b) => a - b);
+  return { min: values[0], median: values[Math.floor(values.length / 2)], max: values.at(-1) };
+}
+
 /** Capture the complete ordinary CLI pipeline, never importing the analyzer or reporter. */
 export function evaluateCorpus(
-  { catalog, roots, toolRoot, toolIdentity, reviewedBaseline },
+  { catalog, roots, toolRoot, toolIdentity, reviewedBaseline, reviewedTarget, packPath },
   execute = spawnSync,
 ) {
   validateCatalog(catalog);
+  const expectedTarget =
+    reviewedTarget === undefined
+      ? undefined
+      : targetExpectations(catalog, reviewedBaseline, reviewedTarget);
+  const artifact =
+    packPath === undefined
+      ? undefined
+      : verifyMeasuredArchive(packPath, toolRoot, identifyBuild(toolRoot));
   equal(
     Object.keys(roots).sort(),
     catalog.projects.map((p) => p.id).sort(),
@@ -289,28 +462,42 @@ export function evaluateCorpus(
   const environment = { ...process.env, CI: '1', DEPVITALS_NO_UPDATE_CHECK: '1' };
   delete environment.NODE_OPTIONS;
   delete environment.NODE_PATH;
-  const run = (args) => {
-    const result = execute(process.execPath, [join(toolRoot, 'dist/cli/index.js'), ...args], {
-      cwd: toolRoot,
-      env: environment,
-      encoding: 'utf8',
-      timeout: 30000,
-      maxBuffer: 16 * 1024 * 1024,
-    });
+  const run = (args, measured = false) => {
+    const start = measured ? performance.now() : 0;
+    const nodeArgs = measured ? ['--import', rssProbe] : [];
+    const result = execute(
+      process.execPath,
+      [...nodeArgs, join(toolRoot, 'dist/cli/index.js'), ...args],
+      {
+        cwd: toolRoot,
+        env: environment,
+        encoding: 'utf8',
+        timeout: 30000,
+        maxBuffer: 16 * 1024 * 1024,
+        ...(measured ? { stdio: ['ignore', 'pipe', 'pipe', 'pipe'] } : {}),
+      },
+    );
+    const measurement = measured
+      ? {
+          wallMs: performance.now() - start,
+          exitRssBytes: Number(result.output?.[3]),
+        }
+      : undefined;
     return {
       status: result.status,
       signal: result.signal,
       stdout: result.stdout ?? '',
       stderr: result.stderr ?? '',
       error: result.error,
+      measurement,
     };
   };
   const version = run(['--version']);
   verifyTool();
   for (const { entry, root } of selected) verifyInputs(entry, root);
+  assert.ifError(version.error);
   assert(
-    !version.error &&
-      version.signal === null &&
+    version.signal === null &&
       version.status === 0 &&
       version.stderr === '' &&
       version.stdout === `${toolIdentity.version}\n`,
@@ -318,35 +505,67 @@ export function evaluateCorpus(
   );
   const observations = [];
   for (const { entry, root } of selected) {
-    verifyTool();
-    verifyInputs(entry, root);
-    const result = run([root]);
-    // Check mutation even when the child fails, times out or is terminated.
-    verifyInputs(entry, root);
-    verifyTool();
-    assert(
-      !result.error && result.signal === null && [0, 1].includes(result.status),
-      `CLI did not complete: ${entry.id}`,
-    );
-    assert(
-      typeof result.stdout === 'string' && typeof result.stderr === 'string',
-      'Expected text process channels',
-    );
-    assert(
-      (result.stdout !== '' && result.stderr === '') ||
-        (result.status === 1 && result.stdout === '' && result.stderr !== ''),
-      `Invalid CLI channels: ${entry.id}`,
-    );
+    const observe = (args, measure = true) => {
+      const invoke = (measured) => {
+        verifyTool();
+        verifyInputs(entry, root);
+        const { error, measurement, ...result } = run(args, measured);
+        // Check mutation even when the child fails, times out or is terminated.
+        verifyInputs(entry, root);
+        verifyTool();
+        assert(
+          !error && result.signal === null && [0, 1].includes(result.status),
+          `CLI did not complete: ${entry.id}`,
+        );
+        assert(
+          typeof result.stdout === 'string' && typeof result.stderr === 'string',
+          'Expected text process channels',
+        );
+        assert(
+          (result.stdout !== '' && result.stderr === '') ||
+            (result.status === 1 && result.stdout === '' && result.stderr !== ''),
+          `Invalid CLI channels: ${entry.id}`,
+        );
+        return { result, measurement };
+      };
+      const { result } = invoke(false);
+      if (artifact === undefined || !measure) return result;
+      const samples = [];
+      for (let i = 0; i < warmups + repeats; i++) {
+        const sampled = invoke(true);
+        equal(sampled.result, result, `Measured output changed: ${entry.id}`);
+        assert(
+          Number.isSafeInteger(sampled.measurement.exitRssBytes) &&
+            sampled.measurement.exitRssBytes > 0,
+          'Missing process exit RSS observation',
+        );
+        if (i >= warmups) samples.push(sampled.measurement);
+      }
+      return {
+        ...result,
+        cost: {
+          wallMs: summarize(samples, 'wallMs'),
+          exitRssBytes: summarize(samples, 'exitRssBytes'),
+          samples,
+        },
+      };
+    };
+    const result =
+      expectedTarget === undefined
+        ? observe([root])
+        : observeTarget(
+            { entry, root },
+            expectedTarget.get(entry.id),
+            toolIdentity.version,
+            observe,
+          );
     observations.push({
       id: entry.id,
       commit: entry.commit,
       selectedRoot: entry.selectedRoot,
       inputSha256: entry.snapshot.sha256,
       scope: entry.scope,
-      status: result.status,
-      signal: result.signal,
-      stdout: result.stdout,
-      stderr: result.stderr,
+      ...result,
       expectationStatus: 'NOT REVIEWED',
       nonMutationVerified: true,
     });
@@ -356,7 +575,10 @@ export function evaluateCorpus(
   verifyTool();
   const receipt = {
     receiptVersion: 1,
-    mode: 'baseline-terminal-observation',
+    mode:
+      expectedTarget === undefined
+        ? 'baseline-terminal-observation'
+        : 'reviewed-target-observation',
     catalogSha256: sha256(JSON.stringify(catalog)),
     evaluatorSha256: sha256(readFileSync(fileURLToPath(import.meta.url))),
     tool: toolIdentity,
@@ -364,10 +586,30 @@ export function evaluateCorpus(
     observations,
     expectationsReviewed: false,
   };
-  if (reviewedBaseline !== undefined) {
+  if (expectedTarget !== undefined) {
+    receipt.targetExpectationSha256 = sha256(JSON.stringify(reviewedTarget));
+    receipt.baselineReviewSha256 = reviewedTarget.baselineReviewSha256;
+    receipt.expectationsReviewed = true;
+    for (const observation of observations) observation.expectationStatus = 'REVIEWED';
+  } else if (reviewedBaseline !== undefined) {
     receipt.reviewVerification = verifyReviewedBaseline(receipt, reviewedBaseline);
     receipt.expectationsReviewed = true;
     for (const observation of observations) observation.expectationStatus = 'REVIEWED';
+  }
+  if (artifact !== undefined) {
+    equal(
+      verifyMeasuredArchive(packPath, toolRoot, identifyBuild(toolRoot)),
+      artifact,
+      'Measured artifact changed',
+    );
+    receipt.cost = {
+      warmups,
+      repeats,
+      artifact,
+      wallBoundary:
+        'Parent spawnSync interval, including process startup, analysis, rendering and capture.',
+      memoryBoundary: 'Whole child process resident bytes at exit, not a peak or allocation total.',
+    };
   }
   return receipt;
 }
@@ -375,11 +617,11 @@ export function evaluateCorpus(
 function main(args) {
   const keys = ['--manifest', '--roots', '--tool-root', '--tool-identity', '--output'];
   const required = [...keys];
-  keys.push('--reviewed-baseline');
+  keys.push('--reviewed-baseline', '--reviewed-target', '--pack');
   const values = {};
   assert(
     args.length % 2 === 0 && args.length >= required.length * 2 && args.length <= keys.length * 2,
-    'Usage: node scripts/evaluate-corpus.mjs --manifest <catalog.json> --roots <roots.json> --tool-root <depvitals> --tool-identity <identity.json> --output <receipt.json> [--reviewed-baseline <review.json>]',
+    'Usage: node scripts/evaluate-corpus.mjs --manifest <catalog.json> --roots <roots.json> --tool-root <depvitals> --tool-identity <identity.json> --output <receipt.json> [--reviewed-baseline <review.json>] [--reviewed-target <target.json>] [--pack <npm-pack.json>]',
   );
   for (let i = 0; i < args.length; i += 2) {
     assert(
@@ -412,7 +654,18 @@ function main(args) {
   const reviewedBaseline = values['--reviewed-baseline']
     ? json(values['--reviewed-baseline'])
     : undefined;
-  const receipt = evaluateCorpus({ catalog, roots, toolRoot, toolIdentity, reviewedBaseline });
+  const reviewedTarget = values['--reviewed-target']
+    ? json(values['--reviewed-target'])
+    : undefined;
+  const receipt = evaluateCorpus({
+    catalog,
+    roots,
+    toolRoot,
+    toolIdentity,
+    reviewedBaseline,
+    reviewedTarget,
+    packPath: values['--pack'],
+  });
   writeFileSync(output, JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
   console.log(
     `Captured ${receipt.observations.length} corpus observations; expectations ${receipt.expectationsReviewed ? 'REVIEWED and matched' : 'remain NOT REVIEWED'}.`,

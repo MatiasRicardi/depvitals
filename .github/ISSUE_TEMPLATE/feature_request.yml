@@ -27,8 +27,9 @@ body:
     attributes:
       label: False positive / false negative risk
       description: >-
-        How might this feature report something incorrectly? Should the result be `Needs Review`
-        instead of a definitive one?
+        Give a positive example with the expected finding or evidence, plus a nearby case
+        that should stay inert. Include the relevant declaration groups and minimal source,
+        script or config input.
   - type: textarea
     id: alternatives
     attributes:

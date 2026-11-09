@@ -15,6 +15,58 @@ Unused findings apply separately to `dependencies` and `devDependencies`. Missin
 
 A clean report means no issues were found through supported evidence. It does not establish that every dependency is needed, that removing an unused package is safe, or that the project will build. Findings are deduplicated and sorted alphabetically within the fixed category order: unused dependencies, unused devDependencies, missing dependencies.
 
+## CLI and JSON reports
+
+This interface targets v0.4.0 and is available in the built development checkout.
+
+```text
+depvitals [project] [--format terminal|json] [--explain <package>]
+depvitals --help
+depvitals --version
+```
+
+- With no path, scan the current directory. Supply at most one nonempty project path. The
+  positional argument `why` still names a directory. Prefix a dash-leading path with `./`.
+- `--format` defaults to `terminal` and also accepts lowercase `json`. `--explain` takes one
+  exact, case-sensitive package root, including scoped names. It uses the [dependency name grammar](#dependency-finding-exclusions)
+  and its 214-character limit.
+- Each option can occur once, before or after the path and in either order. Use separate option
+  and value tokens. Equals forms, `--json`, short format/query aliases and standalone `--` are
+  argument errors. Missing, empty or dash-leading option values also fail.
+- Help (`-h`, `--help`) and version (`-v`, `--version`) must be used alone. They skip the project.
+
+| Invocation result                                | Exit | stdout                  | stderr                                   |
+| ------------------------------------------------ | ---: | ----------------------- | ---------------------------------------- |
+| Clean full scan                                  |    0 | Report                  | Empty or eligible terminal update notice |
+| Full scan with findings                          |    1 | Report                  | Empty or eligible terminal update notice |
+| Explanation for `used`, `declared` or `excluded` |    0 | One package explanation | Empty                                    |
+| Explanation for `unused`, `missing` or `unknown` |    1 | One package explanation | Empty                                    |
+| Invalid arguments or operational failure         |    1 | Empty                   | Diagnostic                               |
+| Standalone help or version                       |    0 | Help or version         | Empty                                    |
+
+An explanation comes from a complete scan. An unrelated fatal input can prevent a query result.
+Unrelated dependency findings do not change the query's exit status, findings or counts. A
+declaration, retained source reference or exact dependency exclusion makes a package known.
+An absent package gets an `unknown` record. A name listed only in `ignoreDependencies` gets an
+`excluded` record. The explanation preserves usage evidence and underlying findings for excluded
+packages.
+
+JSON stdout is one UTF-8 document with two-space indentation and one trailing LF. An operational
+error produces empty stdout, including with `--format json`. The package ships the
+[Draft 7 schema](../schemas/report-v1.schema.json), [format guide](../schemas/README.md) and
+[normative examples](../schemas/examples/README.md). Consumers should validate the report and its
+cross-field counts, finding and package relationships. `schemaVersion` identifies the report
+contract and `tool.version` identifies the installed CLI. Version 1 permits additive fields.
+Breaking field, type or meaning changes require a new schema version.
+
+The report identifies the absolute native project root, effective source extensions, fixed
+directory exclusions and normalized user exclusions. Evidence paths are project-relative with
+`/` separators. A source position points to the opening quote in the original UTF-8-decoded text.
+Offsets are zero-based UTF-16 code units, with one-based line and column. CRLF counts as one line
+break and two offset units. Script and config records identify fields with escaped RFC 6901
+JSON Pointers. The [format guide](../schemas/README.md#evidence-meaning-and-position-units) defines
+the full position and evidence rules.
+
 ## Optional project configuration
 
 This configuration requires DepVitals 0.3.0 or newer. The npm commands in the README use the npm release; check `depvitals --version` when using an older installation.
@@ -97,6 +149,19 @@ This suppresses unused `typescript`. The [production catalog](../src/scanner/scr
 
 The immediate package positions in `npx PKG`, `npm exec PKG`, `pnpm exec PKG`, `pnpm dlx PKG` and `yarn dlx PKG` also support exact package-name matching. Executable mappings do not apply to those arguments: `npx tsc` does not imply `typescript`. Flags, versions/tags and additional wrapper syntax are not guessed.
 
+In v0.4.0, supported explicit Node preloads also credit declared dependencies or devDependencies.
+The prefix starts with the exact `node` command after supported leading assignments. It accepts
+`-r MODULE`, `--require MODULE`, `--require=MODULE`, `--import MODULE`, `--import=MODULE` and
+the pass-through `--test` flag. Collection stops at the first operand or `--`. An unsupported
+or malformed prefix option, including eval, print, loader and compact flags, discards all preload
+candidates in that Node segment, including earlier ones. Ordinary outer command credit follows
+the existing shell rules.
+
+Preloads are classified as module specifiers. For example, `node --test --import=tsx/esm` credits
+declared `tsx` and retains `tsx/esm` in the script evidence with its pointer and ordinal.
+The scanner neither resolves nor runs the preloaded module. Preload evidence cannot create missing
+findings.
+
 Arguments, paths, `node -e` text and nested shell commands do not imply usage of the packages they mention. Ambiguous aliases such as `tailwindcss`, `playwright` and `webpack` remain unmapped. Redirection, background execution, shell expansion/substitution, unsupported escapes and unfinished quotes invalidate their segment; independent supported segments can still contribute evidence. Here-document payloads are opaque. Scanning resumes only for a single `<<` or `<<-` header ending at a newline, with a nonempty ASCII alphanumeric/underscore delimiter that is unquoted or wholly single/double quoted, followed only by optional spaces/TABs and an optional whitespace-separated comment. LF/CRLF are accepted; the closing line must match exactly. `<<-` removes leading TABs for this comparison, never spaces. The redirected command itself remains unsupported. Multiple simultaneous documents, mixed/expanded delimiters, extra header operators/redirections, here-strings, headers in already unsupported segments and unterminated documents discard the unproven remainder; independently proven preceding segments remain eligible. Unquoted payloads with an unescaped backslash-newline continuation also discard the remainder, since their logical closing line is outside this resume subset. Quoted delimiters keep backslashes literal; escaped backslash pairs do not continue a line. No payload expansion or script execution occurs.
 
 Within `$()` substitutions, simple command-position grouping parentheses and word-boundary `#` comments are balanced without collecting command evidence from their contents. Quotes and escaped closers remain opaque; `#` inside a word, quote or parameter expansion is literal. Supported literal here-document boundaries are reused inside substitutions. Arithmetic syntax, case patterns, function declarations and other unproven boundaries conservatively keep the remainder opaque. Independently proven exterior segments retain their evidence; substitutions are never executed.
@@ -150,7 +215,7 @@ A root `jest.config.js`, `.mjs`, `.cjs`, `.ts` or `.json` entry disables all man
 
 ## Update notice and privacy
 
-Core scanning is offline and never executes or modifies the analyzed project. Only a completed normal CLI scan can trigger the optional update check, after its report is written. Both stdout and stderr must be TTYs; recognized CI environments, opt-out, help/version, argument errors and failed scans suppress cache access, requests and notices. Findings alone do not suppress it.
+Core scanning is offline and never executes or modifies the analyzed project. Only a completed normal CLI scan can trigger the optional update check, after its report is written. Both stdout and stderr must be TTYs; recognized CI environments, opt-out, help/version, argument errors and failed scans suppress cache access, requests and notices. Findings alone do not suppress it. JSON scans and both explanation formats skip the notifier before any cache read, write or transport request, including with both streams interactive.
 
 The check requests public dist-tags for **DepVitals itself** from `https://registry.npmjs.org/-/package/depvitals/dist-tags`. It sends no project path, manifest, dependency list, source, authentication token or telemetry. Strict stable versions are compared; prerelease or malformed versions produce no notice. The lookup defaults to 400 ms and the whole optional check has a 1000 ms budget; cache/network failures are silent and cannot change the scan status.
 
@@ -173,10 +238,31 @@ npx depvitals
 
 These examples run the npm release; use `node dist/cli/index.js` from a local checkout to test unreleased behavior.
 
+## CI consumer recipe
+
+The [fixed-version GitHub Actions recipe](examples/ci/README.md) targets the v0.4.0 release.
+It captures the scan report, diagnostic and status as separate artifacts and enforces the scan
+outcome after upload. The recipe includes a local tarball substitution for candidate verification.
+
+## Manual migration from Depcheck
+
+Review the flags, policy and JSON consumers together. Depcheck documents `--json`, ignore
+patterns and a result shape with fields such as `using`, `invalidFiles` and `invalidDirs`. [Depcheck usage and JSON example](https://github.com/depcheck/depcheck#usage).
+
+| Area                | DepVitals v0.4.0                                                                                                                                                                                                                    |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Machine output      | Use `--format json`. Read `findings`, `counts` and package `evidence` from the versioned schema.                                                                                                                                    |
+| Exclusions          | Review each `.depcheckrc` or CLI ignore rule. Translate intentional exclusions to literal `ignorePaths` or exact `ignoreDependencies` in the selected root's strict `depvitals.config.json`. Expand and review glob rules manually. |
+| Invalid input       | Check status and streams. A fatal retained-input failure emits a diagnostic with empty stdout. Handle that path before parsing JSON.                                                                                                |
+| Scope and detection | Pick one root inventory per scan. Nested sources may be discovered under that root. Review differences from custom parsers, detectors and framework rules against the supported scope.                                              |
+
+Run the full scan on each chosen root, review unexplained differences, then update automation to
+validate the new schema and enforce scan status. Use `--explain` when inspecting one name.
+
 ## Errors and remaining limits
 
-Completed reports use stdout; operational diagnostics use stderr with no misleading partial clean report. Exit codes are 0 for clean/help/version and 1 for findings/errors. An optional notice uses stderr after the report without altering its exit status.
+Use the [CLI exit table](#cli-and-json-reports) to distinguish completed scans, explanations and operational failures.
 
 Unreadable mandatory inputs fail the scan. Unusable shapes in the bounded ESLint/Jest hint sources contribute no hints, subject to the strict external ESLint JSON errors above. The optional DepVitals configuration is stricter: invalid shapes or rules fail the scan. Non-literal imports, template-literal specifiers, `require.resolve()` and property calls such as `obj.require()` are not supported evidence.
 
-There is no alias/tsconfig resolver, blanket ambient `@types` inference, JSON CLI output, why/confidence or Needs Review category, public analyzer API, automatic remediation, vulnerability scan or dependency upgrade service. Exported internal modules are not a supported public API.
+Unsupported areas include alias and tsconfig resolution, blanket ambient `@types` inference, automatic remediation, vulnerability scanning and dependency upgrades. The CLI and versioned report are the supported interfaces.
