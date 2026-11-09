@@ -46,6 +46,18 @@ CI covers the exact minimum Node runtime, other supported Node versions and Linu
 
 Every verify-matrix entry also runs `node scripts/verify-published-npx.mjs` against `depvitals@latest` from the public npm registry. It uses a fresh temporary cache and consumer, logs the resolved version, and checks help/version, clean scans, dependency findings, operational errors and non-mutation. This network-dependent consumer check is separate from the current-checkout tarball smoke and from offline analysis/tests; it does not prove unreleased code was published. Run it explicitly when validating this integration.
 
+## Validate release documentation
+
+Use the local built CLI for examples under development. Compare stdout, stderr and exit status
+against the documented result, including exit 1 for findings and fatal errors. Check example JSON
+against the [shipped report schema](schemas/report-v1.schema.json) and keep version-specific claims
+consistent with the [changelog](CHANGELOG.md).
+
+Test the [fixed-version CI recipe](docs/examples/ci/README.md) before publication with the local
+tarball at the current metadata version. Use `pnpm run verify:package` when validating the
+installed consumer or packaging. The exact registry version becomes a separate check after
+publication. For wording-only updates, verify commands, links and formatting.
+
 ## Meaningful tests and invariants
 
 Tests live under `test/`, use `*.test.ts`, and explicitly import Vitest helpers. Integration fixtures belong under `test/fixtures/`; document representative fixture additions there. Fixtures can deliberately contain unusual or invalid source and are excluded from root lint/typechecking.
