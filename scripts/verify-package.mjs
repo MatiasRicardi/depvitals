@@ -7,7 +7,7 @@
  * installed `depvitals` executable against independent, deterministic fixture projects so the smoke
  * test exercises the real dependency scanner end to end.
  *
- * Node.js builtins and the project's built scanner only. No dependency is added.
+ * Uses the locked development Ajv for independent schema validation.
  *
  * Flow:
  *   create temp dir
@@ -35,11 +35,19 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { isDeepStrictEqual } from 'node:util';
+
+import Ajv from 'ajv';
 
 import { findProductionImports, isExternalProductionImport } from './productionImports.mjs';
-import { archiveFiles } from './measurementIdentity.mjs';
+import { identifySnapshot, identifyTool } from './evaluate-corpus.mjs';
+import {
+  archiveFiles,
+  identifyBuild,
+  verifyInstalledArchive,
+  verifyMeasuredArchive,
+} from './measurementIdentity.mjs';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const ROOT = resolve(SCRIPT_PATH, '..', '..');
@@ -150,18 +158,15 @@ function runInstalledCli(binPath, consumerDir, args) {
   return run(binPath, args, consumerDir, { ...process.env, DEPVITALS_NO_UPDATE_CHECK: '1' });
 }
 
-async function checkProductionImports(directory, installedRoot, packedFiles) {
+async function checkProductionImports(directory, distRoot, packedFiles) {
+  const installedRoot = dirname(distRoot);
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) {
-      await checkProductionImports(path, installedRoot, packedFiles);
+      await checkProductionImports(path, distRoot, packedFiles);
     } else if (/\.(?:c|m)?js$/.test(entry.name)) {
       const packedPath = relative(installedRoot, path).split(sep).join('/');
       const bytes = readFileSync(path);
-      check(
-        `installed module bytes match archive: ${packedPath}`,
-        packedFiles.get(packedPath)?.equals(bytes) === true,
-      );
       const specifiers = await findProductionImports(bytes.toString('utf8'));
       const external = specifiers.find(isExternalProductionImport);
       check(
@@ -171,14 +176,15 @@ async function checkProductionImports(directory, installedRoot, packedFiles) {
       );
       for (const specifier of specifiers.filter((name) => /^\.\.?\//.test(name))) {
         const target = fileURLToPath(new URL(specifier, pathToFileURL(path)));
-        const fromPackage = relative(installedRoot, target);
+        const fromDist = relative(distRoot, target);
+        const targetFile = relative(installedRoot, target).split(sep).join('/');
         check(
           `installed import target exists: ${packedPath} -> ${specifier}`,
-          !isAbsolute(fromPackage) &&
-            fromPackage !== '..' &&
-            !fromPackage.startsWith(`..${sep}`) &&
-            existsSync(target) &&
-            statSync(target).isFile(),
+          !isAbsolute(fromDist) &&
+            fromDist !== '..' &&
+            !fromDist.startsWith(`..${sep}`) &&
+            /\.(?:c|m)?js$/.test(targetFile) &&
+            packedFiles.has(targetFile),
         );
       }
     }
@@ -233,7 +239,7 @@ function snapshotsEqual(before, after) {
 }
 
 /** Exercise the published Ubuntu/Bash recipe against the exact local archive under test. */
-function verifyCiAdoption(tarballPath, packed) {
+function verifyCiAdoption(tarballPath, packed, npmEnv) {
   const project = makeTempDir('ci-recipe');
   const artifacts = makeTempDir('ci-artifacts');
   const recipe = join(ROOT, 'docs/examples/ci');
@@ -263,6 +269,7 @@ function verifyCiAdoption(tarballPath, packed) {
       tarballPath,
     ],
     project,
+    npmEnv,
   );
   check('CI recipe generates a local tarball lockfile', lock.status === 0, lock.stderr);
   const lockPath = join(project, 'package-lock.json');
@@ -273,13 +280,7 @@ function verifyCiAdoption(tarballPath, packed) {
     locked.version === packed.version && locked.integrity === packed.integrity,
   );
 
-  const npmCi = () =>
-    run('npm', ['ci', '--ignore-scripts', '--include=dev'], project, {
-      ...process.env,
-      npm_config_offline: 'true',
-      npm_config_audit: 'false',
-      npm_config_fund: 'false',
-    });
+  const npmCi = () => run('npm', ['ci', '--ignore-scripts', '--include=dev'], project, npmEnv);
   const install = npmCi();
   check('CI recipe installs the locked local tarball', install.status === 0, install.stderr);
   const version = runInstalledCli(resolveInstalledBin(project), project, ['--version']);
@@ -444,96 +445,53 @@ async function main() {
   console.log(`Root package version: ${rootVersion}\n`);
 
   const tempDir = makeTempDir('package');
+  const npmEnv = {
+    ...process.env,
+    npm_config_cache: join(tempDir, 'npm-cache'),
+    npm_config_offline: 'true',
+    npm_config_audit: 'false',
+    npm_config_fund: 'false',
+  };
 
   try {
+    const git = run('git', ['rev-parse', 'HEAD'], ROOT);
+    check(
+      'source commit is identifiable',
+      git.status === 0 && /^[a-f0-9]{40}$/.test(git.stdout.trim()),
+    );
+    const sourceSha = git.stdout.trim();
+    const sourceBefore = identifySnapshot(join(ROOT, 'src')).sha256;
     // 1. Pack the real artifact into the temporary directory.
     console.log('Packing the package...');
-    const pack = run('npm', ['pack', '--json', '--pack-destination', tempDir], ROOT);
+    const pack = run('npm', ['pack', '--json', '--pack-destination', tempDir], ROOT, npmEnv);
 
     if (pack.status !== 0) {
       fail(`npm pack failed.\n${pack.stderr || pack.stdout}`);
     }
 
-    let packed;
-
-    try {
-      packed = JSON.parse(pack.stdout.trim())[0];
-    } catch {
-      fail(`Could not parse "npm pack --json" output.\n${pack.stdout || pack.stderr}`);
-    }
-
-    if (!packed || !packed.filename) {
-      fail(`No tarball metadata returned by "npm pack --json".\n${pack.stdout}`);
-    }
-
+    const packPath = join(tempDir, 'pack.json');
+    writeFileSync(packPath, pack.stdout);
+    const build = identifyBuild(ROOT);
+    const packed = verifyMeasuredArchive(packPath, ROOT, build);
     const tarballPath = join(tempDir, packed.filename);
+    const packedFiles = archiveFiles(readFileSync(tarballPath));
+    const entries = [...packedFiles.keys()].map((file) => 'package/' + file);
+    const tool = identifyTool(ROOT, sourceSha);
 
-    if (!existsSync(tarballPath)) {
-      fail(`Tarball was not created at ${tarballPath}`);
-    }
-
-    console.log(`  packed ${packed.filename} (${packed.version})`);
-
-    // 2. Inspect the tarball contents.
     console.log('\nChecking tarball contents...');
-    const archiveBytes = readFileSync(tarballPath);
-    check('tarball version matches project', packed.version === rootVersion);
-    check('tarball size matches metadata', archiveBytes.length === packed.size);
     check(
-      'tarball SHA-1 matches metadata',
-      createHash('sha1').update(archiveBytes).digest('hex') === packed.shasum,
+      'source bytes are unchanged by the clean pack build',
+      tool.source.sha256 === sourceBefore,
     );
     check(
-      'tarball SRI matches metadata',
-      'sha512-' + createHash('sha512').update(archiveBytes).digest('base64') === packed.integrity,
+      'tarball has exactly the shipped schema assets',
+      JSON.stringify(
+        [...packedFiles.keys()].filter((path) => path.startsWith('schemas/')).sort(),
+      ) === JSON.stringify([...SCHEMA_FILES].sort()),
     );
-    console.log(
-      'Artifact identity: ' +
-        JSON.stringify({
-          version: packed.version,
-          packedBytes: packed.size,
-          unpackedBytes: packed.unpackedSize,
-          integrity: packed.integrity,
-          shasum: packed.shasum,
-          node: process.version,
-          platform: process.platform,
-          arch: process.arch,
-        }),
-    );
-    let entries;
-    let packedFiles;
-
-    try {
-      packedFiles = archiveFiles(archiveBytes);
-      entries = [...packedFiles.keys()].map((name) => `package/${name}`);
-    } catch (error) {
-      fail(`Could not read tarball entries: ${error.message}`);
-    }
 
     for (const required of REQUIRED_FILES) {
       check(`contains ${required}`, entries.includes(required));
-    }
-
-    for (const file of SCHEMA_FILES) {
-      check(
-        `archive schema asset matches checkout: ${file}`,
-        packedFiles.get(file)?.equals(readFileSync(join(ROOT, file))) === true,
-      );
-    }
-    const schema = JSON.parse(packedFiles.get('schemas/report-v1.schema.json').toString('utf8'));
-    check(
-      'public schema is Draft 7 report version 1',
-      schema.$schema === 'http://json-schema.org/draft-07/schema#' &&
-        schema.properties?.schemaVersion?.const === 1,
-    );
-    for (const file of SCHEMA_FILES.filter(
-      (file) => file.startsWith('schemas/examples/') && file.endsWith('.json'),
-    )) {
-      const example = JSON.parse(packedFiles.get(file).toString('utf8'));
-      check(
-        `normative example is parseable report v1: ${file}`,
-        example.schemaVersion === 1 && ['scan', 'explain'].includes(example.mode),
-      );
     }
 
     const forbidden = entries.find((entry) =>
@@ -551,7 +509,12 @@ async function main() {
       `${JSON.stringify({ name: 'depvitals-consumer', version: '1.0.0' }, null, 2)}\n`,
     );
 
-    const install = run('npm', ['install', '--no-audit', '--no-fund', tarballPath], consumerDir);
+    const install = run(
+      'npm',
+      ['install', '--ignore-scripts', '--package-lock', tarballPath],
+      consumerDir,
+      npmEnv,
+    );
 
     if (install.status !== 0) {
       fail(`npm install of the tarball failed.\n${install.stderr || install.stdout}`);
@@ -562,10 +525,31 @@ async function main() {
       existsSync(join(consumerDir, 'node_modules', 'depvitals', 'package.json')),
     );
     const installedRoot = join(consumerDir, 'node_modules', 'depvitals');
-    for (const file of SCHEMA_FILES) {
+    verifyInstalledArchive(installedRoot, packedFiles);
+    check('every installed file matches the verified archive', true);
+    const locked = JSON.parse(readFileSync(join(consumerDir, 'package-lock.json'), 'utf8'))
+      .packages['node_modules/depvitals'];
+    check(
+      'consumer lock binds the exact archive and version',
+      locked?.integrity === packed.integrity && locked.version === packed.version,
+    );
+    const schema = JSON.parse(
+      readFileSync(join(installedRoot, 'schemas/report-v1.schema.json'), 'utf8'),
+    );
+    check(
+      'installed public schema is Draft 7 report version 1',
+      schema.$schema === 'http://json-schema.org/draft-07/schema#' &&
+        schema.properties?.schemaVersion?.const === 1,
+    );
+    const validate = new Ajv({ allErrors: true }).compile(schema);
+    for (const file of SCHEMA_FILES.filter(
+      (path) => path.startsWith('schemas/examples/') && path.endsWith('.json'),
+    )) {
+      const example = JSON.parse(readFileSync(join(installedRoot, file), 'utf8'));
       check(
-        `installed schema asset matches archive: ${file}`,
-        readFileSync(join(installedRoot, file)).equals(packedFiles.get(file)),
+        `installed normative example satisfies Draft 7: ${file}`,
+        validate(example),
+        JSON.stringify(validate.errors),
       );
     }
     const installedManifest = JSON.parse(readFileSync(join(installedRoot, 'package.json'), 'utf8'));
@@ -605,7 +589,11 @@ async function main() {
       'installed CLI is executable',
       process.platform === 'win32' || (statSync(installedEntry).mode & 0o111) !== 0,
     );
-    await checkProductionImports(join(installedRoot, 'dist'), installedRoot, packedFiles);
+    await checkProductionImports(
+      join(installedRoot, 'dist'),
+      join(installedRoot, 'dist'),
+      packedFiles,
+    );
     // An unrelated cwd/parent config must never override the selected project.
     writeFileSync(join(consumerDir, 'depvitals.config.json'), '{invalid consumer-cwd config');
 
@@ -613,7 +601,7 @@ async function main() {
     //    stand in for real scanned projects and keep the smoke test independent of the DepVitals
     //    repository fixtures or source tree.
     const cleanDir = join(consumerDir, 'smoke-clean');
-    const findingsDir = join(consumerDir, 'smoke-findings');
+    const findingsDir = join(consumerDir, 'why');
 
     mkdirSync(cleanDir, { recursive: true });
     mkdirSync(findingsDir, { recursive: true });
@@ -1072,7 +1060,9 @@ require('real');`,
     check('--version exits 0', version.status === 0);
     check(
       '--version matches the root package version',
-      version.stdout.trim() === rootVersion,
+      version.stdout === rootVersion + '\n' &&
+        version.stderr === '' &&
+        installedManifest.version === rootVersion,
       `${version.stdout.trim()} !== ${rootVersion}`,
     );
 
@@ -1271,38 +1261,95 @@ require('real');`,
         check(`audit ${name} stderr empty`, result.stderr === '', result.stderr);
       }
     }
-    for (const [directory, expectedExit] of [
-      [cleanDir, 0],
-      [findingsDir, 1],
-    ]) {
-      const result = runInstalledCli(binPath, consumerDir, ['--format', 'json', directory]);
+    const relativeWhy = runInstalledCli(binPath, consumerDir, ['why']);
+    check(
+      'installed CLI treats why as a relative project path',
+      relativeWhy.status === findings.status &&
+        relativeWhy.stdout === findings.stdout &&
+        relativeWhy.stderr === findings.stderr,
+    );
+
+    const findingsFor = (unusedDependencies = [], missingDependencies = []) => ({
+      unusedDependencies,
+      unusedDevDependencies: [],
+      missingDependencies,
+    });
+    const jsonOutput = (result, directory, expectedExit, mode, expectedFindings) => {
+      check(
+        `installed ${mode} JSON channels and status: ${directory}`,
+        result.status === expectedExit && result.stderr === '' && result.stdout !== '',
+        result.stderr,
+      );
       const document = JSON.parse(result.stdout);
       check(
-        `JSON scan streams/status: ${directory}`,
-        result.status === expectedExit && result.stderr === '',
+        `installed ${mode} JSON satisfies Draft 7: ${directory}`,
+        validate(document),
+        JSON.stringify(validate.errors),
       );
       check(
-        `JSON scan envelope: ${directory}`,
-        document.schemaVersion === 1 &&
-          document.tool.version === rootVersion &&
-          document.mode === 'scan' &&
-          document.query === null &&
-          document.project.root === directory,
+        `installed ${mode} JSON identity and exact findings: ${directory}`,
+        document.tool.version === rootVersion &&
+          document.mode === mode &&
+          document.project.root === directory &&
+          isDeepStrictEqual(document.findings, expectedFindings) &&
+          Object.entries(expectedFindings).every(
+            ([key, names]) => document.counts[key] === names.length,
+          ) &&
+          result.stdout === JSON.stringify(document, null, 2) + '\n',
       );
+      return document;
+    };
+    for (const [directory, expectedExit, expectedFindings] of [
+      [cleanDir, 0, findingsFor()],
+      [findingsDir, 1, findingsFor(['unused-dep'], ['missing-pkg'])],
+      [configuredDir, 0, findingsFor()],
+    ]) {
+      const result = runInstalledCli(binPath, consumerDir, ['--format', 'json', directory]);
+      const document = jsonOutput(result, directory, expectedExit, 'scan', expectedFindings);
       check(
-        `JSON scan counts and exact serialization: ${directory}`,
-        Object.entries(document.findings).every(
-          ([key, names]) => document.counts[key] === names.length,
-        ) && result.stdout === JSON.stringify(document, null, 2) + '\n',
+        `installed JSON scan reports the effective exclusions: ${directory}`,
+        document.query === null &&
+          isDeepStrictEqual(
+            document.scope.ignorePaths,
+            directory === configuredDir ? ['generated.ts'] : [],
+          ) &&
+          isDeepStrictEqual(
+            document.scope.ignoreDependencies,
+            directory === configuredDir ? ['selected', 'selected-missing'] : [],
+          ),
       );
     }
-    for (const [directory, name, status, expectedExit] of [
-      [findingsDir, 'lodash', 'used', 0],
-      [findingsDir, 'unused-dep', 'unused', 1],
-      [findingsDir, 'missing-pkg', 'missing', 1],
-      [configuredDir, 'selected', 'excluded', 0],
-      [cleanDir, 'peer-only', 'declared', 0],
-      [cleanDir, 'absent', 'unknown', 1],
+
+    const sourceFact = {
+      kind: 'source',
+      file: 'index.js',
+      reference: 'import',
+      specifier: 'lodash',
+      position: { offset: 22, line: 1, column: 23 },
+    };
+    const eslintFact = {
+      kind: 'config',
+      file: 'package.json',
+      pointer: '/eslintConfig/extends',
+      value: 'prettier',
+      detector: 'eslint',
+    };
+    const jestFact = {
+      kind: 'config',
+      file: 'package.json',
+      pointer: '/jest/preset',
+      value: 'ts-jest',
+      detector: 'jest',
+    };
+    for (const [directory, name, status, expectedExit, expectedFindings, evidence] of [
+      [findingsDir, 'lodash', 'used', 0, findingsFor(), [sourceFact]],
+      [findingsDir, 'unused-dep', 'unused', 1, findingsFor(['unused-dep']), []],
+      [findingsDir, 'missing-pkg', 'missing', 1, findingsFor([], ['missing-pkg'])],
+      [configuredDir, 'selected', 'excluded', 0, findingsFor(), []],
+      [cleanDir, 'peer-only', 'declared', 0, findingsFor(), []],
+      [cleanDir, 'absent', 'unknown', 1, findingsFor(), []],
+      [auditCases[0].directory, 'eslint-config-prettier', 'used', 0, findingsFor(), [eslintFact]],
+      [auditCases[0].directory, 'ts-jest', 'used', 0, findingsFor(), [jestFact]],
     ]) {
       for (const format of ['terminal', 'json']) {
         const result = runInstalledCli(binPath, consumerDir, [
@@ -1312,28 +1359,27 @@ require('real');`,
           '--format',
           format,
         ]);
-        check(
-          `explain ${name}/${format} streams/status`,
-          result.status === expectedExit && result.stderr === '',
-        );
         if (format === 'json') {
-          const document = JSON.parse(result.stdout);
+          const document = jsonOutput(result, directory, expectedExit, 'explain', expectedFindings);
+          const [fact] = document.packages;
           check(
             `explain ${name} package-local JSON`,
-            document.mode === 'explain' &&
-              document.query.packageName === name &&
-              document.query.known === (status !== 'unknown') &&
+            isDeepStrictEqual(document.query, { packageName: name, known: status !== 'unknown' }) &&
               document.packages.length === 1 &&
-              document.packages[0].status === status &&
-              Object.values(document.findings).every((names) =>
-                names.every((value) => value === name),
-              ),
+              fact.name === name &&
+              fact.status === status &&
+              (evidence === undefined || isDeepStrictEqual(fact.evidence, evidence)) &&
+              (status !== 'excluded' ||
+                isDeepStrictEqual(fact.underlyingFindings, ['unusedDependencies'])),
           );
-        } else
+        } else {
           check(
-            `explain ${name} human summary`,
-            result.stdout.includes(`Package: ${name}\nStatus: ${status}\n`),
+            `explain ${name} human streams/status and summary`,
+            result.status === expectedExit &&
+              result.stderr === '' &&
+              result.stdout.includes(`Package: ${name}\nStatus: ${status}\n`),
           );
+        }
       }
     }
     const preload = runInstalledCli(binPath, consumerDir, [
@@ -1343,8 +1389,7 @@ require('real');`,
       '--format',
       'json',
     ]);
-    check('Node preload query streams/status', preload.status === 0 && preload.stderr === '');
-    const preloadDocument = JSON.parse(preload.stdout);
+    const preloadDocument = jsonOutput(preload, cleanDir, 0, 'explain', findingsFor());
     check(
       'Node preload query keeps exact script provenance',
       preloadDocument.query.known === true &&
@@ -1372,6 +1417,17 @@ require('real');`,
       check(
         `explanation fatal-source channels ${format}`,
         result.status === 1 && result.stdout === '' && result.stderr.includes('index.ts'),
+      );
+    }
+    for (const [directory, diagnostic] of [
+      [invalidConfigDir, 'depvitals.config.json'],
+      [invalidTemplateDir, 'index.ts'],
+      [auditCases.find(({ name }) => name === 'root-manifest').directory, 'package.json'],
+    ]) {
+      const result = runInstalledCli(binPath, consumerDir, [directory, '--format', 'json']);
+      check(
+        `installed JSON scan failure keeps stdout empty: ${diagnostic}`,
+        result.status === 1 && result.stdout === '' && result.stderr.includes(diagnostic),
       );
     }
     const duplicateFormat = runInstalledCli(binPath, consumerDir, [
@@ -1468,6 +1524,11 @@ require('real');`,
       ...observerEnv,
       NODE_OPTIONS: observerEnv.NODE_OPTIONS + ` --import=${pathToFileURL(ttyProbe).href}`,
     };
+    const cacheFile = join(cacheRoot, 'depvitals', 'update-check.json');
+    const freshCache = JSON.stringify({ latest: '999.999.999', checkedAt: Date.now() });
+    mkdirSync(dirname(cacheFile), { recursive: true });
+    writeFileSync(cacheFile, freshCache);
+
     for (const args of [
       [cleanDir, '--format', 'json'],
       [findingsDir, '--explain', 'lodash'],
@@ -1476,14 +1537,37 @@ require('real');`,
       ['--help'],
       ['--unknown'],
     ]) {
+      const baseline = runInstalledCli(binPath, consumerDir, args);
       const result = run(binPath, args, consumerDir, isolatedEnv);
       check(
         `isolated mode never emits notifier: ${args.join(' ')}`,
-        !result.stderr.includes('New DepVitals version available:') &&
+        result.status === baseline.status &&
+          result.stdout === baseline.stdout &&
+          result.stderr === baseline.stderr &&
           !existsSync(marker) &&
-          !existsSync(cacheRoot),
+          readFileSync(cacheFile, 'utf8') === freshCache,
       );
     }
+
+    const interactive = run(
+      binPath,
+      [findingsDir, '--format', 'terminal'],
+      consumerDir,
+      isolatedEnv,
+    );
+    check(
+      'eligible installed scan proves the fresh-cache observer works',
+      interactive.status === 1 &&
+        interactive.stdout === findings.stdout &&
+        interactive.stderr.includes(
+          `New DepVitals version available: ${rootVersion} -> 999.999.999`,
+        ) &&
+        existsSync(marker) &&
+        readFileSync(marker, 'utf8')
+          .split('\n')
+          .filter(Boolean)
+          .every((entry) => entry === 'cache'),
+    );
 
     // Capture the fixtures again after every scan, then compare the complete before-and-after
     // snapshots so added, deleted, and modified files are all detected.
@@ -1493,7 +1577,35 @@ require('real');`,
     check('scan does not mutate the fixtures', snapshotsEqual(before, after));
 
     // The documented recipe targets Ubuntu Bash, as does the required package-smoke job.
-    if (process.platform !== 'win32') verifyCiAdoption(tarballPath, packed);
+    if (process.platform !== 'win32') verifyCiAdoption(tarballPath, packed, npmEnv);
+
+    verifyInstalledArchive(installedRoot, packedFiles);
+    const finalTool = identifyTool(ROOT, sourceSha);
+    check(
+      'source, build and metadata identity remain stable throughout smoke',
+      JSON.stringify(finalTool) === JSON.stringify(tool),
+    );
+    const finalPack = verifyMeasuredArchive(packPath, ROOT, identifyBuild(ROOT));
+    check(
+      'archive identity remains stable throughout smoke',
+      JSON.stringify(finalPack) === JSON.stringify(packed),
+    );
+    console.log(
+      'Artifact identity: ' +
+        JSON.stringify({
+          ...packed,
+          sourceSha,
+          sourceSnapshotSha256: tool.source.sha256,
+          distSnapshotSha256: tool.build.sha256,
+          packageJsonSha256: tool.packageJsonSha256,
+          lockSha256: tool.lockSha256,
+          workspaceSha256: tool.workspaceSha256,
+          installedVersion: installedManifest.version,
+          node: process.version,
+          platform: process.platform,
+          arch: process.arch,
+        }),
+    );
 
     console.log(`\nAll ${checksPassed} checks passed.`);
   } catch (error) {
