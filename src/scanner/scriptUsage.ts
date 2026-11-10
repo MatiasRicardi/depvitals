@@ -50,6 +50,8 @@ import {
   type ScriptEvidence,
 } from '../core/evidence.js';
 
+import { isExactPackageRoot } from '../config/ignoreDependencies.js';
+
 import { classifyPackageSpecifier } from './packageSpecifier.js';
 
 /**
@@ -57,9 +59,9 @@ import { classifyPackageSpecifier } from './packageSpecifier.js';
  *
  * `value` is the token content with surrounding quotes removed. A quoted token such as `'prettier'`
  * yields the value `prettier`; an assignment token such as `FOO="a;b"` yields `FOO=a;b`.
- * `hasNamedExpansion` tracks active `$VAR` syntax for the Node preload prefix only.
+ * `hasParameterExpansion` tracks active simple shell parameter expansion for the Node preload prefix only.
  */
-type Token = { readonly value: string; readonly hasNamedExpansion: boolean };
+type Token = { readonly value: string; readonly hasParameterExpansion: boolean };
 
 /**
  * One command segment delimited by a supported separator (`&&`, `||`, `;`, `|`, newline).
@@ -471,7 +473,7 @@ function collectScriptCandidates(
     }
 
     const runnerPackage = matchRunnerPackage(significant);
-    if (runnerPackage !== undefined) {
+    if (runnerPackage !== undefined && isExactPackageRoot(runnerPackage)) {
       candidates.push({ packageName: runnerPackage, command: runnerPackage, via: 'runner' });
       continue;
     }
@@ -528,7 +530,7 @@ function collectNodePreloads(tokens: readonly Token[]): readonly ScriptCandidate
   for (let index = 1; index < tokens.length; index += 1) {
     const token = tokens[index];
     const option = token?.value ?? '';
-    if (token?.hasNamedExpansion) {
+    if (token?.hasParameterExpansion) {
       // A fixed path prefix makes the first shell field a script operand even if its tail expands.
       if (option.startsWith('/') || option.startsWith('./') || option.startsWith('../')) break;
       return [];
@@ -542,7 +544,7 @@ function collectNodePreloads(tokens: readonly Token[]): readonly ScriptCandidate
       index += 1;
       const operand = tokens[index];
       selector = operand?.value;
-      if (operand?.hasNamedExpansion || selector?.startsWith('-')) return [];
+      if (operand?.hasParameterExpansion || selector?.startsWith('-')) return [];
     } else if (option.startsWith('--require=') || option.startsWith('--import=')) {
       selector = option.slice(option.indexOf('=') + 1);
     }
@@ -580,9 +582,8 @@ function skipLeadingAssignments(segment: readonly Token[]): readonly Token[] {
 /**
  * Recognize the package position of the five supported runner forms.
  *
- * Returns the package token only when it appears in the expected immediate position. Forms that add
- * flags, `--package` options or version/tags (for example `npx --no-install eslint`) return
- * `undefined` and fall back to command-token handling.
+ * Selects the immediate runner argument. The caller accepts only an exact package root before
+ * assigning an ordinal, so flags, version/tag suffixes and subpaths cannot create candidates.
  */
 function matchRunnerPackage(significant: readonly Token[]): string | undefined {
   const command = significant[0]?.value;
@@ -706,7 +707,7 @@ function splitSegments(script: string): readonly Segment[] {
     if (scanned.unsupported) {
       unsupported = true;
     }
-    tokens.push({ value: scanned.text, hasNamedExpansion: scanned.hasNamedExpansion });
+    tokens.push({ value: scanned.text, hasParameterExpansion: scanned.hasParameterExpansion });
     i = scanned.next;
   }
 
@@ -784,7 +785,7 @@ type ScannedToken = {
   readonly text: string;
   readonly next: number;
   readonly unsupported: boolean;
-  readonly hasNamedExpansion: boolean;
+  readonly hasParameterExpansion: boolean;
 };
 
 /**
@@ -798,7 +799,7 @@ type ScannedToken = {
 function scanToken(script: string, start: number): ScannedToken {
   let value = '';
   let unsupported = false;
-  let hasNamedExpansion = false;
+  let hasParameterExpansion = false;
   let i = start;
 
   while (i < script.length) {
@@ -843,30 +844,30 @@ function scanToken(script: string, start: number): ScannedToken {
       const run = scanQuoted(script, i + 1, ch);
       if (run.open) {
         // EOF before the quote closes: the segment is invalid and the partial token is dropped.
-        return { text: '', next: run.next, unsupported: true, hasNamedExpansion };
+        return { text: '', next: run.next, unsupported: true, hasParameterExpansion };
       }
       if (run.expands) {
         unsupported = true;
       }
-      hasNamedExpansion ||= run.hasNamedExpansion;
+      hasParameterExpansion ||= run.hasParameterExpansion;
       value += run.text;
       i = run.next;
       continue;
     }
 
-    hasNamedExpansion ||= ch === '$' && startsShellVariableName(script[i + 1]);
+    hasParameterExpansion ||= ch === '$' && startsShellParameter(script[i + 1]);
     value += ch;
     i += 1;
   }
 
-  return { text: value, next: i, unsupported, hasNamedExpansion };
+  return { text: value, next: i, unsupported, hasParameterExpansion };
 }
 
 /**
  * A quoted run that starts right after the opening quote.
  *
  * `open` reports a quote that was never closed before the end of the script. `expands` reports shell
- * expansion or escape that makes the segment opaque. Active `$VAR` inside double quotes is tracked
+ * expansion or escape that makes the segment opaque. Simple parameter expansion inside double quotes is tracked
  * separately for Node preload recognition; single quotes are fully literal.
  */
 type QuotedRun = {
@@ -874,7 +875,7 @@ type QuotedRun = {
   readonly next: number;
   readonly open: boolean;
   readonly expands: boolean;
-  readonly hasNamedExpansion: boolean;
+  readonly hasParameterExpansion: boolean;
 };
 
 /**
@@ -890,7 +891,7 @@ function scanQuoted(script: string, start: number, quote: string): QuotedRun {
   const doubleQuoted = quote === '"';
   let text = '';
   let expands = false;
-  let hasNamedExpansion = false;
+  let hasParameterExpansion = false;
   let i = start;
 
   while (i < script.length) {
@@ -900,7 +901,7 @@ function scanQuoted(script: string, start: number, quote: string): QuotedRun {
     }
 
     if (ch === quote) {
-      return { text, next: i + 1, open: false, expands, hasNamedExpansion };
+      return { text, next: i + 1, open: false, expands, hasParameterExpansion };
     }
 
     if (doubleQuoted && isUnsupportedRegionStart(script, i)) {
@@ -921,16 +922,16 @@ function scanQuoted(script: string, start: number, quote: string): QuotedRun {
       continue;
     }
 
-    hasNamedExpansion ||= doubleQuoted && ch === '$' && startsShellVariableName(script[i + 1]);
+    hasParameterExpansion ||= doubleQuoted && ch === '$' && startsShellParameter(script[i + 1]);
     text += ch;
     i += 1;
   }
 
-  return { text, next: i, open: true, expands, hasNamedExpansion };
+  return { text, next: i, open: true, expands, hasParameterExpansion };
 }
 
-function startsShellVariableName(ch: string | undefined): boolean {
-  return ch !== undefined && /[A-Za-z_]/.test(ch);
+function startsShellParameter(ch: string | undefined): boolean {
+  return ch !== undefined && /[A-Za-z0-9_*@#?$!-]/.test(ch);
 }
 
 /**

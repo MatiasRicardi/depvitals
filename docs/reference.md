@@ -51,6 +51,8 @@ An absent package gets an `unknown` record. A name listed only in `ignoreDepende
 `excluded` record. The explanation preserves usage evidence and underlying findings for excluded
 packages.
 
+Diagnostics escape control characters in paths, arguments and error text. A reader that closes an output pipe early leaves the computed scan status intact.
+
 JSON stdout is one UTF-8 document with two-space indentation and one trailing LF. An operational
 error produces empty stdout, including with `--format json`. The package ships the
 [Draft 7 schema](../schemas/report-v1.schema.json), [format guide](../schemas/README.md) and
@@ -94,7 +96,7 @@ Path exclusions apply to source discovery, not mandatory metadata or dedicated d
 
 ### Dependency finding exclusions
 
-Names match exactly and case-sensitively: `foo` does not hide `foo-extra`, and scopes remain distinct. The accepted forms are a single component or `@scope/component`, at most 214 characters combined. Each component starts with an ASCII letter/digit and continues with ASCII letters/digits, `.`, `_` or `-`. Uppercase legacy names are preserved. This is a bounded identifier grammar, not an npm publication validator.
+Names match exactly and case-sensitively: `foo` does not hide `foo-extra`, and scopes remain distinct. The accepted forms are a single component or `@scope/component`, at most 214 characters combined. Components use ASCII letters/digits, `.`, `_` or `-`. They start with a letter or digit, with `_` and `-` also allowed at the start of the name after `@scope/`. Uppercase legacy names are preserved. This is a bounded identifier grammar, not an npm publication validator.
 
 Subpaths, trailing slashes, versions/tags, whitespace, URLs, paths, patterns and empty components are invalid. An undeclared name is allowed, so a rule can suppress missing findings. Builtin-like names such as `fs` are accepted independently of source builtin filtering; there is no registry or installation lookup.
 
@@ -147,7 +149,7 @@ For example, with `typescript` declared:
 
 This suppresses unused `typescript`. The [production catalog](../src/scanner/scriptUsage.ts) owns the explicit executable mappings. Collision-sensitive mappings give a declared exact-name package precedence: `gulp` wins over `gulp-cli` when both are declared. Other mappings, such as `tsc` to `typescript`, use the mapped provider. A command never credits two competing providers.
 
-The immediate package positions in `npx PKG`, `npm exec PKG`, `pnpm exec PKG`, `pnpm dlx PKG` and `yarn dlx PKG` also support exact package-name matching. Executable mappings do not apply to those arguments: `npx tsc` does not imply `typescript`. Flags, versions/tags and additional wrapper syntax are not guessed.
+The immediate package positions in `npx PKG`, `npm exec PKG`, `pnpm exec PKG`, `pnpm dlx PKG` and `yarn dlx PKG` also support exact package-name matching. Executable mappings do not apply to those arguments: `npx tsc` does not imply `typescript`. Unsupported runner arguments such as flags, version/tag suffixes and subpaths do not consume script evidence ordinals.
 
 In v0.4.0, supported explicit Node preloads also credit declared dependencies or devDependencies.
 The prefix starts with the exact `node` command after supported leading assignments. It accepts
@@ -155,7 +157,9 @@ The prefix starts with the exact `node` command after supported leading assignme
 the pass-through `--test` flag. Collection stops at the first operand or `--`. An unsupported
 or malformed prefix option, including eval, print, loader and compact flags, discards all preload
 candidates in that Node segment, including earlier ones. Ordinary outer command credit follows
-the existing shell rules.
+the existing shell rules. Named, positional and special shell parameters discard the preload batch
+when they can affect options or a selector. Single-quoted text is literal, and an entry path with a
+fixed `./`, `../` or `/` prefix ends option parsing even when its suffix expands.
 
 Preloads are classified as module specifiers. For example, `node --test --import=tsx/esm` credits
 declared `tsx` and retains `tsx/esm` in the script evidence with its pointer and ordinal.
@@ -219,7 +223,7 @@ Core scanning is offline and never executes or modifies the analyzed project. On
 
 The check requests public dist-tags for **DepVitals itself** from `https://registry.npmjs.org/-/package/depvitals/dist-tags`. It sends no project path, manifest, dependency list, source, authentication token or telemetry. Strict stable versions are compared; prerelease or malformed versions produce no notice. The lookup defaults to 400 ms and the whole optional check has a 1000 ms budget; cache/network failures are silent and cannot change the scan status.
 
-A successful lookup is cached for about 24 hours in `depvitals/update-check.json` below an absolute `XDG_CACHE_HOME` on POSIX or `LOCALAPPDATA` on Windows, otherwise `~/.cache/depvitals/update-check.json`. This user cache is separate from the analyzed project and stores only the public latest version and check timestamp. A fresh cache avoids a request; unsuccessful lookups are not cached.
+A successful lookup is cached for about 24 hours in `depvitals/update-check.json` below an absolute `XDG_CACHE_HOME` on POSIX or `LOCALAPPDATA` on Windows, otherwise `~/.cache/depvitals/update-check.json`. The cache stores only the public latest version and check timestamp. Cache reads and writes are skipped when the effective cache directory resolves inside the selected project, including through an existing symlink. A fresh cache avoids a request; unsuccessful lookups are not cached.
 
 Disable the check with exactly `DEPVITALS_NO_UPDATE_CHECK=1`:
 

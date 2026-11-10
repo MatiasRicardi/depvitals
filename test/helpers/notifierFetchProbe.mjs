@@ -27,7 +27,7 @@
 import { appendFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
-import { sep } from 'node:path';
+import { isAbsolute, relative, sep } from 'node:path';
 
 const cacheAccessFile = process.env['DEPVITALS_TEST_CACHE_ACCESS_FILE'];
 const cacheRoots = ['XDG_CACHE_HOME', 'LOCALAPPDATA', 'HOME', 'USERPROFILE']
@@ -39,11 +39,13 @@ if (cacheAccessFile) {
     const original = fs[operation];
     fs[operation] = (...args) => {
       if (
-        args.some(
-          (path) =>
-            typeof path === 'string' &&
-            cacheRoots.some((root) => path === root || path.startsWith(root + sep)),
-        )
+        args.some((path) => {
+          if (typeof path !== 'string' || !isAbsolute(path)) return false;
+          return cacheRoots.some((root) => {
+            const fromRoot = relative(root, path);
+            return fromRoot !== '..' && !fromRoot.startsWith('..' + sep) && !isAbsolute(fromRoot);
+          });
+        })
       ) {
         appendFileSync(cacheAccessFile, `${operation}\n`, 'utf8');
       }

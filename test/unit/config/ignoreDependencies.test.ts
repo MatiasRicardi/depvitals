@@ -20,6 +20,8 @@ afterEach(() => {
 });
 
 const accepted = [
+  '@scope/-pkg',
+  '@scope/_pkg',
   'foo',
   '@scope/foo',
   'LegacyPkg',
@@ -86,7 +88,6 @@ const rejected = [
   '@scope//pkg',
   '@_scope/pkg',
   '@scope/.pkg',
-  '@scope/-pkg',
   'café',
   '例子',
   '$foo',

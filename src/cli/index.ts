@@ -22,6 +22,13 @@ const version = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
 ) as { version: string };
 
+// A pipeline consumer may close its end after reading enough output. The scan status still applies.
+function handleOutputError(error: NodeJS.ErrnoException): void {
+  if (error.code !== 'EPIPE') throw error;
+}
+process.stdout.on('error', handleOutputError);
+process.stderr.on('error', handleOutputError);
+
 process.exitCode = await runCliEntry(process.argv.slice(2), {
   version: version.version,
   cwd: process.cwd(),

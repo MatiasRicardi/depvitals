@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Report the exact version or development commit you ran. JSON and package explanations
-        are available in the v0.4.0 development build. Terminal output works for earlier releases.
+        are available in v0.4.0 and later. Redact private paths and values from any artifacts.
   - type: textarea
     id: what-happened
     attributes:
@@ -40,7 +40,8 @@ body:
     id: depvitals-version
     attributes:
       label: DepVitals version
-      placeholder: '0.3.0 or development commit SHA'
+      description: Run depvitals --version. For a development build, include the commit SHA.
+      placeholder: '0.4.1 or development commit SHA'
     validations:
       required: true
   - type: input

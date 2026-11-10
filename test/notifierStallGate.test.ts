@@ -25,7 +25,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -129,7 +129,8 @@ function neutralEnvironment(overrides: Readonly<Record<string, string>>): Record
  * rules cannot differ between platforms.
  */
 async function runObserved(argv: readonly string[], options: RunOptions): Promise<RunResult> {
-  const root = await mkdtemp(join(tmpdir(), 'depvitals-step68-3-stall-'));
+  // The CLI resolves cache locations before I/O. Give the probe the same spelling.
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'depvitals-step68-3-stall-')));
 
   try {
     const requestLog = join(root, 'requests.txt');

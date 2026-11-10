@@ -29,6 +29,7 @@ import { EslintRcJsonError } from '../detectors/eslintRcJsonConfig.js';
 import {
   formatTerminalExplanation,
   formatTerminalReport,
+  escapeControlCharacters,
   hasDependencyIssues,
 } from '../reporters/terminalReporter.js';
 import { ProjectManifestError } from '../scanner/projectManifest.js';
@@ -133,8 +134,10 @@ async function runScan(
       stderr: '',
     };
   } catch (error) {
-    if (isOperationalError(error)) return { exitCode: 1, stdout: '', stderr: `${error.message}\n` };
-    return { exitCode: 1, stdout: '', stderr: `${unexpectedErrorMessage(projectPath, error)}\n` };
+    const message = isOperationalError(error)
+      ? error.message
+      : unexpectedErrorMessage(projectPath, error);
+    return { exitCode: 1, stdout: '', stderr: `${escapeControlCharacters(message)}\n` };
   }
 }
 

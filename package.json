@@ -1,7 +1,7 @@
 {
   "name": "depvitals",
-  "version": "0.4.0",
-  "description": "Find unused and undeclared npm dependencies in JavaScript and TypeScript projects with a zero-config CLI and no runtime dependencies.",
+  "version": "0.4.1",
+  "description": "Find unused and undeclared npm dependencies in JavaScript and TypeScript. Inspect the evidence and export JSON for CI.",
   "keywords": [
     "nodejs",
     "javascript",
@@ -12,7 +12,10 @@
     "static-analysis",
     "unused-dependencies",
     "missing-dependencies",
-    "depcheck"
+    "depcheck",
+    "undeclared-dependencies",
+    "dependency-analysis",
+    "depcheck-alternative"
   ],
   "license": "MIT",
   "type": "module",

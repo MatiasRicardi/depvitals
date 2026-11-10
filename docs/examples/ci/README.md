@@ -1,16 +1,16 @@
 # Fixed-version DepVitals checks in GitHub Actions
 
-This recipe targets **DepVitals 0.4.0 after publication**. It uses Node.js 22 (minimum 22.13.0),
+This recipe targets **DepVitals 0.4.1 after publication**. It uses Node.js 22 (minimum 22.13.0),
 npm and an Ubuntu Actions runner.
 
 Install the exact version in your project and commit the generated `package-lock.json`:
 
 ```sh
-npm install --save-dev --save-exact depvitals@0.4.0
+npm install --save-dev --save-exact depvitals@0.4.1
 ```
 
 Add the package script to your existing manifest and run it with `npm run --silent check:dependencies`
-for machine-readable output:
+for machine-readable output. Use the command directly as a CI step to propagate the scan exit status:
 
 ```json
 {
@@ -18,7 +18,7 @@ for machine-readable output:
     "check:dependencies": "depvitals --format json"
   },
   "devDependencies": {
-    "depvitals": "0.4.0"
+    "depvitals": "0.4.1"
   }
 }
 ```

@@ -7,7 +7,26 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-11-09
+### Fixed
+
+- Recognize regular expressions after semicolon-free static imports and re-exports while
+  preserving actual division expressions.
+- Escape terminal control characters in diagnostics. Keep decoded JSON report values intact.
+- Accept one UTF-8 BOM in root and nested package manifests.
+- Skip unsupported runner selectors when assigning script evidence ordinals. Later
+  `occurrence` values can change when a script contains runner flags, versions or subpaths.
+- Discard Node preload evidence when positional or special shell parameters affect the option
+  prefix or selector.
+- Accept exact scoped names such as `@scope/_demo` and `@scope/-demo` in explanations and exclusions.
+- Preserve the computed CLI status when a reader closes its pipe early (`EPIPE`).
+- Skip notifier cache access when its effective directory falls inside the scanned project.
+
+### Changed
+
+- Add a scan and explanation walkthrough, a minimal version-pinned CI example and more descriptive
+  npm metadata.
+
+## [0.4.0] - 2026-11-10
 
 ### Added
 
@@ -31,7 +50,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - JSON scans and all explanations bypass the optional notifier. Ordinary terminal scans retain
   their existing eligibility and project-wide exit status.
 - Documented the manual Depcheck migration, supported scope and remaining limits. See the
-  [candidate notes](docs/releases/v0.4.0.md) and [external corpus comparison](docs/compatibility/v0.4.0.md).
+  [release notes](docs/releases/v0.4.0.md) and [external corpus comparison](docs/compatibility/v0.4.0.md).
 
 ## [0.3.0]
 

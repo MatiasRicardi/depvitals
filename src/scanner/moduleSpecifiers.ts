@@ -372,6 +372,8 @@ function tokenize(
   let lineTerminatorSinceLastToken = false;
   let tokenLineBreakBefore = false;
   let htmlCloseCommentAllowed = true;
+  let moduleDeclarationStart: number | undefined;
+  let moduleDeclarationSource: number | undefined;
   const emit = (token: Token): void => {
     const significant = tokenLineBreakBefore ? { ...token, lineBreakBefore: true } : token;
     if (memberAtToken !== undefined) {
@@ -1179,9 +1181,13 @@ function tokenize(
       }
     }
 
-    // `/` is a regex when it can start an expression, otherwise it is division.
+    const atRoot =
+      braceContexts.length === 0 && parenDepth === 0 && bracketDepth === 0 && frames.length === 0;
+
+    // A static module declaration cannot continue with division after its source literal.
     if (ch === '/') {
       if (
+        (tokenLineBreakBefore && moduleDeclarationSource === tokens.length - 1) ||
         isRegexStart(
           prevKind,
           prevPunct,
@@ -1216,6 +1222,27 @@ function tokenize(
     if (ch === "'" || ch === '"') {
       const { value, next } = readString(source, i);
       emit({ kind: 'string', value, offset: i, endOffset: next });
+      if (atRoot && moduleDeclarationStart !== undefined) {
+        const start = moduleDeclarationStart;
+        const isExport = isIdentifier(tokens[start], 'export');
+        const clauseStart = start + (isIdentifier(tokens[start + 1], 'type') ? 2 : 1);
+        const isNamespaceAlias =
+          isExport &&
+          tokens.length === clauseStart + 3 &&
+          isPunct(tokens[clauseStart], '*') &&
+          isIdentifier(tokens[clauseStart + 1], 'as');
+
+        // A quoted namespace alias precedes the source literal in export * as "name" from "pkg".
+        if (!isNamespaceAlias) {
+          moduleDeclarationStart = undefined;
+          const sourceIndex = isExport
+            ? exportSourceIndex(tokens, start)
+            : tokens[start + 1]?.kind === 'string'
+              ? start + 1
+              : importSourceIndex(tokens, start);
+          if (sourceIndex === tokens.length - 1) moduleDeclarationSource = sourceIndex;
+        }
+      }
 
       if (typeAnnotation !== undefined) {
         typeAnnotation.typeOperandExpected = false;
@@ -1293,8 +1320,9 @@ function tokenize(
       }
       prevIdentifier = value;
       const isMemberName = prevKind === 'punct' && prevPunct === '.';
-      const atRoot =
-        braceContexts.length === 0 && parenDepth === 0 && bracketDepth === 0 && frames.length === 0;
+      if (atRoot && !isMemberName && (value === 'import' || value === 'export')) {
+        moduleDeclarationStart = tokens.length;
+      }
       let moduleSignal =
         detectModule &&
         !isMemberName &&

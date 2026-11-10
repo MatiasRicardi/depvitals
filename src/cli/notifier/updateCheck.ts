@@ -68,10 +68,11 @@ export type UpdateNoticeRequest = {
 };
 
 /**
- * Test-only seams. They exist so the CLI tests can pin a clock, a temporary cache directory and a
- * stub transport instead of the real cache location and the real network; production passes none.
+ * Local cache context and test seams for controlling the clock, cache directory and transport.
  */
 export type UpdateNoticeSeams = {
+  /** Selected scan root, used only for local cache containment. */
+  readonly projectRoot?: string;
   /** Cache directory override; only an absolute path is honored (see `updateCache`). */
   readonly cacheDir?: string;
   /** Transport override; defaults to the built-in `fetch`. */
@@ -125,6 +126,7 @@ async function resolveLatestVersion(
 ): Promise<string | undefined> {
   const cacheOptions: UpdateCacheOptions = {
     env: request.env,
+    ...(seams.projectRoot === undefined ? {} : { projectRoot: seams.projectRoot }),
     now: seams.now?.() ?? Date.now(),
     ...(seams.cacheDir === undefined ? {} : { cacheDir: seams.cacheDir }),
   };
@@ -201,7 +203,7 @@ async function withinBudget(
  *
  * @param request - The completed command kind, the installed version, the environment and the two
  *   interactivity flags. Nothing project-derived is accepted.
- * @param seams - Test-only clock/cache/transport overrides.
+ * @param seams - Local cache containment and clock/cache/transport overrides.
  * @returns The notice text, or `undefined` for every silent case: ineligible invocation, no usable
  *   version information, a failed or timed-out lookup, and a `latest` that is not strictly newer.
  */
