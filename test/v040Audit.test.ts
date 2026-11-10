@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { JsonReport } from '../src/reporters/jsonReporter.js';
 
 const entry = fileURLToPath(new URL('../dist/cli/index.js', import.meta.url));
-const probe = fileURLToPath(new URL('./helpers/notifierFetchProbe.mjs', import.meta.url));
+const probe = new URL('./helpers/notifierFetchProbe.mjs', import.meta.url).href;
 const env = { ...process.env, DEPVITALS_NO_UPDATE_CHECK: '1' };
 let lab: string;
 let project: string;
@@ -275,10 +275,8 @@ describe('v0.4.0 release audit', () => {
         timeout: 10_000,
       });
       expect(result.error).toBeUndefined();
-      expect(result).toMatchObject({
-        status: 0,
-        stdout: 'DepVitals\n\nNo dependency issues found.\n',
-      });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toBe('DepVitals\n\nNo dependency issues found.\n');
       expect(result.stderr).toContain('999.999.999');
       expect(readdirSync(project, { recursive: true })).toEqual(before);
       expect(existsSync(cacheFile)).toBe(kind === 'sibling' || kind === 'seeded');
