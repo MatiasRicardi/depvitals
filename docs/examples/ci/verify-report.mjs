@@ -21,8 +21,16 @@ function verifyPackageFindings(report) {
 
   const seen = new Set();
   for (const pkg of report.packages) {
-    if (typeof pkg?.name !== 'string' || seen.has(pkg.name) || !strings(pkg.findings)) {
-      throw new Error('Invalid package findings.');
+    if (
+      typeof pkg?.name !== 'string' ||
+      seen.has(pkg.name) ||
+      !strings(pkg.declaredIn) ||
+      typeof pkg.excluded !== 'boolean' ||
+      !strings(pkg.underlyingFindings) ||
+      !strings(pkg.findings) ||
+      !Array.isArray(pkg.evidence)
+    ) {
+      throw new Error('Invalid package record.');
     }
     seen.add(pkg.name);
     for (const category of pkg.findings) {

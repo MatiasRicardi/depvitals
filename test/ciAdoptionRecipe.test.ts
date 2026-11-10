@@ -49,6 +49,23 @@ const findings = {
     },
   ],
 };
+const usedPackage = {
+  name: 'ci-used',
+  status: 'used',
+  declaredIn: ['dependencies'],
+  excluded: false,
+  underlyingFindings: [],
+  findings: [],
+  evidence: [
+    {
+      kind: 'source',
+      file: 'index.js',
+      reference: 'import',
+      specifier: 'ci-used',
+      position: { offset: 7, line: 1, column: 8 },
+    },
+  ],
+};
 const json = (value: object): string => JSON.stringify(value) + '\n';
 
 function verify(
@@ -85,11 +102,32 @@ function verify(
 
 describe('consumer report verification', () => {
   it('accepts a clean scan and additive data', () => {
-    expect(verify(json({ ...clean, annotation: { future: true } }), '', '0\n')).toEqual({
+    const report = {
+      ...clean,
+      annotation: { future: true },
+      packages: [{ ...usedPackage, annotation: { future: true } }],
+    };
+    expect(verify(json(report), '', '0\n')).toEqual({
       status: 0,
       stdout: 'DepVitals scan passed.\n',
       stderr: '',
     });
+  });
+
+  it.each([
+    ['evidence', undefined],
+    ['evidence', 'not-an-array'],
+    ['declaredIn', undefined],
+    ['declaredIn', [7]],
+    ['excluded', undefined],
+    ['excluded', 'false'],
+    ['underlyingFindings', undefined],
+    ['underlyingFindings', [false]],
+  ] as const)('rejects an incomplete or mistyped %s field (%j)', (field, value) => {
+    const report = { ...clean, packages: [{ ...usedPackage, [field]: value }] };
+    const result = verify(json(report), '', '0\n');
+    expect(result).toMatchObject({ status: 2, stdout: '' });
+    expect(result.stderr).toMatch(/^Invalid DepVitals analysis artifacts\./);
   });
 
   it('fails for findings and uses a numeric summary', () => {
