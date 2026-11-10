@@ -527,8 +527,12 @@ function collectNodePreloads(tokens: readonly Token[]): readonly ScriptCandidate
   const preloads: ScriptCandidate[] = [];
   for (let index = 1; index < tokens.length; index += 1) {
     const token = tokens[index];
-    if (token?.hasNamedExpansion) return [];
     const option = token?.value ?? '';
+    if (token?.hasNamedExpansion) {
+      // A fixed path prefix makes the first shell field a script operand even if its tail expands.
+      if (option.startsWith('/') || option.startsWith('./') || option.startsWith('../')) break;
+      return [];
+    }
     // A lone dash is the script operand for stdin.
     if (option === '-' || option === '--' || !option.startsWith('-')) break;
     if (option === '--test') continue;

@@ -144,6 +144,12 @@ describe('frozen F1 Node preload controls', () => {
 
   it.each([
     ['node --import tsx ./entry.cjs', true],
+    ['node --import tsx "./entry-$TARGET.cjs"', true],
+    ['node --import tsx ./entry-$TARGET.cjs', true],
+    ['node --import tsx "../$TARGET.cjs"', true],
+    ['node --import tsx "/scripts/$TARGET.cjs"', true],
+    ['node --import tsx "$TARGET/entry.cjs"', false],
+    ['node --import tsx --import "./$TARGET.cjs" ./entry.cjs', false],
     ['node --import tsx $NODE_FLAGS ./entry.cjs', false],
     ['node --import tsx "$NODE_FLAGS" ./entry.cjs', false],
     ['node --import=tsx/$ENTRY ./entry.cjs', false],
