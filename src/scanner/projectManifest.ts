@@ -13,7 +13,7 @@
  * - mutate the analyzed project.
  *
  * The manifest is read as text and parsed with `JSON.parse`, so no target-project code runs. The
- * text is read as UTF-8 without any BOM handling: a manifest that `JSON.parse` rejects is reported
+ * text is read as UTF-8 and one leading BOM is removed. A manifest that `JSON.parse` rejects is reported
  * as invalid instead of being silently normalized.
  */
 
@@ -201,7 +201,8 @@ export async function readManifestText(packageJsonPath: string): Promise<string>
     );
   }
   try {
-    return await readFile(packageJsonPath, 'utf8');
+    const text = await readFile(packageJsonPath, 'utf8');
+    return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
   } catch (error) {
     throw new ProjectManifestError(
       `Could not read ${MANIFEST_FILENAME} at ${packageJsonPath}`,

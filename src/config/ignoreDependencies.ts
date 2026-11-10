@@ -2,7 +2,8 @@
 import { ProjectConfigError } from './projectConfigError.js';
 
 const COMPONENT = '[A-Za-z0-9][A-Za-z0-9._-]*';
-const IDENTIFIER = new RegExp(`^(?:${COMPONENT}|@${COMPONENT}/${COMPONENT})$`, 'u');
+const SCOPED_PACKAGE = '[A-Za-z0-9_-][A-Za-z0-9._-]*';
+const IDENTIFIER = new RegExp(`^(?:${COMPONENT}|@${COMPONENT}/${SCOPED_PACKAGE})$`, 'u');
 
 /** Shared exact-root grammar for dependency exclusions and explanation input; no normalization. */
 export function isExactPackageRoot(name: string): boolean {
@@ -21,7 +22,7 @@ export function normalizeIgnoreDependencies(
   for (const [index, name] of rawNames.entries()) {
     if (!isExactPackageRoot(name)) {
       throw new ProjectConfigError(
-        `${configPath} field ignoreDependencies[${String(index)}] must be an exact package root (name or @scope/name), at most 214 characters; components must start with ASCII alphanumeric and contain only ASCII alphanumeric, '.', '_' or '-'`,
+        `${configPath} field ignoreDependencies[${String(index)}] must be an exact package root (name or @scope/name), at most 214 characters; use ASCII alphanumeric, '.', '_' or '-', starting with a letter or digit except that the name after '@scope/' may also start with '_' or '-'`,
         'invalid-shape',
       );
     }

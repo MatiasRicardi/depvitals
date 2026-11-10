@@ -19,8 +19,8 @@
  * `process.exitCode` **after** this function resolves, which is what keeps the optional asynchronous
  * work from being truncated (and `process.exit()` is never called at all).
  *
- * The command kind handed to the notifier is deliberately only a literal string: no project path,
- * manifest content or dependency name ever crosses into notifier code.
+ * The project path is used locally to keep the notifier cache outside the scan root. No project
+ * data is forwarded to the registry transport.
  */
 
 import {
@@ -110,7 +110,9 @@ async function collectNotice(
   )
     return undefined;
   try {
-    const collect = options.updateNotice ?? collectUpdateNotice;
+    const collect: UpdateNoticeCollector =
+      options.updateNotice ??
+      ((request) => collectUpdateNotice(request, { projectRoot: command.projectPath }));
 
     const notice = await collect({
       commandKind: 'scan',

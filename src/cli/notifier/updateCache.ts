@@ -12,9 +12,7 @@
  *
  * - **Outside every analyzed project.** The path is always resolved from a user-scoped environment
  *   variable or from the user's home directory, and a candidate that is not absolute is rejected.
- *   No part of the path is ever derived from the scanned directory, from `cwd`, or from any project
- *   file, so scanning a project named `depvitals` - or running from any working directory - cannot
- *   place the cache inside that project.
+ *   The selected project root is used only to reject cache paths that would resolve inside it.
  * - **Minimal, private content.** Only the public `latest` version string and the timestamp of the
  *   check are stored: no project path, no manifest content, no dependency list, no credential, no
  *   machine identifier and no telemetry. The directory is created `0o700` and the file `0o600` on
@@ -34,9 +32,9 @@
  * short-lived process does not exit before the cache write finishes.
  */
 
-import { lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { posix, win32 } from 'node:path';
+import { basename, dirname, isAbsolute, join, posix, relative, sep, win32 } from 'node:path';
 
 /** Environment map shaped like the ambient environment, so tests can inject any values. */
 export type UpdateCacheEnvironment = Readonly<Record<string, string | undefined>>;
@@ -130,6 +128,8 @@ export type UpdateCacheLocationOptions = {
 export type UpdateCacheOptions = UpdateCacheLocationOptions & {
   /** Current time in epoch milliseconds; a non-integer or negative value disables the operation. */
   readonly now: number;
+  /** Selected project root. Cache paths that resolve inside it are skipped. */
+  readonly projectRoot?: string;
 };
 
 /** A validated cache record. */
@@ -358,7 +358,7 @@ export async function readCachedLatest(options: UpdateCacheOptions): Promise<str
       return undefined;
     }
 
-    const file = resolveUpdateCacheFile(options);
+    const file = (await cacheOutsideProject(options))?.file;
 
     if (file === undefined) {
       return undefined;
@@ -388,6 +388,43 @@ export async function readCachedLatest(options: UpdateCacheOptions): Promise<str
     // A missing file (ENOENT) and every other filesystem failure are ordinary cache misses.
     return undefined;
   }
+}
+
+/** Resolve the existing ancestor first, including links, then append any missing suffix. */
+async function effectiveDirectory(directory: string): Promise<string> {
+  try {
+    return await realpath(directory);
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+    // A dangling link is not a missing directory and cannot establish a safe cache path.
+    const existing = await lstat(directory).catch((cause: unknown) => {
+      if (cause instanceof Error && 'code' in cause && cause.code === 'ENOENT') return undefined;
+      throw cause;
+    });
+    if (existing !== undefined) throw error;
+    const parent = dirname(directory);
+    if (parent === directory) throw error;
+    return join(await effectiveDirectory(parent), basename(directory));
+  }
+}
+
+/** Check the effective cache directory for each operation before accessing the cache. */
+async function cacheOutsideProject(options: UpdateCacheOptions): Promise<Location | undefined> {
+  const location = resolveLocation(options);
+  if (location === undefined || options.projectRoot === undefined) return location;
+
+  const [project, directory] = await Promise.all([
+    realpath(options.projectRoot),
+    effectiveDirectory(location.directory),
+  ]);
+  const fromProject = relative(project, directory);
+  if (
+    fromProject === '' ||
+    (!isAbsolute(fromProject) && fromProject !== '..' && !fromProject.startsWith('..' + sep))
+  ) {
+    return undefined;
+  }
+  return { directory, file: join(directory, UPDATE_CACHE_FILE_NAME) };
 }
 
 /**
@@ -453,7 +490,7 @@ export async function writeCachedLatest(
       return;
     }
 
-    const location = resolveLocation(options);
+    const location = await cacheOutsideProject(options);
 
     if (location === undefined) {
       return;
@@ -464,6 +501,6 @@ export async function writeCachedLatest(
     await mkdir(location.directory, { recursive: true, mode: CACHE_DIRECTORY_MODE });
     await writeAtomically(location.file, serializeEntry(latest, options.now));
   } catch {
-    // `mkdir` is the only call here that can still throw; caching is skipped silently.
+    // An inaccessible or unprovable cache location is skipped silently.
   }
 }

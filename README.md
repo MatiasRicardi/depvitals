@@ -11,14 +11,42 @@ DepVitals is a lightweight, [Depcheck](https://github.com/depcheck/depcheck)-ins
 
 Designed for fast, zero-config dependency checks during development, maintenance and CI, its CLI can also be used in scripts and AI coding-agent workflows. It analyzes one project root at a time; review findings before changing `package.json`.
 
-## What's new in v0.4.0
+## From scan to decision
 
-Export a versioned JSON report, explain why a package was used or flagged, and run a
-[version-pinned CI check](#ci-with-a-fixed-version) that preserves reports and diagnostics.
-Explanations point to supported source, script and configuration evidence. Supported explicit
-Node preloads now count as script usage for declared packages. See the
-[v0.4.0 release notes](https://github.com/MatiasRicardi/depvitals/blob/main/docs/releases/v0.4.0.md)
-for compatibility details and remaining limits.
+Run `depvitals ./project`. For a project that declares `demo-unused` and contains
+`import 'demo-missing';` in `index.mjs`, the scan prints:
+
+```text
+DepVitals
+
+Unused dependencies (1)
+  demo-unused
+
+Missing dependencies (1)
+  demo-missing
+```
+
+Run `depvitals ./project --explain demo-missing` to locate the reference. The explanation
+includes this excerpt:
+
+```text
+Package: demo-missing
+Status: missing
+```
+
+```text
+Evidence (1)
+  source "index.mjs":1:8 import "demo-missing"
+```
+
+Both commands exit **1** for this project. Open `index.mjs:1:8` and check whether that import
+belongs in the project before declaring the dependency. Review the uses of `demo-unused`
+and test the project before removing it.
+
+See the [CLI reference](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#cli-and-json-reports),
+[JSON schema and examples](https://github.com/MatiasRicardi/depvitals/blob/main/schemas/README.md),
+[Depcheck migration guide](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#manual-migration-from-depcheck)
+and [v0.4.0 release notes](https://github.com/MatiasRicardi/depvitals/releases/tag/v0.4.0).
 
 ## Quick start
 
@@ -59,41 +87,14 @@ These examples require **v0.4.0 or newer**. To try them from a checkout, use
 `node /path/to/depvitals/dist/cli/index.js` in place of `depvitals` after
 [building the development checkout](https://github.com/MatiasRicardi/depvitals/blob/main/CONTRIBUTING.md#local-setup).
 
-For example, suppose `./project` declares `unused` as a dependency and `unused-tool` as a
-devDependency, and `src/index.ts` contains `import item from 'missing';`.
-
-```sh
-depvitals ./project
-```
-
-```text
-DepVitals
-
-Unused dependencies (1)
-  unused
-
-Unused devDependencies (1)
-  unused-tool
-
-Missing dependencies (1)
-  missing
-```
-
-Run these commands from outside the selected project.
+The commands below use the project from [the walkthrough](#from-scan-to-decision). Run them
+from outside the selected project.
 
 ```sh
 depvitals ./project --format json > depvitals-report.json
-depvitals ./project --explain missing
-depvitals --format json --explain missing ./project
+depvitals ./project --explain demo-missing
+depvitals --format json --explain demo-missing ./project
 ```
-
-1. Start with a full scan. This example reports findings and returns exit 1, including when stdout
-   is redirected to JSON.
-2. Explain the package and check its evidence. Here `missing` is undeclared and its explanation
-   points to the import in `src/index.ts:1:18`. Check which package owns the file and whether the
-   import belongs in that project.
-3. For an unused finding, review actual uses and test the project before changing the manifest.
-   Use an exclusion only to record a deliberate scope or reporting decision.
 
 An explanation reports one exact package. Its exit status follows that package's result. Use a full
 scan to enforce a project-wide check. The v0.4.0 [report schema and examples](https://github.com/MatiasRicardi/depvitals/blob/main/schemas/README.md)
@@ -101,17 +102,28 @@ are shipped in the npm package under `schemas/`. See the [CLI and report contrac
 
 ## CI with a fixed version
 
-Install v0.4.0 from npm as an exact development dependency. If you are testing a candidate before
-publication, use the local tarball procedure in the CI recipe below.
+Install the exact version as a development dependency and commit the generated lockfile.
 
 ```sh
-npm install --save-dev --save-exact depvitals@0.4.0
+npm install --save-dev --save-exact depvitals@0.4.1
 ```
 
-Commit the generated lockfile and use `"check:dependencies": "depvitals --format json"` in the
-manifest's `scripts`. The [tested CI recipe](https://github.com/MatiasRicardi/depvitals/blob/main/docs/examples/ci/README.md)
-captures the installed executable's report, diagnostics and status. It preserves those artifacts
-on failure.
+Add this entry to `scripts` in `package.json`:
+
+```json
+{ "check:dependencies": "depvitals --format json" }
+```
+
+In CI, install from the lockfile and run the check directly so its exit status reaches the job.
+
+```sh
+npm ci --ignore-scripts --include=dev
+npm run --silent check:dependencies
+```
+
+Use the [CI recipe](https://github.com/MatiasRicardi/depvitals/blob/main/docs/examples/ci/README.md)
+to capture and upload the report, diagnostics and status. The recipe also shows how to test a
+candidate from a local tarball before it is available on npm.
 
 ## Optional configuration
 

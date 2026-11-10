@@ -6,8 +6,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        DepVitals stays intentionally small. Features that are not scheduled in the roadmap are
-        discussed here before any code is written.
+        See the [supported scope and limits](https://github.com/MatiasRicardi/depvitals/blob/main/README.md#scope-and-privacy)
+        before proposing a new capability.
   - type: textarea
     id: problem
     attributes:
