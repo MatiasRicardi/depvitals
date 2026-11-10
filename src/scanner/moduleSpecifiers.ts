@@ -1224,13 +1224,24 @@ function tokenize(
       emit({ kind: 'string', value, offset: i, endOffset: next });
       if (atRoot && moduleDeclarationStart !== undefined) {
         const start = moduleDeclarationStart;
-        moduleDeclarationStart = undefined;
-        const sourceIndex = isIdentifier(tokens[start], 'export')
-          ? exportSourceIndex(tokens, start)
-          : tokens[start + 1]?.kind === 'string'
-            ? start + 1
-            : importSourceIndex(tokens, start);
-        if (sourceIndex === tokens.length - 1) moduleDeclarationSource = sourceIndex;
+        const isExport = isIdentifier(tokens[start], 'export');
+        const clauseStart = start + (isIdentifier(tokens[start + 1], 'type') ? 2 : 1);
+        const isNamespaceAlias =
+          isExport &&
+          tokens.length === clauseStart + 3 &&
+          isPunct(tokens[clauseStart], '*') &&
+          isIdentifier(tokens[clauseStart + 1], 'as');
+
+        // A quoted namespace alias precedes the source literal in export * as "name" from "pkg".
+        if (!isNamespaceAlias) {
+          moduleDeclarationStart = undefined;
+          const sourceIndex = isExport
+            ? exportSourceIndex(tokens, start)
+            : tokens[start + 1]?.kind === 'string'
+              ? start + 1
+              : importSourceIndex(tokens, start);
+          if (sourceIndex === tokens.length - 1) moduleDeclarationSource = sourceIndex;
+        }
       }
 
       if (typeAnnotation !== undefined) {

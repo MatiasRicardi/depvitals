@@ -53,6 +53,7 @@ describe('v0.4.0 release audit', () => {
     "import 'node:fs'\n/require('fake')/.test('');",
     "import 'node:fs'\n/'/.test('foo');",
     "export * from 'node:fs'\n/require('fake')/.test('');",
+    "export * as \"fs\" from 'node:fs'\n/require('fake')/.test('');",
     "import { readFile } from 'node:fs';\n/require('fake')/.test('');",
     "import { readFile } from 'node:fs' /*\n*/ /require('fake')/.test('');",
   ])('recognizes regex after the static declaration %j', (source) => {
