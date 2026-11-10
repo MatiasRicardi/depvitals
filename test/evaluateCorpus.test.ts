@@ -106,6 +106,9 @@ const { identifyBuild } = (await import(
   new URL('../scripts/measurementIdentity.mjs', import.meta.url).href
 )) as { identifyBuild: (root: string) => { path: string }[] };
 const toolRoot = resolve(import.meta.dirname, '..');
+const { version: toolVersion } = JSON.parse(
+  readFileSync(join(toolRoot, 'package.json'), 'utf8'),
+) as { version: string };
 const sourceSha = '8054e079aa2e2e40d3f1f41e5b2e35b4d2c7db7f';
 let scratch: string;
 let project: string;
@@ -137,7 +140,8 @@ function runner(onScan: () => Result): Runner {
     expect(options.env['NODE_OPTIONS']).toBeUndefined();
     expect(options.timeout).toBe(30000);
     expect(args[0]).toBe(join(toolRoot, 'dist/cli/index.js'));
-    if (args[1] === '--version') return { status: 0, signal: null, stdout: '0.3.0\n', stderr: '' };
+    if (args[1] === '--version')
+      return { status: 0, signal: null, stdout: toolVersion + '\n', stderr: '' };
     expect(args).toEqual([join(toolRoot, 'dist/cli/index.js'), project]);
     return onScan();
   };

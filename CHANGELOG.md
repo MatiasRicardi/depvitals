@@ -7,6 +7,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-09
+
 ### Added
 
 - Versioned JSON scan reports and exact-package explanations in terminal or JSON. Explanations show
@@ -16,9 +18,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- Supported explicit Node preloads in root scripts now count as usage evidence for declared packages. The four-project comparison found
-  two visible changes from v0.3.0. `tsx` and `@babel/register` ceased to be reported as unused
-  devDependencies in their respective pinned roots.
+- Supported explicit Node preloads in root scripts now count as usage evidence for declared packages.
+  Dynamic options or selectors discard preload evidence for their segment. An entry path with a
+  fixed `./`, `../` or `/` prefix keeps earlier preload evidence even if its suffix expands.
+  The four-project comparison found two visible changes from v0.3.0. `tsx` and `@babel/register`
+  ceased to be reported as unused devDependencies in their respective pinned roots.
+- The CI report adapter rejects incomplete package records, and scans retain large ESLint and Jest
+  evidence batches without exceeding Node's argument limit.
 
 ### Changed
 
@@ -167,7 +173,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Package consumer smoke verification (`verify:package`).
 - Cross-platform CI foundation.
 
-[Unreleased]: https://github.com/MatiasRicardi/depvitals/compare/v0.3.0...main
+[Unreleased]: https://github.com/MatiasRicardi/depvitals/compare/v0.4.0...main
+[0.4.0]: https://github.com/MatiasRicardi/depvitals/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/MatiasRicardi/depvitals/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MatiasRicardi/depvitals/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/MatiasRicardi/depvitals/compare/v0.1.1...v0.1.2
