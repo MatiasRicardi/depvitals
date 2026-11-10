@@ -11,6 +11,15 @@ DepVitals is a lightweight, [Depcheck](https://github.com/depcheck/depcheck)-ins
 
 Designed for fast, zero-config dependency checks during development, maintenance and CI, its CLI can also be used in scripts and AI coding-agent workflows. It analyzes one project root at a time; review findings before changing `package.json`.
 
+## What's new in v0.4.0
+
+Export a versioned JSON report, explain why a package was used or flagged, and run a
+[version-pinned CI check](#ci-with-a-fixed-version) that preserves reports and diagnostics.
+Explanations point to supported source, script and configuration evidence. Supported explicit
+Node preloads now count as script usage for declared packages. See the
+[v0.4.0 release notes](https://github.com/MatiasRicardi/depvitals/blob/main/docs/releases/v0.4.0.md)
+for compatibility details and remaining limits.
+
 ## Quick start
 
 Requires **Node.js 22.13.0 or newer**. Scan the current directory containing `package.json`, or pass a project path:
@@ -46,7 +55,7 @@ Reports use stdout; operational errors use stderr without a partial report. Exit
 
 ## JSON reports and package explanations
 
-These examples target **v0.4.0 (unreleased)**. To try them before publication, use
+These examples require **v0.4.0 or newer**. To try them from a checkout, use
 `node /path/to/depvitals/dist/cli/index.js` in place of `depvitals` after
 [building the development checkout](https://github.com/MatiasRicardi/depvitals/blob/main/CONTRIBUTING.md#local-setup).
 
@@ -92,7 +101,8 @@ are shipped in the npm package under `schemas/`. See the [CLI and report contrac
 
 ## CI with a fixed version
 
-After v0.4.0 is published, install it as an exact development dependency.
+Install v0.4.0 from npm as an exact development dependency. If you are testing a candidate before
+publication, use the local tarball procedure in the CI recipe below.
 
 ```sh
 npm install --save-dev --save-exact depvitals@0.4.0
@@ -101,7 +111,7 @@ npm install --save-dev --save-exact depvitals@0.4.0
 Commit the generated lockfile and use `"check:dependencies": "depvitals --format json"` in the
 manifest's `scripts`. The [tested CI recipe](https://github.com/MatiasRicardi/depvitals/blob/main/docs/examples/ci/README.md)
 captures the installed executable's report, diagnostics and status. It preserves those artifacts
-on failure and includes a local tarball substitute for development and candidate testing.
+on failure.
 
 ## Optional configuration
 
