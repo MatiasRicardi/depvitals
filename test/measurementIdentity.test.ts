@@ -63,6 +63,7 @@ const schemaAssets = [
   ...[
     'scan-clean',
     'scan-findings',
+    'scan-diagnostics',
     'explain-missing',
     'explain-excluded',
     'explain-unknown',
@@ -164,7 +165,7 @@ describe('measurement archive binding', () => {
     await fixture((root) => {
       const files = addSchemaAssets(root);
       const result = verifyMeasuredArchive(archive(root, files), root, build(root));
-      expect(result.fileCount).toBe(13);
+      expect(result.fileCount).toBe(14);
       expect(build(root).map((file) => file.path)).toEqual(
         ['dist/cli/index.js', ...schemaAssets].sort(),
       );
