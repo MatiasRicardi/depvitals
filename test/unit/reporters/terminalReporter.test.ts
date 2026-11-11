@@ -284,3 +284,59 @@ describe('hasDependencyIssues', () => {
     expect(hasDependencyIssues(analysis({ missingDependencies: ['zod'] }))).toBe(true);
   });
 });
+
+describe('terminal scan diagnostics', () => {
+  it('matches the full zero-source workspace example', () => {
+    expect(
+      formatTerminalReport(analysis(), {
+        sourceFilesScanned: 0,
+        nestedPackageSourceFiles: 0,
+        notices: ['no-supported-sources', 'workspace-declared'],
+      }),
+    ).toBe(
+      [
+        'DepVitals',
+        '',
+        'No dependency issues found.',
+        '',
+        'Scan diagnostics',
+        '  Source files scanned: 0',
+        '  Nested-package source files: 0',
+        '  No supported source files were scanned.',
+        '  The root package.json declares workspaces. This scan uses only the selected root inventory.',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('appends nested scope guidance after the unchanged findings', () => {
+    const result = analysis({ missingDependencies: ['leaf-only'] });
+    const ordinary = formatTerminalReport(result);
+    expect(
+      formatTerminalReport(result, {
+        sourceFilesScanned: 3,
+        nestedPackageSourceFiles: 2,
+        notices: ['nested-package-inputs'],
+      }),
+    ).toBe(
+      ordinary +
+        '\nScan diagnostics\n' +
+        '  Source files scanned: 3\n' +
+        '  Nested-package source files: 2\n' +
+        '  Some source files belong to nested packages. Findings use the selected root inventory. Scan a nested package separately to use its inventory.\n',
+    );
+    expect(formatTerminalReport(result)).toBe(ordinary);
+  });
+
+  it('renders counts without notices and keeps one final LF', () => {
+    const diagnostics = Object.freeze({
+      sourceFilesScanned: 1234,
+      nestedPackageSourceFiles: 0,
+      notices: Object.freeze([]),
+    });
+    expect(formatTerminalReport(analysis(), diagnostics)).toBe(
+      'DepVitals\n\nNo dependency issues found.\n\nScan diagnostics\n' +
+        '  Source files scanned: 1234\n  Nested-package source files: 0\n',
+    );
+  });
+});
