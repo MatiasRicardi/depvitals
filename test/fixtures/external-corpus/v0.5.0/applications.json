@@ -1,0 +1,1463 @@
+{
+  "catalogVersion": 1,
+  "createdOn": "2026-11-10",
+  "purpose": "Pinned Node backend and frontend application snapshots for v0.5.0. Step 130 owns independent review of scope and finding expectations.",
+  "identityMethod": "Sorted recursive entries (directories, regular file bytes/executable bit, symlink text), SHA-256 over compact JSON; no symlink traversal; no .git/node_modules inputs.",
+  "projects": [
+    {
+      "id": "fastify-demo",
+      "upstream": "https://github.com/fastify/demo",
+      "commit": "895908e4e706b896aa3991f3f6507617edddb1dd",
+      "gitTree": "aeb81f324a99611f626f742c628cd935385de4e8",
+      "selectedRoot": ".",
+      "acquiredOn": "2026-11-10",
+      "license": {
+        "manifest": "MIT",
+        "files": [
+          {
+            "file": "LICENSE",
+            "sha256": "6881fdd0f607b4f202c5421b0e6de1cf72041e0207b73681bbf6509fe7b86c44"
+          }
+        ]
+      },
+      "acquisition": {
+        "method": "git bare shallow fetch of the recorded commit, git rev-parse FETCH_HEAD and commit tree verification, git archive --format=tar <commit>, SHA-256 and data-only extraction",
+        "archiveSha256": "0fb551abad35fc33abeb4062febb555cf75a973e80c2ac0ad5c4d243082de2b7"
+      },
+      "categories": ["node-backend-application"],
+      "rationale": "Single-package TypeScript Fastify API with server startup, database migration and test scripts and an ESLint flat configuration.",
+      "reviewAreas": [
+        "Fastify directory autoload, logger transport by string, and database client selection are runtime conventions.",
+        "Inherited TypeScript configuration, ambient Node types and the nested glob/tsx test command require separate review."
+      ],
+      "inventory": {
+        "packageName": "fastify-demo",
+        "packageVersion": "0.0.0",
+        "declaredGroups": {
+          "dependencies": [
+            "@fastify/autoload",
+            "@fastify/cookie",
+            "@fastify/cors",
+            "@fastify/env",
+            "@fastify/helmet",
+            "@fastify/multipart",
+            "@fastify/rate-limit",
+            "@fastify/sensible",
+            "@fastify/session",
+            "@fastify/static",
+            "@fastify/swagger",
+            "@fastify/swagger-ui",
+            "@fastify/type-provider-typebox",
+            "@fastify/under-pressure",
+            "close-with-grace",
+            "csv-stringify",
+            "fastify",
+            "fastify-plugin",
+            "knex",
+            "mysql2",
+            "postgrator",
+            "sanitize-filename",
+            "typebox"
+          ],
+          "devDependencies": [
+            "@types/node",
+            "c8",
+            "eslint",
+            "fastify-tsconfig",
+            "form-data",
+            "glob",
+            "neostandard",
+            "pino-pretty",
+            "tsx",
+            "typescript"
+          ],
+          "peerDependencies": [],
+          "optionalDependencies": []
+        },
+        "supportedSourceFiles": 47,
+        "sourceBytes": 88651
+      },
+      "originalDepvitalsConfig": null,
+      "scope": {
+        "mode": "upstream-default",
+        "overlays": []
+      },
+      "fixedSourceExclusions": [
+        ".cache",
+        ".git",
+        ".next",
+        ".nuxt",
+        ".turbo",
+        "build",
+        "coverage",
+        "dist",
+        "node_modules",
+        "out"
+      ],
+      "snapshot": {
+        "sha256": "40b226a185a12e25ae14204b0ed54f32325af63a69a3d04d6cdf8a26c963a408",
+        "entries": [
+          {
+            "path": ".env.example",
+            "kind": "file",
+            "bytes": 463,
+            "executable": false,
+            "sha256": "dfce95559a82a5d8040a89eda027878e05080e4e4c99c30846b9cf5c6b02988c"
+          },
+          {
+            "path": ".github",
+            "kind": "directory"
+          },
+          {
+            "path": ".github/dependabot.yml",
+            "kind": "file",
+            "bytes": 1465,
+            "executable": false,
+            "sha256": "d9a6746846c2ad6f3ec6b10a038c154958a5ec78ed0a070deba274016833e247"
+          },
+          {
+            "path": ".github/workflows",
+            "kind": "directory"
+          },
+          {
+            "path": ".github/workflows/ci.yml",
+            "kind": "file",
+            "bytes": 2299,
+            "executable": false,
+            "sha256": "c0000d1ccf7ee09146c303a2ee93045a76b22b7952d7d9637c96071c0af40e4d"
+          },
+          {
+            "path": ".github/workflows/lock-threads.yml",
+            "kind": "file",
+            "bytes": 340,
+            "executable": false,
+            "sha256": "37dbbbadeff86c27af3c2357f3a098165064ddbe14dc4affa3eff614b772657e"
+          },
+          {
+            "path": ".gitignore",
+            "kind": "file",
+            "bytes": 2198,
+            "executable": false,
+            "sha256": "f28760bfcd8bbb68d1990d1ae940f6e2c65b731f707299b0c90317081b9063bb"
+          },
+          {
+            "path": ".npmrc",
+            "kind": "file",
+            "bytes": 38,
+            "executable": false,
+            "sha256": "c10e7d2f58c900975df0c1d3862adeb874606b6d9e84f198e280255400725cba"
+          },
+          {
+            "path": ".sonarcloud.properties",
+            "kind": "file",
+            "bytes": 52,
+            "executable": false,
+            "sha256": "836b9bda10237db788238ac711bef52fab7d527f8af65874f72d6a6c1c61affd"
+          },
+          {
+            "path": "@types",
+            "kind": "directory"
+          },
+          {
+            "path": "@types/node",
+            "kind": "directory"
+          },
+          {
+            "path": "@types/node/environment.d.ts",
+            "kind": "file",
+            "bytes": 307,
+            "executable": false,
+            "sha256": "0e8477e2eb668728688df5ddd3f25ba42a4d54095975292ce18c21b9c1e84a59"
+          },
+          {
+            "path": "LICENSE",
+            "kind": "file",
+            "bytes": 1123,
+            "executable": false,
+            "sha256": "6881fdd0f607b4f202c5421b0e6de1cf72041e0207b73681bbf6509fe7b86c44"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "bytes": 2053,
+            "executable": false,
+            "sha256": "2557c542a1423a1da55a2b20e45ac7e353f6602369bbf287c251f3e26c913dbf"
+          },
+          {
+            "path": "docker-compose.yml",
+            "kind": "file",
+            "bytes": 457,
+            "executable": false,
+            "sha256": "4013ffa5f3a73a59e3d71b2c39b9de961c547b0cd376cec288db7a1923c5da67"
+          },
+          {
+            "path": "eslint.config.js",
+            "kind": "file",
+            "bytes": 291,
+            "executable": false,
+            "sha256": "cbf6b2072ff9fc70459e7866fe92ce8a904b7dc7577cf02bc110e5ab5b76d0c0"
+          },
+          {
+            "path": "migrations",
+            "kind": "directory"
+          },
+          {
+            "path": "migrations/001.do.users.sql",
+            "kind": "file",
+            "bytes": 294,
+            "executable": false,
+            "sha256": "1976adc1e9bd5965c729ce444a7580c6360b129c7a95763e65c293a73bf63406"
+          },
+          {
+            "path": "migrations/001.undo.users.sql",
+            "kind": "file",
+            "bytes": 28,
+            "executable": false,
+            "sha256": "1dac01d8cc0cd480fb701c83c9ddff728bf13d354de769a25e25bbad223dd211"
+          },
+          {
+            "path": "migrations/002.do.tasks.sql",
+            "kind": "file",
+            "bytes": 427,
+            "executable": false,
+            "sha256": "5b53eab3fc89015c4d70a0d3498d37ec0fef90173de7b1e6a6b9b42bc2a1002e"
+          },
+          {
+            "path": "migrations/002.undo.tasks.sql",
+            "kind": "file",
+            "bytes": 28,
+            "executable": false,
+            "sha256": "e9dc42958b97c44d7ec2be5a7e4a876d4298c8100f705d27403da6c8093d3ca4"
+          },
+          {
+            "path": "migrations/003.do.user_tasks.sql",
+            "kind": "file",
+            "bytes": 202,
+            "executable": false,
+            "sha256": "476e0669f300f0623c19e2231b1b9d511e20cc96a129f5b97ce07480f1551ac6"
+          },
+          {
+            "path": "migrations/003.undo.user_tasks.sql",
+            "kind": "file",
+            "bytes": 33,
+            "executable": false,
+            "sha256": "5efb76c3f368eeac919faf1c5b00beedd464fb2276ae0a233f8b64551baa3952"
+          },
+          {
+            "path": "migrations/004.do.roles.sql",
+            "kind": "file",
+            "bytes": 90,
+            "executable": false,
+            "sha256": "3ccc29aaab2cb9233968201e73d8437b894e80bbcdb92847a6d1d6e34a1cc364"
+          },
+          {
+            "path": "migrations/004.undo.roles.sql",
+            "kind": "file",
+            "bytes": 28,
+            "executable": false,
+            "sha256": "7ca64832b714bb8119602bb7f803eaebc4c36940cc10fec62e236d8311964ccb"
+          },
+          {
+            "path": "migrations/005.do.user_roles.sql",
+            "kind": "file",
+            "bytes": 241,
+            "executable": false,
+            "sha256": "1c4716b4d594156c935d5136893406fe3d72831abca3850c38f84e09a9b9294e"
+          },
+          {
+            "path": "migrations/005.undo.user_roles.sql",
+            "kind": "file",
+            "bytes": 33,
+            "executable": false,
+            "sha256": "a4ebd65e3ccd67ea3f6f681c7f34f50c45b7bf5f41b12d91a5226daba7e08063"
+          },
+          {
+            "path": "package.json",
+            "kind": "file",
+            "bytes": 2240,
+            "executable": false,
+            "sha256": "d836f08c0bc8b9f146f6402cbf2949b1eae3f09652c4c237858f172deecf82b8"
+          },
+          {
+            "path": "scripts",
+            "kind": "directory"
+          },
+          {
+            "path": "scripts/create-database.ts",
+            "kind": "file",
+            "bytes": 978,
+            "executable": false,
+            "sha256": "8ab9524092140f3578f501b6b5578b458b6ea69339bcfce6467fffb5948d8271"
+          },
+          {
+            "path": "scripts/drop-database.ts",
+            "kind": "file",
+            "bytes": 940,
+            "executable": false,
+            "sha256": "01b43a464c5c20bb166959eaaccb9aa2e6c63dadca094bc05eae6d6f57353c1c"
+          },
+          {
+            "path": "scripts/migrate.ts",
+            "kind": "file",
+            "bytes": 1371,
+            "executable": false,
+            "sha256": "76ff472681ff3a4e61e1beb920fcfc6f5f842518d4d5ac45ab3b6004294dc97d"
+          },
+          {
+            "path": "scripts/seed-database.ts",
+            "kind": "file",
+            "bytes": 2666,
+            "executable": false,
+            "sha256": "5b16a1a0da27dc374faa5eac78baa591029a05b54205a8855c56595cac9e63da"
+          },
+          {
+            "path": "src",
+            "kind": "directory"
+          },
+          {
+            "path": "src/app.ts",
+            "kind": "file",
+            "bytes": 2217,
+            "executable": false,
+            "sha256": "9424c2ee60700c41f4d7a8ea638f6ed78411eb03dea46c4fbd9bf785d274c926"
+          },
+          {
+            "path": "src/plugins",
+            "kind": "directory"
+          },
+          {
+            "path": "src/plugins/README.md",
+            "kind": "file",
+            "bytes": 740,
+            "executable": false,
+            "sha256": "b9d6f32fada5b5eb18cb780bf5a4cf49ac22e68ab27de6916ecbd58468ae4518"
+          },
+          {
+            "path": "src/plugins/app",
+            "kind": "directory"
+          },
+          {
+            "path": "src/plugins/app/authorization.ts",
+            "kind": "file",
+            "bytes": 1229,
+            "executable": false,
+            "sha256": "ace6caed06df709361559e26787380a6af1078e9b1f263377e9cc7229d41c14b"
+          },
+          {
+            "path": "src/plugins/app/file-manager.ts",
+            "kind": "file",
+            "bytes": 1942,
+            "executable": false,
+            "sha256": "88080363215916b85f8aef1c08428db6bb19706c0e25de6dd1663f359b493f1d"
+          },
+          {
+            "path": "src/plugins/app/password-manager.ts",
+            "kind": "file",
+            "bytes": 1977,
+            "executable": false,
+            "sha256": "0b22266af6b1dbe1ea483ce39fed00970e31b47981bbe5085bd74d3922070f2c"
+          },
+          {
+            "path": "src/plugins/app/tasks",
+            "kind": "directory"
+          },
+          {
+            "path": "src/plugins/app/tasks/tasks-file-manager.ts",
+            "kind": "file",
+            "bytes": 1988,
+            "executable": false,
+            "sha256": "2730dd24cc9285faddaa154191100b451c91722cdb13b6f04b229ae2e01fa94a"
+          },
+          {
+            "path": "src/plugins/app/tasks/tasks-repository.ts",
+            "kind": "file",
+            "bytes": 3089,
+            "executable": false,
+            "sha256": "ac540e30eb02b8523941337aad9ec59f89c452cf712d4ccc005b111e7db969c7"
+          },
+          {
+            "path": "src/plugins/app/users",
+            "kind": "directory"
+          },
+          {
+            "path": "src/plugins/app/users/users-repository.ts",
+            "kind": "file",
+            "bytes": 1394,
+            "executable": false,
+            "sha256": "45fdb898574b2adea6272a107607ac0fea08dc46e5f1b82851bd552d7ee34b2f"
+          },
+          {
+            "path": "src/plugins/external",
+            "kind": "directory"
+          },
+          {
+            "path": "src/plugins/external/cors.ts",
+            "kind": "file",
+            "bytes": 281,
+            "executable": false,
+            "sha256": "de495efe2764c5352ded575b4283f4ce328f1ec41db33c5c881af4322e91e3f1"
+          },
+          {
+            "path": "src/plugins/external/env.ts",
+            "kind": "file",
+            "bytes": 2128,
+            "executable": false,
+            "sha256": "ea5c06d1cc5c3816eff92b0bbdd58c4c187822920d31b6708dcb3f9184b63ef4"
+          },
+          {
+            "path": "src/plugins/external/helmet.ts",
+            "kind": "file",
+            "bytes": 238,
+            "executable": false,
+            "sha256": "a9c872a38f9e47692fb5fc5e6101be15b4ae6979683b4baed2abd0f9eace5dc4"
+          },
+          {
+            "path": "src/plugins/external/knex.ts",
+            "kind": "file",
+            "bytes": 780,
+            "executable": false,
+            "sha256": "4a84dc004e28fbcbb6d07481cb0ff387d7730b596f6e501a856b57b90df088c1"
+          },
+          {
+            "path": "src/plugins/external/multipart.ts",
+            "kind": "file",
+            "bytes": 565,
+            "executable": false,
+            "sha256": "2fdcac7199995116784aeecee231fff2c5a1632a0fedfc8e1be14682ba9bb223"
+          },
+          {
+            "path": "src/plugins/external/rate-limit.ts",
+            "kind": "file",
+            "bytes": 404,
+            "executable": false,
+            "sha256": "a5694e2f543565aad6e105713f669d8d51fe2a408d153cb1ee53188dd0ec56a4"
+          },
+          {
+            "path": "src/plugins/external/sensible.ts",
+            "kind": "file",
+            "bytes": 254,
+            "executable": false,
+            "sha256": "137b83826fb7918ba09572315f6b216eed706e6de9a5639dc0027abec9b51148"
+          },
+          {
+            "path": "src/plugins/external/session.ts",
+            "kind": "file",
+            "bytes": 704,
+            "executable": false,
+            "sha256": "ba896a88568285dc09e400f5cd736bc92c6852f859d7e4deeb9a6473146e1983"
+          },
+          {
+            "path": "src/plugins/external/static.ts",
+            "kind": "file",
+            "bytes": 652,
+            "executable": false,
+            "sha256": "38d23f98338e7c1bf3f8ef53ab932714f0134913e49c6eee28c944964901a72a"
+          },
+          {
+            "path": "src/plugins/external/swagger.ts",
+            "kind": "file",
+            "bytes": 769,
+            "executable": false,
+            "sha256": "59df0e0fb53fe17954405d7c11b3e0cb6bc7079c5a6348d00150256c8f7b4cbc"
+          },
+          {
+            "path": "src/plugins/external/under-pressure.ts",
+            "kind": "file",
+            "bytes": 1125,
+            "executable": false,
+            "sha256": "0e109a7e8ea7344cd9c5e87499fde0bf8b76c636dbd2bcad4270f6ed1719ac8e"
+          },
+          {
+            "path": "src/routes",
+            "kind": "directory"
+          },
+          {
+            "path": "src/routes/README.md",
+            "kind": "file",
+            "bytes": 1582,
+            "executable": false,
+            "sha256": "4e209a8532f70ed6682d276178945edc1a1c19bff9fe319a85d995983e819807"
+          },
+          {
+            "path": "src/routes/api",
+            "kind": "directory"
+          },
+          {
+            "path": "src/routes/api/auth",
+            "kind": "directory"
+          },
+          {
+            "path": "src/routes/api/auth/index.ts",
+            "kind": "file",
+            "bytes": 1538,
+            "executable": false,
+            "sha256": "35022557be811196fe780ea73ab3dd6b841a24c4f6be44c2024ae6d64d5ca60d"
+          },
+          {
+            "path": "src/routes/api/autohooks.ts",
+            "kind": "file",
+            "bytes": 356,
+            "executable": false,
+            "sha256": "f16ad604d845e94352432eb69e5f48a8f6d9e2961e591cdb022917f81ee10fca"
+          },
+          {
+            "path": "src/routes/api/index.ts",
+            "kind": "file",
+            "bytes": 304,
+            "executable": false,
+            "sha256": "4ecc882b180219a939bef3131b9912aa28bc00588ec742554aa0e0b2c0c1851f"
+          },
+          {
+            "path": "src/routes/api/tasks",
+            "kind": "directory"
+          },
+          {
+            "path": "src/routes/api/tasks/index.ts",
+            "kind": "file",
+            "bytes": 7860,
+            "executable": false,
+            "sha256": "5b0af52a342ef87103456c054cbd68b56fe747eb27fdc347ccd22b5b142f89fd"
+          },
+          {
+            "path": "src/routes/api/users",
+            "kind": "directory"
+          },
+          {
+            "path": "src/routes/api/users/index.ts",
+            "kind": "file",
+            "bytes": 1718,
+            "executable": false,
+            "sha256": "4a7cdb07ff21a67a9b65b7a9ccf12e52af9cfeec3d87a47b30fac1009a94ae76"
+          },
+          {
+            "path": "src/routes/home.ts",
+            "kind": "file",
+            "bytes": 442,
+            "executable": false,
+            "sha256": "87e4d9d1bfad611332c227f813fe8ed6e086c7726480cff9fbcbdde333b92987"
+          },
+          {
+            "path": "src/schemas",
+            "kind": "directory"
+          },
+          {
+            "path": "src/schemas/auth.ts",
+            "kind": "file",
+            "bytes": 363,
+            "executable": false,
+            "sha256": "7c7e9a4837ca7eceac7ee230a7bfdcf7a9250efcfd742c86d4aa8838d6d7fce8"
+          },
+          {
+            "path": "src/schemas/common.ts",
+            "kind": "file",
+            "bytes": 329,
+            "executable": false,
+            "sha256": "9807d0378d85eaeb03c00e84345ace1293f51c4b32e0bd808378869299a356a4"
+          },
+          {
+            "path": "src/schemas/tasks.ts",
+            "kind": "file",
+            "bytes": 1706,
+            "executable": false,
+            "sha256": "19401d8ce07b3252b61f3651feffb3f9c3927b7d2f73b2d63c557ef7a6cc9d18"
+          },
+          {
+            "path": "src/schemas/users.ts",
+            "kind": "file",
+            "bytes": 324,
+            "executable": false,
+            "sha256": "1ce7707206ea66f63d6d5494570192216bbed350ca5e81a8a297d580308decc3"
+          },
+          {
+            "path": "src/server.ts",
+            "kind": "file",
+            "bytes": 1875,
+            "executable": false,
+            "sha256": "6e46764ac4be0bee059ad6990219be1d54b2f81c1e0fd430a53a936cd12b3591"
+          },
+          {
+            "path": "test",
+            "kind": "directory"
+          },
+          {
+            "path": "test/app",
+            "kind": "directory"
+          },
+          {
+            "path": "test/app/cors.test.ts",
+            "kind": "file",
+            "bytes": 572,
+            "executable": false,
+            "sha256": "c04d894b70d5b72c8037058971923b98952236e21692d4bd6f655b17a8b1ca58"
+          },
+          {
+            "path": "test/app/env.test.ts",
+            "kind": "file",
+            "bytes": 1245,
+            "executable": false,
+            "sha256": "8b05f5d58ae1ed34850d610e82e7beeca16d8f44d556658a103320ed343c1814"
+          },
+          {
+            "path": "test/app/error-handler.test.ts",
+            "kind": "file",
+            "bytes": 566,
+            "executable": false,
+            "sha256": "a1f4fc09e508da40932e88a025bf010e758e89e9658c79e074d6c63acd72a0c1"
+          },
+          {
+            "path": "test/app/not-found-handler.test.ts",
+            "kind": "file",
+            "bytes": 833,
+            "executable": false,
+            "sha256": "63a845ce40831e423a46e0efb8b730b101a14c2c3d589cd5128b69249859b6c4"
+          },
+          {
+            "path": "test/app/rate-limit.test.ts",
+            "kind": "file",
+            "bytes": 452,
+            "executable": false,
+            "sha256": "9b2ec4fe4cd675e5fbd1e016eaa0c62dd7f672bb6a365b211cda6053672c455f"
+          },
+          {
+            "path": "test/helper.ts",
+            "kind": "file",
+            "bytes": 1954,
+            "executable": false,
+            "sha256": "eaea4a1b7a3bc4ef6b0a9a3a2389d810987048f46afafdf2a2d4b41a0ac98ebe"
+          },
+          {
+            "path": "test/plugins",
+            "kind": "directory"
+          },
+          {
+            "path": "test/plugins/scrypt.test.ts",
+            "kind": "file",
+            "bytes": 916,
+            "executable": false,
+            "sha256": "83ce556fb6ac3472c65c772cfe4af1341405f6c1950d0a397ddfcb8ba6a8b1d8"
+          },
+          {
+            "path": "test/routes",
+            "kind": "directory"
+          },
+          {
+            "path": "test/routes/api",
+            "kind": "directory"
+          },
+          {
+            "path": "test/routes/api/api.test.ts",
+            "kind": "file",
+            "bytes": 632,
+            "executable": false,
+            "sha256": "f2cf192cf949299620f47c99bd16d9902aaa4ddf24a4dde47d59616c2bf8ce01"
+          },
+          {
+            "path": "test/routes/api/auth",
+            "kind": "directory"
+          },
+          {
+            "path": "test/routes/api/auth/auth.test.ts",
+            "kind": "file",
+            "bytes": 3182,
+            "executable": false,
+            "sha256": "3880189d8631f972be969b97d5ca1919d32727616eb10e04c24ae3a8fb2f700a"
+          },
+          {
+            "path": "test/routes/api/tasks",
+            "kind": "directory"
+          },
+          {
+            "path": "test/routes/api/tasks/fixtures",
+            "kind": "directory"
+          },
+          {
+            "path": "test/routes/api/tasks/fixtures/one_line.csv",
+            "kind": "file",
+            "bytes": 45,
+            "executable": false,
+            "sha256": "1b0802e3a50e41b6553cfb1eb04f7abfa2736f50991c260a8441e5922d9f6a45"
+          },
+          {
+            "path": "test/routes/api/tasks/fixtures/short-logo.png",
+            "kind": "file",
+            "bytes": 20109,
+            "executable": false,
+            "sha256": "82deda371167a577385576c72cf2f051d8663e0e6e70e8cf4eb15230ef30531b"
+          },
+          {
+            "path": "test/routes/api/tasks/tasks.test.ts",
+            "kind": "file",
+            "bytes": 26263,
+            "executable": false,
+            "sha256": "5ba3094b631b4333cb3f292b838f032a6dc8d85755acec8488b9b215c11929c5"
+          },
+          {
+            "path": "test/routes/api/users",
+            "kind": "directory"
+          },
+          {
+            "path": "test/routes/api/users/users.test.ts",
+            "kind": "file",
+            "bytes": 6605,
+            "executable": false,
+            "sha256": "8d1a856c4a1b49630ffdbc779aba517faa21773ad3dc149a0c860e531f55518d"
+          },
+          {
+            "path": "test/routes/home.test.ts",
+            "kind": "file",
+            "bytes": 327,
+            "executable": false,
+            "sha256": "8b81a4f946abf4074b52a5375e7756282ede59f1ecbf25ecb143faa9bcf664f5"
+          },
+          {
+            "path": "test/tsconfig.json",
+            "kind": "file",
+            "bytes": 170,
+            "executable": false,
+            "sha256": "788815a0350a7f61b13f266e127d4db1f9bad227b3358f6c3ed6a74bd200fa0b"
+          },
+          {
+            "path": "tsconfig.json",
+            "kind": "file",
+            "bytes": 148,
+            "executable": false,
+            "sha256": "994d8af21d5e55a0429af12913c62cf9222e0f99166839a84edf41128a07e7f4"
+          }
+        ]
+      },
+      "expectationStatus": "NOT REVIEWED"
+    },
+    {
+      "id": "conduit-react-redux",
+      "upstream": "https://github.com/angelguzmaning/ts-redux-react-realworld-example-app",
+      "commit": "cb397562724ea7f53758d5511c220690b99fe2f5",
+      "gitTree": "9b738c51b882664c9f495fc3c484690621975ca7",
+      "selectedRoot": ".",
+      "acquiredOn": "2026-11-10",
+      "license": {
+        "manifest": null,
+        "files": [
+          {
+            "file": "LICENSE",
+            "sha256": "33271b8a1ac1619e2fb32ed913bdc3152871d7e634fe432af11c9fc3232d1949"
+          }
+        ]
+      },
+      "acquisition": {
+        "method": "git bare shallow fetch of the recorded commit, git rev-parse FETCH_HEAD and commit tree verification, git archive --format=tar <commit>, SHA-256 and data-only extraction",
+        "archiveSha256": "9d47107370dd365cd40dffcff74aa3c243b4506475c4a697f8d9f8f2fed27549"
+      },
+      "categories": ["frontend-application"],
+      "rationale": "Single-package Conduit browser client with React TSX components, Redux Toolkit, API client, tests and React Scripts build and test commands.",
+      "reviewAreas": [
+        "React Scripts hides build and test tooling behind a wrapper.",
+        "ESLint and Jest settings in the manifest, ambient types and pre-commit integration require separate review. The remote API is outside the selected frontend inventory."
+      ],
+      "inventory": {
+        "packageName": "ts-redux-react-realworld-example-app",
+        "packageVersion": "0.1.0",
+        "declaredGroups": {
+          "dependencies": [
+            "@hqoss/monads",
+            "@reduxjs/toolkit",
+            "@testing-library/jest-dom",
+            "@testing-library/react",
+            "@testing-library/user-event",
+            "@types/axios",
+            "@types/date-fns",
+            "@types/jest",
+            "@types/node",
+            "@types/ramda",
+            "@types/react",
+            "@types/react-dom",
+            "@types/react-redux",
+            "@types/react-router-dom",
+            "axios",
+            "date-fns",
+            "decoders",
+            "ramda",
+            "react",
+            "react-dom",
+            "react-redux",
+            "react-router-dom",
+            "react-scripts",
+            "typescript"
+          ],
+          "devDependencies": [
+            "@typescript-eslint/eslint-plugin",
+            "@typescript-eslint/parser",
+            "cross-env",
+            "eslint",
+            "pre-commit",
+            "prettier"
+          ],
+          "peerDependencies": [],
+          "optionalDependencies": []
+        },
+        "supportedSourceFiles": 63,
+        "sourceBytes": 141757
+      },
+      "originalDepvitalsConfig": null,
+      "scope": {
+        "mode": "upstream-default",
+        "overlays": []
+      },
+      "fixedSourceExclusions": [
+        ".cache",
+        ".git",
+        ".next",
+        ".nuxt",
+        ".turbo",
+        "build",
+        "coverage",
+        "dist",
+        "node_modules",
+        "out"
+      ],
+      "snapshot": {
+        "sha256": "29dfe3f57debad2e6ebe3d8d4fd16d86b2c0dad892e3497a8dfd87c47cbc48ac",
+        "entries": [
+          {
+            "path": ".eslintrc.js",
+            "kind": "file",
+            "bytes": 635,
+            "executable": false,
+            "sha256": "9f540c796ae2347e3ba51a96e600d94826d665955d7c3511b0ea2500faffa23c"
+          },
+          {
+            "path": ".github",
+            "kind": "directory"
+          },
+          {
+            "path": ".github/workflows",
+            "kind": "directory"
+          },
+          {
+            "path": ".github/workflows/pipeline.yml",
+            "kind": "file",
+            "bytes": 2129,
+            "executable": false,
+            "sha256": "7761c29decd7af04fe1397806881783a0d03fe2a49042c97cb1fde644220509f"
+          },
+          {
+            "path": ".gitignore",
+            "kind": "file",
+            "bytes": 310,
+            "executable": false,
+            "sha256": "d373417ea2a8844e3b7a1515aab123e90fbeb4b7225144d55d243d9f6f04f73a"
+          },
+          {
+            "path": ".prettierrc.json",
+            "kind": "file",
+            "bytes": 72,
+            "executable": false,
+            "sha256": "ceb70d4c2c9d0c2273b3903ba8c64e1e3024f2c2f8e23e45cc9927d238783c6a"
+          },
+          {
+            "path": "LICENSE",
+            "kind": "file",
+            "bytes": 1069,
+            "executable": false,
+            "sha256": "33271b8a1ac1619e2fb32ed913bdc3152871d7e634fe432af11c9fc3232d1949"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "bytes": 3644,
+            "executable": false,
+            "sha256": "f58982a8acfa19af693451eeb831a32902872117ea542ea634143006fa2326b8"
+          },
+          {
+            "path": "package-lock.json",
+            "kind": "file",
+            "bytes": 711280,
+            "executable": false,
+            "sha256": "56fad763fed007858012be1f74e52aa58db1101ef5f4037029f4fc69c5712bea"
+          },
+          {
+            "path": "package.json",
+            "kind": "file",
+            "bytes": 2082,
+            "executable": false,
+            "sha256": "36eb61dc05a830aea8dbb5334adea26d4fadf56efe882d9849975ce9d810587b"
+          },
+          {
+            "path": "public",
+            "kind": "directory"
+          },
+          {
+            "path": "public/favicon.ico",
+            "kind": "file",
+            "bytes": 1804,
+            "executable": false,
+            "sha256": "105048062a788225cd3ae073f4a4cacc198ea8e149d67c6f7efb0cd98f33e99c"
+          },
+          {
+            "path": "public/index.html",
+            "kind": "file",
+            "bytes": 900,
+            "executable": false,
+            "sha256": "9effb301cc1bf42154944400de7f3d088743afa66314acc7c622cab0449ec9f2"
+          },
+          {
+            "path": "src",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/App",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/App/App.slice.ts",
+            "kind": "file",
+            "bytes": 779,
+            "executable": false,
+            "sha256": "72969d25a78ef2c75c8e4fe88aa47bb7083bf4e7e099d254a38367b7cb9b9ab8"
+          },
+          {
+            "path": "src/components/App/App.test.tsx",
+            "kind": "file",
+            "bytes": 2619,
+            "executable": false,
+            "sha256": "b36cb0fccd202a99ae92c0ba5b88cc55b11816baf569a88b93c2e6ff7f2530d8"
+          },
+          {
+            "path": "src/components/App/App.tsx",
+            "kind": "file",
+            "bytes": 3181,
+            "executable": false,
+            "sha256": "5be77898d284d357ff9635975a1eb37eccb9ef892520e7451db66992b63026db"
+          },
+          {
+            "path": "src/components/ArticleEditor",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/ArticleEditor/ArticleEditor.slice.tsx",
+            "kind": "file",
+            "bytes": 1792,
+            "executable": false,
+            "sha256": "f48cd1996d080d1c0bc9f705e47ce511d01b15c7b3c90bb2c78007885cb6c7f5"
+          },
+          {
+            "path": "src/components/ArticleEditor/ArticleEditor.test.tsx",
+            "kind": "file",
+            "bytes": 2461,
+            "executable": false,
+            "sha256": "3d1a35eb00d657f0e0dca1a3911fd7f86d8f545da157e84e7a1ec65cab154d8a"
+          },
+          {
+            "path": "src/components/ArticleEditor/ArticleEditor.tsx",
+            "kind": "file",
+            "bytes": 2130,
+            "executable": false,
+            "sha256": "ad2163c71c3f935a190bec3813728d756d4ff6005944120fe5d10f01c8a6fe5e"
+          },
+          {
+            "path": "src/components/ArticlePreview",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/ArticlePreview/ArticlePreview.test.tsx",
+            "kind": "file",
+            "bytes": 1442,
+            "executable": false,
+            "sha256": "286f47cdf7da358d9f5af17550da494f332f21aac79453014edc0aa4d792d0d6"
+          },
+          {
+            "path": "src/components/ArticlePreview/ArticlePreview.tsx",
+            "kind": "file",
+            "bytes": 1660,
+            "executable": false,
+            "sha256": "c341eb97a6ce2eeae2d849a4d39c0f526ce3addaa302769838eecc768755aa88"
+          },
+          {
+            "path": "src/components/ArticlesViewer",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/ArticlesViewer/ArticlesViewer.slice.ts",
+            "kind": "file",
+            "bytes": 1679,
+            "executable": false,
+            "sha256": "fe975e45e44adf8e8d08c3e1b0bd4d4bf378b02f70bf419c6b92de4088c06098"
+          },
+          {
+            "path": "src/components/ArticlesViewer/ArticlesViewer.tsx",
+            "kind": "file",
+            "bytes": 3232,
+            "executable": false,
+            "sha256": "5f5e2f608a7b83591a64e8e0defe9c2b850c87ca79a72545f8bd2191f075b568"
+          },
+          {
+            "path": "src/components/ContainerPage",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/ContainerPage/ContainerPage.tsx",
+            "kind": "file",
+            "bytes": 201,
+            "executable": false,
+            "sha256": "c2a3df9ff3284809b8eeee245a61b6e33cbda9a05ac657497dbc0c0a2cb00342"
+          },
+          {
+            "path": "src/components/Errors",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/Errors/Errors.tsx",
+            "kind": "file",
+            "bytes": 391,
+            "executable": false,
+            "sha256": "5d2dd484985452ed48d7a55c3f160f62b69a216c83b4a2b067bfcf11b8514850"
+          },
+          {
+            "path": "src/components/Footer",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/Footer/Footer.test.tsx",
+            "kind": "file",
+            "bytes": 139,
+            "executable": false,
+            "sha256": "867c75243e34789e534e2ce577645d1a6353c79bf62733d2eb4b5f51ad8e2dfa"
+          },
+          {
+            "path": "src/components/Footer/Footer.tsx",
+            "kind": "file",
+            "bytes": 391,
+            "executable": false,
+            "sha256": "4f2c4f5e90932256e02c54c1e0d8cb23faaf8ad28bd05162ed1ebc74149b000d"
+          },
+          {
+            "path": "src/components/FormGroup",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/FormGroup/FormGroup.test.tsx",
+            "kind": "file",
+            "bytes": 466,
+            "executable": false,
+            "sha256": "4dd5822d9f0c51296f008584233a3e343139034abdcc14378e5e9d3a0383b48a"
+          },
+          {
+            "path": "src/components/FormGroup/FormGroup.tsx",
+            "kind": "file",
+            "bytes": 2246,
+            "executable": false,
+            "sha256": "892f89aee12c2661ecc37d13f0607e41cfb8c5628209fdb0aca17e778846cb10"
+          },
+          {
+            "path": "src/components/GenericForm",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/GenericForm/GenericForm.tsx",
+            "kind": "file",
+            "bytes": 2804,
+            "executable": false,
+            "sha256": "984977f47dfceb1c808ada11542fdf826e154e0ae409753fd7ee12dd34d7f593"
+          },
+          {
+            "path": "src/components/Header",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/Header/Header.tsx",
+            "kind": "file",
+            "bytes": 1554,
+            "executable": false,
+            "sha256": "b157b161b6e65d84bcaa9da8b0037a3fd8512c0800962b65d0ed63e7d2d703b2"
+          },
+          {
+            "path": "src/components/Header/Heater.test.tsx",
+            "kind": "file",
+            "bytes": 1984,
+            "executable": false,
+            "sha256": "edec3f5d079816bc4fcfeb7a48c80b800b1b2bf68564debd98d2d28852b33b09"
+          },
+          {
+            "path": "src/components/Pages",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/Pages/ArticlePage",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/Pages/ArticlePage/ArticlePage.slice.ts",
+            "kind": "file",
+            "bytes": 2483,
+            "executable": false,
+            "sha256": "a882afee20c55cbb7949c879a2eb9c2aa9506102eb593d611fca88034b5c3913"
+          },
+          {
+            "path": "src/components/Pages/ArticlePage/ArticlePage.test.tsx",
+            "kind": "file",
+            "bytes": 12766,
+            "executable": false,
+            "sha256": "6157219ca833cfa943455785ff0723192325cf3e69c8f48ff99248f605baf0b7"
+          },
+          {
+            "path": "src/components/Pages/ArticlePage/ArticlePage.tsx",
+            "kind": "file",
+            "bytes": 10076,
+            "executable": false,
+            "sha256": "150344233ce16a59c3b832d309bd39c3f36bf4341d848a681f8bdc2d49058b86"
+          },
+          {
+            "path": "src/components/Pages/EditArticle",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/Pages/EditArticle/EditArticle.test.tsx",
+            "kind": "file",
+            "bytes": 3377,
+            "executable": false,
+            "sha256": "25c967fdb526421be7364a4fdad69cab689b797ffb57a29b144f5f8fc5821ab4"
+          },
+          {
+            "path": "src/components/Pages/EditArticle/EditArticle.tsx",
+            "kind": "file",
+            "bytes": 1571,
+            "executable": false,
+            "sha256": "13a053807a47dc79a5a4c147f524f75713e47e76e189b16e5abf811c35c4412d"
+          },
+          {
+            "path": "src/components/Pages/Home",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/Pages/Home/Home.slice.ts",
+            "kind": "file",
+            "bytes": 724,
+            "executable": false,
+            "sha256": "82ebe78d35eca7ce5c7723aa41ca5c4c106bcb3ae2be23e6f50124c623a595eb"
+          },
+          {
+            "path": "src/components/Pages/Home/Home.test.tsx",
+            "kind": "file",
+            "bytes": 8502,
+            "executable": false,
+            "sha256": "389b81b675555a27d6fb94c243f881328e5060a95811274d77e941afa629fac5"
+          },
+          {
+            "path": "src/components/Pages/Home/Home.tsx",
+            "kind": "file",
+            "bytes": 3365,
+            "executable": false,
+            "sha256": "d5a788725059c5b3c1a2cecb807790e81fe42c1130997c8a2d811522f5fbfe46"
+          },
+          {
+            "path": "src/components/Pages/Login",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/Pages/Login/Login.slice.ts",
+            "kind": "file",
+            "bytes": 1015,
+            "executable": false,
+            "sha256": "d4cbcf7100ab13aba6c042e555fa06b9fb7bc2b28b8ab5c82ac60f3f264fadf5"
+          },
+          {
+            "path": "src/components/Pages/Login/Login.test.tsx",
+            "kind": "file",
+            "bytes": 3993,
+            "executable": false,
+            "sha256": "09ad91e74fe10ef5ed1721269e16601638b71fefd7c8197061b7c1d61da0a42a"
+          },
+          {
+            "path": "src/components/Pages/Login/Login.tsx",
+            "kind": "file",
+            "bytes": 2075,
+            "executable": false,
+            "sha256": "dbca29654f46dbeb84bfddd804d0514da51493ecd65248f1a86cec2ebc13c09f"
+          },
+          {
+            "path": "src/components/Pages/NewArticle",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/Pages/NewArticle/NewArticle.test.tsx",
+            "kind": "file",
+            "bytes": 1662,
+            "executable": false,
+            "sha256": "573c56f68867b79dced4159c251a3b63a837622af0a73f6795d738f052d92152"
+          },
+          {
+            "path": "src/components/Pages/NewArticle/NewArticle.tsx",
+            "kind": "file",
+            "bytes": 814,
+            "executable": false,
+            "sha256": "6c4d64b3c25d58b8aa05e9fae2541eff4337cf3df48b87d55f7a548251f0a8fe"
+          },
+          {
+            "path": "src/components/Pages/ProfilePage",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/Pages/ProfilePage/ProfilePage.slice.ts",
+            "kind": "file",
+            "bytes": 800,
+            "executable": false,
+            "sha256": "a9b0b5a860ed279a368deeac082333a1c62dea8c0ad4d568a07e9bc8967578ba"
+          },
+          {
+            "path": "src/components/Pages/ProfilePage/ProfilePage.test.tsx",
+            "kind": "file",
+            "bytes": 10283,
+            "executable": false,
+            "sha256": "bedb98c3b985f7fa8b184e490df26e960cc72fff48ee28c080e89cbdd3d6aff0"
+          },
+          {
+            "path": "src/components/Pages/ProfilePage/ProfilePage.tsx",
+            "kind": "file",
+            "bytes": 3619,
+            "executable": false,
+            "sha256": "3f6985eb7f13eab88eca582d8ec1454f9f73d53ac3787ddbe5999905bdf97389"
+          },
+          {
+            "path": "src/components/Pages/Register",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/Pages/Register/Register.slice.ts",
+            "kind": "file",
+            "bytes": 1095,
+            "executable": false,
+            "sha256": "61b3ffbaceeff3b8dd6c0873f1e988c242a5b4890af4d2068cf3cb71308d9d9d"
+          },
+          {
+            "path": "src/components/Pages/Register/Register.test.tsx",
+            "kind": "file",
+            "bytes": 2017,
+            "executable": false,
+            "sha256": "9cffedcc3bf1dc8c92202fb4b5928f6d8ed31b1cb384cf5d9025b192e42f8562"
+          },
+          {
+            "path": "src/components/Pages/Register/Register.tsx",
+            "kind": "file",
+            "bytes": 2177,
+            "executable": false,
+            "sha256": "eac189977a722670ce3795a006e70622ab2bad55835fe40062d45c1a6151d82b"
+          },
+          {
+            "path": "src/components/Pages/Settings",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/Pages/Settings/Settings.slice.ts",
+            "kind": "file",
+            "bytes": 1386,
+            "executable": false,
+            "sha256": "98578ae8089ad3aac1d136067a0e133c50700f4da77b41b560b3547d2a9c38a7"
+          },
+          {
+            "path": "src/components/Pages/Settings/Settings.test.tsx",
+            "kind": "file",
+            "bytes": 4455,
+            "executable": false,
+            "sha256": "a9ffb0ecb4f807d9f5852b7727189fed4a01ddb4823b81fcde77d1a7874d368a"
+          },
+          {
+            "path": "src/components/Pages/Settings/Settings.tsx",
+            "kind": "file",
+            "bytes": 2779,
+            "executable": false,
+            "sha256": "5099dc2005c3065c0383229597bc114df94c5aefdf7e4e50cb01d8508440ce04"
+          },
+          {
+            "path": "src/components/Pagination",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/Pagination/Pagination.test.tsx",
+            "kind": "file",
+            "bytes": 1898,
+            "executable": false,
+            "sha256": "5fc8469f6eb2246cbacc9ad06344fc84c9040a1a1c4f9338cd576d2070f9839a"
+          },
+          {
+            "path": "src/components/Pagination/Pagination.tsx",
+            "kind": "file",
+            "bytes": 808,
+            "executable": false,
+            "sha256": "ba6df02d2bfde5521ef12e4ac6cf58c78d62fdaea67daf7d0c7d8791aa211109"
+          },
+          {
+            "path": "src/components/UserInfo",
+            "kind": "directory"
+          },
+          {
+            "path": "src/components/UserInfo/UserInfo.test.tsx",
+            "kind": "file",
+            "bytes": 1908,
+            "executable": false,
+            "sha256": "3e335dac59ba7692377b3afa2e427e2e7b866b2f4777848be8d7e3a38c63e92e"
+          },
+          {
+            "path": "src/components/UserInfo/UserInfo.tsx",
+            "kind": "file",
+            "bytes": 1887,
+            "executable": false,
+            "sha256": "d9ab7aa1af5705bec692ee3f45519bf2bd14c1ed9fb7e10557ccd6c200c10e63"
+          },
+          {
+            "path": "src/config",
+            "kind": "directory"
+          },
+          {
+            "path": "src/config/settings.ts",
+            "kind": "file",
+            "bytes": 67,
+            "executable": false,
+            "sha256": "485f7e79709aac1af19e097005a74698b107aeac20c4ea86bee8b779d2ccc281"
+          },
+          {
+            "path": "src/index.css",
+            "kind": "file",
+            "bytes": 0,
+            "executable": false,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "path": "src/index.tsx",
+            "kind": "file",
+            "bytes": 160,
+            "executable": false,
+            "sha256": "2e2f79a788c403b71270da8e25c27fdd242a926732888da0b65a7c1fc890baed"
+          },
+          {
+            "path": "src/react-app-env.d.ts",
+            "kind": "file",
+            "bytes": 40,
+            "executable": false,
+            "sha256": "57eda4c4c04a1dca45c62857326882ce9cc948c4b52973c0e3c3b7e4c3fa3990"
+          },
+          {
+            "path": "src/services",
+            "kind": "directory"
+          },
+          {
+            "path": "src/services/conduit.test.tsx",
+            "kind": "file",
+            "bytes": 10949,
+            "executable": false,
+            "sha256": "02a6e8cfb1b190e685e1a88b8fbb622d2b3b2e75c8aa24d4ea6828090f35d656"
+          },
+          {
+            "path": "src/services/conduit.ts",
+            "kind": "file",
+            "bytes": 5384,
+            "executable": false,
+            "sha256": "b3c485fd05162638f495d06f658fa9837c1b67c049f7183b11af447acd5c3af7"
+          },
+          {
+            "path": "src/setupTests.ts",
+            "kind": "file",
+            "bytes": 255,
+            "executable": false,
+            "sha256": "bb69f5288c24cd7f5322768e21408b6d69a25a16b052e005c1f2b4d75370fb80"
+          },
+          {
+            "path": "src/state",
+            "kind": "directory"
+          },
+          {
+            "path": "src/state/store.ts",
+            "kind": "file",
+            "bytes": 1133,
+            "executable": false,
+            "sha256": "8abcbfd16df273c0704ceb3cee50879f7527b9e1cafa2f4bd49c231d50ba94fa"
+          },
+          {
+            "path": "src/state/storeHooks.ts",
+            "kind": "file",
+            "bytes": 544,
+            "executable": false,
+            "sha256": "ba19f3b5982a0edb78ae0dd4732230146b960624c298f037e6e4ff0f5b8787a9"
+          },
+          {
+            "path": "src/types",
+            "kind": "directory"
+          },
+          {
+            "path": "src/types/article.ts",
+            "kind": "file",
+            "bytes": 1190,
+            "executable": false,
+            "sha256": "038a9163066562f2a2f2b12007aa217798a93eb2f27109060b9b2dbe87a41f91"
+          },
+          {
+            "path": "src/types/comment.ts",
+            "kind": "file",
+            "bytes": 401,
+            "executable": false,
+            "sha256": "4b0fe80becac0156658322667841e759aed22b97ac8f95948d2d037395c446d7"
+          },
+          {
+            "path": "src/types/error.ts",
+            "kind": "file",
+            "bytes": 161,
+            "executable": false,
+            "sha256": "dbeb853c301abfd9d8a721251246c99a764d10c9d27be1bf395816e7af099712"
+          },
+          {
+            "path": "src/types/genericFormField.tsx",
+            "kind": "file",
+            "bytes": 409,
+            "executable": false,
+            "sha256": "3c505427ab90439d197447a19bd0338a0087ca898c516c4b81b2cd5529304b65"
+          },
+          {
+            "path": "src/types/location.ts",
+            "kind": "file",
+            "bytes": 74,
+            "executable": false,
+            "sha256": "5204892f3fae9b97c241292118178ba8fd4bdfbce55ff99080c0b098b288612e"
+          },
+          {
+            "path": "src/types/object.ts",
+            "kind": "file",
+            "bytes": 185,
+            "executable": false,
+            "sha256": "bd8c4685ebb6db5785452e1e6517895416aa2ef616966bf196a733e34d61dec0"
+          },
+          {
+            "path": "src/types/profile.ts",
+            "kind": "file",
+            "bytes": 380,
+            "executable": false,
+            "sha256": "08680c9a1bffeb7aceab44c3a43a5f34e4815ed2285aa825aa5afcf718eed45a"
+          },
+          {
+            "path": "src/types/style.ts",
+            "kind": "file",
+            "bytes": 189,
+            "executable": false,
+            "sha256": "e034ff631bd4b5a6167b57b6dcc5ecf1afd42a358efde46f840979ae388dcd95"
+          },
+          {
+            "path": "src/types/user.ts",
+            "kind": "file",
+            "bytes": 915,
+            "executable": false,
+            "sha256": "88896a7868ca0fcb4868946ce4076936087cdac8bca71d7cdb2ec733d3b9e173"
+          },
+          {
+            "path": "tsconfig.json",
+            "kind": "file",
+            "bytes": 535,
+            "executable": false,
+            "sha256": "cb9cee8200f8070c9e36ee74299938966d5a10718171bb671a95829b8a6b06a5"
+          }
+        ]
+      },
+      "expectationStatus": "NOT REVIEWED"
+    }
+  ]
+}
