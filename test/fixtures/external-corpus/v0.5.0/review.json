@@ -1,0 +1,467 @@
+{
+  "reviewVersion": 1,
+  "status": "REVIEWED",
+  "baseline": {
+    "version": "0.4.1",
+    "sourceSha": "99f18d3bf3f24bce9e50fe7f5fe15fa36d9905e1",
+    "archiveSha256": "a5f241de21a61018fd4a3023bc56bb0db9789c2ac5052e369b9ec0229bcd5285",
+    "archiveSri": "sha512-cmFl/tDgcuWSmNwqaRdKsvnMrNSNGEFXHWLVmyEf3CWtbazgIKvRPdBFOAjAgiAkSrsxnroGt3r7WLx6zRjUhw=="
+  },
+  "catalogSha256": {
+    "manifest.json": "5a70ace45f6557080e23be76321ef1c6e89722b589ebcde8754025833bc7b078",
+    "v0.5.0/applications.json": "901306cb2709f83998f0941801522ca034dd2c887db10ff8690b456b81873373"
+  },
+  "method": "Authored from pinned root manifests, retained source, supported literal references, root scripts and configuration boundaries before baseline observation. Historical outcomes are grounded in the prior review and its explicit F1 changes.",
+  "reviewedOn": "2026-11-10",
+  "reviewedBy": ["Codex primary reviewer", "Codex independent_reviewer"],
+  "independentReview": {
+    "method": "A distinct reviewer inspected the pinned manifests, source, scripts, configuration boundaries, historical adjustments and the authored expectations before any corpus scans. The reviewers derived the same findings, process channels and scope facts.",
+    "scope": [
+      "Both application roots",
+      "Historical Preact nested scope",
+      "The two historical F1 adjustments",
+      "All six effective exclusion policies"
+    ],
+    "corrections": [
+      "Conduit browser-entry evidence was corrected to react-dom at src/index.tsx before observation."
+    ],
+    "observationDisagreements": []
+  },
+  "projects": [
+    {
+      "id": "is-number",
+      "snapshotSha256": "542f2210615cd0c317d5c648d5c35556139544699444e4f187246b438ad9b060",
+      "expectedProcess": {
+        "status": 1,
+        "stdout": "completed-report",
+        "stderr": "empty"
+      },
+      "expectedFindings": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["gulp-format-md"],
+        "missingDependencies": []
+      },
+      "expectedExclusions": {
+        "ignorePaths": [],
+        "ignoreDependencies": []
+      },
+      "expectedScopeFacts": {
+        "sourceFilesScanned": 4,
+        "nestedPackageSourceFiles": 0,
+        "notices": []
+      },
+      "historicalAdjustments": [],
+      "dispositions": [
+        {
+          "names": ["gulp-format-md"],
+          "classification": "unsupported-pattern",
+          "location": "package.json#/verb/plugins/0",
+          "rationale": "Verb plugin is explicitly configured; arbitrary Verb configuration is outside the supported detectors. No safe-removal claim."
+        }
+      ],
+      "representativeEvidence": [
+        {
+          "name": "mocha",
+          "status": "used",
+          "kind": "script",
+          "file": "package.json",
+          "pointer": "/scripts/test",
+          "command": "mocha",
+          "via": "direct",
+          "occurrence": 0
+        }
+      ]
+    },
+    {
+      "id": "p-limit",
+      "snapshotSha256": "7cb1188818a9c029f99b4285b363cd370b61dd1a47d29b2fd3bd2fa2854bb8e7",
+      "expectedProcess": {
+        "status": 0,
+        "stdout": "completed-report",
+        "stderr": "empty"
+      },
+      "expectedFindings": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [],
+        "missingDependencies": []
+      },
+      "expectedExclusions": {
+        "ignorePaths": [],
+        "ignoreDependencies": []
+      },
+      "expectedScopeFacts": {
+        "sourceFilesScanned": 6,
+        "nestedPackageSourceFiles": 0,
+        "notices": []
+      },
+      "historicalAdjustments": [],
+      "dispositions": [],
+      "representativeEvidence": [
+        {
+          "name": "yocto-queue",
+          "status": "used",
+          "kind": "source",
+          "file": "index.js",
+          "reference": "import",
+          "specifier": "yocto-queue",
+          "position": {
+            "offset": 18,
+            "line": 1,
+            "column": 19
+          }
+        }
+      ]
+    },
+    {
+      "id": "ts-extras",
+      "snapshotSha256": "59be01455d33bccfcdb93abf99e77f29635776ae5a2a9be359273b432ff9b3a3",
+      "expectedProcess": {
+        "status": 1,
+        "stdout": "completed-report",
+        "stderr": "empty"
+      },
+      "expectedFindings": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["@sindresorhus/tsconfig", "@types/node", "xo"],
+        "missingDependencies": []
+      },
+      "expectedExclusions": {
+        "ignorePaths": [],
+        "ignoreDependencies": []
+      },
+      "expectedScopeFacts": {
+        "sourceFilesScanned": 71,
+        "nestedPackageSourceFiles": 0,
+        "notices": []
+      },
+      "historicalAdjustments": [
+        {
+          "correction": "F1",
+          "name": "tsx"
+        }
+      ],
+      "dispositions": [
+        {
+          "names": ["@sindresorhus/tsconfig"],
+          "classification": "unsupported-pattern",
+          "location": "tsconfig.json:2; test/tsconfig.json:2",
+          "rationale": "Explicit extends string; inherited TypeScript configuration is outside supported configuration hints."
+        },
+        {
+          "names": ["@types/node"],
+          "classification": "unsupported-pattern",
+          "location": "test/tsconfig.json#/compilerOptions/types/0; test/object-map-values.ts:399",
+          "rationale": "Node type list and Buffer usage demonstrate type intent; no blanket builtin-to-ambient-type inference is permitted."
+        },
+        {
+          "names": ["xo"],
+          "classification": "unresolved",
+          "location": "package.json#/xo",
+          "rationale": "Configuration exists but no direct script/import in the retained root proves its activation. Not certified used or safely removable."
+        }
+      ],
+      "representativeEvidence": [
+        {
+          "name": "tsx",
+          "status": "used",
+          "kind": "script",
+          "file": "package.json",
+          "pointer": "/scripts/test",
+          "command": "tsx/esm",
+          "via": "node-preload",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "id": "preact-render-to-string",
+      "snapshotSha256": "42cb8cac588e7f2a0315393c42be041bb3cf8f2ec75376d587545f96ce594823",
+      "expectedProcess": {
+        "status": 1,
+        "stdout": "completed-report",
+        "stderr": "empty"
+      },
+      "expectedFindings": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": [
+          "@babel/plugin-transform-react-jsx",
+          "@babel/preset-env",
+          "@changesets/changelog-github",
+          "@types/node",
+          "husky",
+          "lint-staged",
+          "rollup"
+        ],
+        "missingDependencies": ["@preact/preset-vite", "urql", "vite"]
+      },
+      "expectedExclusions": {
+        "ignorePaths": [],
+        "ignoreDependencies": []
+      },
+      "expectedScopeFacts": {
+        "sourceFilesScanned": 56,
+        "nestedPackageSourceFiles": 5,
+        "notices": ["nested-package-inputs"]
+      },
+      "historicalAdjustments": [
+        {
+          "correction": "F1",
+          "name": "@babel/register"
+        }
+      ],
+      "dispositions": [
+        {
+          "names": ["@babel/plugin-transform-react-jsx"],
+          "classification": "unsupported-pattern",
+          "location": "package.json#/babel/env/test/plugins/0/0",
+          "rationale": "Explicit Babel plugin configuration; arbitrary Babel config is outside supported detectors."
+        },
+        {
+          "names": ["@babel/preset-env"],
+          "classification": "unsupported-pattern",
+          "location": "package.json#/babel/env/test/presets/0/0",
+          "rationale": "Explicit Babel preset configuration; not interpreted as source usage."
+        },
+        {
+          "names": ["@changesets/changelog-github"],
+          "classification": "unsupported-pattern",
+          "location": ".changeset/config.json#/changelog/0",
+          "rationale": "Explicit Changesets changelog configuration, outside existing detector fields."
+        },
+        {
+          "names": ["@preact/preset-vite"],
+          "classification": "project-exception",
+          "location": "demo/vite.config.js:2; demo/package.json#/dependencies/@preact~1preset-vite",
+          "rationale": "Declared in nested demo inventory, absent from selected root. Root-only arithmetic intentionally still reports missing."
+        },
+        {
+          "names": ["@types/node"],
+          "classification": "unsupported-pattern",
+          "location": "tsconfig.json#/compilerOptions/types/0; src/stream-node.d.ts:2",
+          "rationale": "Explicit Node types and declaration builtin import; typeRoots is nontrivial and not resolved. No blanket ambient-type inference."
+        },
+        {
+          "names": ["husky"],
+          "classification": "unsupported-pattern",
+          "location": "package.json#/husky/hooks/pre-commit",
+          "rationale": "Hook configuration intent exists; installation/hook activation is not executed or certified."
+        },
+        {
+          "names": ["lint-staged"],
+          "classification": "unsupported-pattern",
+          "location": "package.json#/husky/hooks/pre-commit; package.json#/lint-staged",
+          "rationale": "Hook command and tool config are outside supported root package scripts/config hints."
+        },
+        {
+          "names": ["rollup"],
+          "classification": "unresolved",
+          "location": "package.json#/devDependencies/rollup",
+          "rationale": "No explicit supported source/script reference found in reviewed scope. A transitive build-tool relationship is not proven usage and is not resolved."
+        },
+        {
+          "names": ["urql"],
+          "classification": "project-exception",
+          "location": "demo/src/App.jsx:3; demo/package.json#/dependencies/urql",
+          "rationale": "Nested demo declaration does not extend the selected root inventory."
+        },
+        {
+          "names": ["vite"],
+          "classification": "project-exception",
+          "location": "demo/vite.config.js:1; demo/package.json#/devDependencies/vite",
+          "rationale": "Nested demo declaration does not extend the selected root inventory."
+        }
+      ],
+      "representativeEvidence": [
+        {
+          "name": "@babel/register",
+          "status": "used",
+          "kind": "script",
+          "file": "package.json",
+          "pointer": "/scripts/bench",
+          "command": "@babel/register",
+          "via": "node-preload",
+          "occurrence": 1
+        },
+        {
+          "name": "vite",
+          "status": "missing",
+          "kind": "source",
+          "file": "demo/vite.config.js",
+          "reference": "import",
+          "specifier": "vite",
+          "position": {
+            "offset": 29,
+            "line": 1,
+            "column": 30
+          }
+        }
+      ]
+    },
+    {
+      "id": "fastify-demo",
+      "snapshotSha256": "40b226a185a12e25ae14204b0ed54f32325af63a69a3d04d6cdf8a26c963a408",
+      "expectedProcess": {
+        "status": 1,
+        "stdout": "completed-report",
+        "stderr": "empty"
+      },
+      "expectedFindings": {
+        "unusedDependencies": [],
+        "unusedDevDependencies": ["@types/node", "fastify-tsconfig", "pino-pretty"],
+        "missingDependencies": []
+      },
+      "expectedExclusions": {
+        "ignorePaths": [],
+        "ignoreDependencies": []
+      },
+      "expectedScopeFacts": {
+        "sourceFilesScanned": 47,
+        "nestedPackageSourceFiles": 0,
+        "notices": []
+      },
+      "dispositions": [
+        {
+          "names": ["@types/node"],
+          "classification": "unsupported-pattern",
+          "location": "src/server.ts",
+          "rationale": "Node process and builtin use are not blanket evidence for ambient Node types."
+        },
+        {
+          "names": ["fastify-tsconfig"],
+          "classification": "unsupported-pattern",
+          "location": "tsconfig.json#/extends",
+          "rationale": "Inherited TypeScript configuration is not interpreted."
+        },
+        {
+          "names": ["pino-pretty"],
+          "classification": "unsupported-pattern",
+          "location": "src/server.ts",
+          "rationale": "Logger transport target is a configuration string."
+        }
+      ],
+      "representativeEvidence": [
+        {
+          "name": "fastify",
+          "status": "used",
+          "kind": "source",
+          "file": "src/server.ts",
+          "specifier": "fastify"
+        },
+        {
+          "name": "typescript",
+          "status": "used",
+          "kind": "script",
+          "file": "package.json",
+          "pointer": "/scripts/build",
+          "command": "tsc"
+        },
+        {
+          "name": "neostandard",
+          "status": "used",
+          "kind": "source",
+          "file": "eslint.config.js",
+          "specifier": "neostandard"
+        }
+      ]
+    },
+    {
+      "id": "conduit-react-redux",
+      "snapshotSha256": "29dfe3f57debad2e6ebe3d8d4fd16d86b2c0dad892e3497a8dfd87c47cbc48ac",
+      "expectedProcess": {
+        "status": 1,
+        "stdout": "completed-report",
+        "stderr": "empty"
+      },
+      "expectedFindings": {
+        "unusedDependencies": [
+          "@testing-library/user-event",
+          "@types/axios",
+          "@types/date-fns",
+          "@types/jest",
+          "@types/node",
+          "@types/ramda",
+          "@types/react",
+          "@types/react-dom",
+          "@types/react-redux",
+          "@types/react-router-dom",
+          "react-redux",
+          "typescript"
+        ],
+        "unusedDevDependencies": [
+          "@typescript-eslint/eslint-plugin",
+          "@typescript-eslint/parser",
+          "pre-commit"
+        ],
+        "missingDependencies": []
+      },
+      "expectedExclusions": {
+        "ignorePaths": [],
+        "ignoreDependencies": []
+      },
+      "expectedScopeFacts": {
+        "sourceFilesScanned": 63,
+        "nestedPackageSourceFiles": 0,
+        "notices": []
+      },
+      "dispositions": [
+        {
+          "names": [
+            "@types/axios",
+            "@types/date-fns",
+            "@types/jest",
+            "@types/node",
+            "@types/ramda",
+            "@types/react",
+            "@types/react-dom",
+            "@types/react-redux",
+            "@types/react-router-dom"
+          ],
+          "classification": "unsupported-pattern",
+          "location": "package.json#/dependencies; tsconfig.json",
+          "rationale": "The analyzer does not infer use of ambient types or companion type declarations. Project necessity of individual declarations has not been established."
+        },
+        {
+          "names": ["typescript"],
+          "classification": "unsupported-pattern",
+          "location": "package.json#/scripts/build; tsconfig.json",
+          "rationale": "The React Scripts wrapper and TypeScript project setup do not credit TypeScript without a supported reference."
+        },
+        {
+          "names": ["@typescript-eslint/eslint-plugin", "@typescript-eslint/parser"],
+          "classification": "unsupported-pattern",
+          "location": ".eslintrc.js",
+          "rationale": "Executable ESLint config strings are outside the legacy hints."
+        },
+        {
+          "names": ["pre-commit"],
+          "classification": "unsupported-pattern",
+          "location": "package.json#/pre-commit",
+          "rationale": "Hook integration is outside root scripts and supported config hints."
+        },
+        {
+          "names": ["@testing-library/user-event", "react-redux"],
+          "classification": "unresolved",
+          "location": "package.json#/dependencies; src/",
+          "rationale": "No supported references or configured use found. Runtime necessity and safe removal were not established."
+        }
+      ],
+      "representativeEvidence": [
+        {
+          "name": "react-dom",
+          "status": "used",
+          "kind": "source",
+          "file": "src/index.tsx",
+          "specifier": "react-dom"
+        },
+        {
+          "name": "react-scripts",
+          "status": "used",
+          "kind": "script",
+          "file": "package.json",
+          "pointer": "/scripts/build",
+          "command": "react-scripts"
+        }
+      ]
+    }
+  ]
+}
