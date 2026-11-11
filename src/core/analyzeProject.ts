@@ -101,6 +101,15 @@ export type AnalysisFindings = Pick<
   'unusedDependencies' | 'unusedDevDependencies' | 'missingDependencies'
 >;
 
+/** Scope observations from a completed scan, independent of findings and exclusion policy. */
+export type ScanDiagnostics = {
+  readonly sourceFilesScanned: number;
+  readonly nestedPackageSourceFiles: number;
+  readonly notices: readonly (
+    'no-supported-sources' | 'nested-package-inputs' | 'workspace-declared'
+  )[];
+};
+
 /** Complete internal scan facts. Presentation projects explicit fields instead of serializing this object. */
 export type DetailedAnalysisResult = {
   readonly projectRoot: string;
@@ -109,6 +118,7 @@ export type DetailedAnalysisResult = {
   readonly underlyingFindings: AnalysisFindings;
   readonly findings: AnalysisFindings;
   readonly packages: readonly PackageFact[];
+  readonly diagnostics?: ScanDiagnostics;
 };
 
 /**
@@ -212,6 +222,7 @@ export async function analyzeProjectWithContext(context: ScanContext): Promise<A
 /** Detailed analysis accepts eligible typed facts only, never the legacy names-only hint seam. */
 export async function analyzeProjectDetailed(
   context: ScanContext,
+  options: { readonly diagnostics?: boolean } = {},
 ): Promise<DetailedAnalysisResult> {
   const { manifest, config } = context;
   const usage = await collectUsage(manifest, config.ignorePaths, context.configEvidence);
@@ -225,6 +236,30 @@ export async function analyzeProjectDetailed(
     underlyingFindings,
     findings,
     packages: packageFacts(manifest, usage.evidence, ignored, underlyingFindings, findings),
+    ...(options.diagnostics
+      ? { diagnostics: scanDiagnostics(usage, context.rawManifest['workspaces']) }
+      : {}),
+  };
+}
+
+/** Optional workspace metadata is descriptive and never expands the scan inventory. */
+function scanDiagnostics(usage: CollectedUsage, workspaces: unknown): ScanDiagnostics {
+  const patterns: unknown =
+    typeof workspaces === 'object' && workspaces !== null && !Array.isArray(workspaces)
+      ? (workspaces as Record<string, unknown>)['packages']
+      : workspaces;
+  const workspaceDeclared =
+    Array.isArray(patterns) &&
+    patterns.length > 0 &&
+    patterns.every((pattern: unknown) => typeof pattern === 'string' && pattern.trim().length > 0);
+  const notices: ScanDiagnostics['notices'][number][] = [];
+  if (usage.sourceFilesScanned === 0) notices.push('no-supported-sources');
+  if (usage.nestedPackageSourceFiles > 0) notices.push('nested-package-inputs');
+  if (workspaceDeclared) notices.push('workspace-declared');
+  return {
+    sourceFilesScanned: usage.sourceFilesScanned,
+    nestedPackageSourceFiles: usage.nestedPackageSourceFiles,
+    notices,
   };
 }
 
@@ -288,7 +323,11 @@ export function projectPackageExplanation(
   };
 }
 
+type OwnedPackageScope = PackageScopeMetadata & { readonly nested: boolean };
+
 type CollectedUsage = {
+  readonly sourceFilesScanned: number;
+  readonly nestedPackageSourceFiles: number;
   readonly sourceUsedNames: ReadonlySet<string>;
   readonly usedNames: ReadonlySet<string>;
   readonly evidence: ReadonlyMap<string, readonly Evidence[]>;
@@ -312,13 +351,18 @@ async function collectUsage(
   // External package roots referenced by source files, collapsed to their package root.
   const sourceUsedNames = new Set<string>();
   // Seed the selected root so scope lookup never consults a parent outside the scan.
-  const scopeByDirectory = new Map<string, PackageScopeMetadata>([
-    [manifest.root, { packageType: manifest.packageType, selfReference: manifest.selfReference }],
+  const scopeByDirectory = new Map<string, OwnedPackageScope>([
+    [
+      manifest.root,
+      { packageType: manifest.packageType, selfReference: manifest.selfReference, nested: false },
+    ],
   ]);
 
+  let nestedPackageSourceFiles = 0;
   for (const file of sourceFiles) {
     const scope = await packageScopeForDirectory(dirname(file), scopeByDirectory);
     const occurrences = await readAndExtract(file, scope.packageType);
+    if (scope.nested) nestedPackageSourceFiles += 1;
     const relativeFile = evidencePath(manifest.root, file);
 
     for (const occurrence of occurrences) {
@@ -354,7 +398,13 @@ async function collectUsage(
     if (manifest.declaredDependencyNames.has(fact.packageName))
       add(fact.packageName, fact.evidence);
   }
-  return { sourceUsedNames, usedNames: new Set(evidence.keys()), evidence };
+  return {
+    sourceUsedNames,
+    usedNames: new Set(evidence.keys()),
+    evidence,
+    sourceFilesScanned: sourceFiles.length,
+    nestedPackageSourceFiles,
+  };
 }
 
 /** Existing formulas, evaluated against full inventory before dependency exclusions. */
@@ -446,13 +496,16 @@ function packageFacts(
  */
 async function packageScopeForDirectory(
   directory: string,
-  cache: Map<string, PackageScopeMetadata>,
-): Promise<PackageScopeMetadata> {
+  cache: Map<string, OwnedPackageScope>,
+): Promise<OwnedPackageScope> {
   const cached = cache.get(directory);
   if (cached !== undefined) return cached;
 
   const ownScope = await loadPackageScope(directory);
-  const scope = ownScope ?? (await packageScopeForDirectory(dirname(directory), cache));
+  const scope =
+    ownScope === undefined
+      ? await packageScopeForDirectory(dirname(directory), cache)
+      : { ...ownScope, nested: true };
   cache.set(directory, scope);
   return scope;
 }
