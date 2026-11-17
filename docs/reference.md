@@ -84,6 +84,42 @@ The file must contain a strict JSON object with only these optional string-array
 
 A leading UTF-8 BOM is accepted; comments/JSON5 are not. Unknown keys, wrong types and invalid entries reject the whole configuration; there is no coercion, trimming or partial application. Duplicate normalized entries are removed deterministically. A present file must be a readable, non-symlink regular file. Invalid JSON, invalid rules, unreadable files, symlinks (including dangling ones), directories and other non-regular entries fail with exit 1, empty stdout and a path-identifying stderr diagnostic; field/index information is included for invalid rules. Failed scans do not access the notifier cache or network.
 
+### Editor validation
+
+The editor schema ships with v0.5.0. Before release, use a local build containing
+`schemas/depvitals-config.schema.json` installed in your workspace.
+
+In VS Code, add this mapping to `.vscode/settings.json` in the workspace root. Merge the entry
+into any existing `json.schemas` array.
+
+```json
+{
+  "json.schemas": [
+    {
+      "fileMatch": ["/depvitals.config.json"],
+      "url": "./node_modules/depvitals/schemas/depvitals-config.schema.json"
+    }
+  ]
+}
+```
+
+The URL resolves relative to the workspace root. The mapping selects the root
+`depvitals.config.json`. Keep its contents in normal JSON mode with the two supported keys.
+
+```json
+{
+  "ignorePaths": ["test/generated", "./sample data//inputs/"],
+  "ignoreDependencies": ["Foo", "@scope/_demo", "@scope/-demo"]
+}
+```
+
+The configuration reader rejects `$schema` as an unknown configuration key. Editor association
+belongs in the workspace settings shown above. Both exclusion arrays accept duplicates, which
+the CLI normalizes. The editor schema checks nonblank path strings and exact package names.
+The CLI additionally enforces portable literal paths and normalization, including rejection of
+`../outside`, `src/*.js` and `./.`. VS Code supports workspace settings and relative schema
+URLs. [VS Code JSON schema settings](https://code.visualstudio.com/docs/languages/json#_json-schemas-and-settings)
+
 ### Source path exclusions
 
 Paths are literal and relative to the selected project root. Matching is case-sensitive on every platform: use the discovered casing. A rule matches an exact normalized path or its subtree at a full segment boundary: `src/gen` does not match `src/generator`. Nonexistent valid rules have no effect. Fixed discovery exclusions remain active.
