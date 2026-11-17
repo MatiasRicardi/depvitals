@@ -442,3 +442,41 @@ describe('meta and argument errors bypass scan/config/detector/notifier I/O', ()
     },
   );
 });
+
+describe('diagnostics uses one complete CLI scan', () => {
+  it.each(['terminal', 'json'])('collects all channels once in %s mode', async (format) => {
+    await project({ 'index.cjs': "require('both'); require('missing');" }, async (root) => {
+      clear();
+      const outcome = await runCli([root, '--diagnostics', '--format', format], {
+        cwd: root,
+        version: '0.4.1',
+      });
+      expect(outcome.exitCode).toBe(1);
+      expect(outcome.stderr).toBe('');
+      expect(outcome.stdout).toContain(format === 'json' ? '"diagnostics"' : 'Scan diagnostics');
+      expect(reads().filter((path) => path === join(root, 'package.json'))).toHaveLength(1);
+      expect(reads().filter((path) => path === join(root, 'index.cjs'))).toHaveLength(1);
+      expect(collectModuleSpecifiers).toHaveBeenCalledOnce();
+      expect(collectPackageScriptUsage).toHaveBeenCalledOnce();
+    });
+  });
+
+  it('rejects diagnostics/query combinations before reading invalid project inputs', async () => {
+    await project({ 'package.json': '{ invalid' }, async (root) => {
+      clear();
+      const outcome = await runCli(['--diagnostics', root, '--explain', 'dep'], {
+        cwd: root,
+        version: '0.4.1',
+      });
+      expect(outcome).toEqual({
+        exitCode: 1,
+        stdout: '',
+        stderr:
+          "Option --diagnostics cannot be combined with --explain.\nRun 'depvitals --help' for available commands.\n",
+      });
+      expect(reads()).toEqual([]);
+      expect(collectModuleSpecifiers).not.toHaveBeenCalled();
+      expect(collectPackageScriptUsage).not.toHaveBeenCalled();
+    });
+  });
+});

@@ -62,7 +62,7 @@ const PWD = process.cwd();
  */
 const BUILT_ENTRY = join(REPO_ROOT, 'dist', 'cli', 'index.js');
 
-/** The Step 19 help text, reproduced verbatim from `src/cli/runCli.ts`. */
+/** Expected help text with the accepted diagnostics usage and option. */
 const HELP =
   [
     'DepVitals',
@@ -70,7 +70,7 @@ const HELP =
     'A simple, lightweight dependency health checker for Node.js projects.',
     '',
     'Usage:',
-    '  depvitals [project] [--format terminal|json] [--explain <package>]',
+    '  depvitals [project] [--format terminal|json] [--explain <package>] [--diagnostics]',
     '',
     'Arguments:',
     '  project          Project directory to analyze (default: current directory)',
@@ -78,6 +78,7 @@ const HELP =
     'Options:',
     '  --format <format>    Output format: terminal or json (default: terminal)',
     '  --explain <package>  Explain one exact package root (default: full scan)',
+    '  --diagnostics        Include scan scope diagnostics (full scans only)',
     '  -h, --help       Show help',
     '  -v, --version    Show version',
   ].join('\n') + '\n';
