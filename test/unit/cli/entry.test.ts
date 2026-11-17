@@ -478,3 +478,37 @@ describe('the process adapter', () => {
     expect(ENTRY_SOURCE.includes('process.exit(')).toBe(false);
   });
 });
+
+describe('diagnostic scans bypass the entry collector', () => {
+  it.each([
+    ['clean', []],
+    ['clean', ['--format', 'terminal']],
+    ['clean', ['--format', 'json']],
+    ['basic', []],
+    ['basic', ['--format', 'json']],
+  ] as const)(
+    'bypasses a positive collector for %s/%j with both streams TTY',
+    async (name, args) => {
+      const streams = makeStreams();
+      const notice = makeNotice(NOTICE);
+      const argv = [join(ANALYSIS_FIXTURES, name), ...args, '--diagnostics'];
+      const expected = await baseline(argv);
+      const outcome = await run(argv, { streams, env: {}, updateNotice: notice.updateNotice });
+      expect(outcome.exitCode).toBe(expected.exitCode);
+      expect(textOf(outcome.writes, 'stdout')).toBe(expected.stdout);
+      expect(textOf(outcome.writes, 'stderr')).toBe('');
+      expect(notice.requests).toEqual([]);
+    },
+  );
+
+  it('keeps the ordinary positive control after stdout', async () => {
+    const streams = makeStreams();
+    const updateNotice = vi.fn(() => {
+      expect(streams.writes).toEqual([{ stream: 'stdout', text: CLEAN_REPORT }]);
+      return Promise.resolve(NOTICE);
+    });
+    await run([join(ANALYSIS_FIXTURES, 'clean')], { streams, env: {}, updateNotice });
+    expect(updateNotice).toHaveBeenCalledOnce();
+    expect(textOf(streams.writes, 'stderr')).toBe(NOTICE);
+  });
+});

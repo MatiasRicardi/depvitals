@@ -64,7 +64,7 @@ const HELP_MESSAGE = [
   'A simple, lightweight dependency health checker for Node.js projects.',
   '',
   'Usage:',
-  '  depvitals [project] [--format terminal|json] [--explain <package>]',
+  '  depvitals [project] [--format terminal|json] [--explain <package>] [--diagnostics]',
   '',
   'Arguments:',
   '  project          Project directory to analyze (default: current directory)',
@@ -72,6 +72,7 @@ const HELP_MESSAGE = [
   'Options:',
   '  --format <format>    Output format: terminal or json (default: terminal)',
   '  --explain <package>  Explain one exact package root (default: full scan)',
+  '  --diagnostics        Include scan scope diagnostics (full scans only)',
   '  -h, --help       Show help',
   '  -v, --version    Show version',
 ].join('\n');
@@ -112,7 +113,9 @@ async function runScan(
   const projectPath = command.projectPath;
   try {
     const context = await createScanContext(projectPath);
-    const detailed = await analyzeProjectDetailed(context);
+    const detailed = await analyzeProjectDetailed(context, {
+      diagnostics: command.diagnostics === true,
+    });
     if (command.explain !== undefined) {
       const result = projectPackageExplanation(detailed, command.explain);
       return {
@@ -129,8 +132,17 @@ async function runScan(
       exitCode: hasDependencyIssues(result) ? 1 : 0,
       stdout:
         command.format === 'json'
-          ? formatJsonReport({ mode: 'scan', result: detailed }, version)
-          : formatTerminalReport(result),
+          ? formatJsonReport(
+              {
+                mode: 'scan',
+                result: detailed,
+                ...(detailed.diagnostics === undefined
+                  ? {}
+                  : { diagnostics: detailed.diagnostics }),
+              },
+              version,
+            )
+          : formatTerminalReport(result, detailed.diagnostics),
       stderr: '',
     };
   } catch (error) {

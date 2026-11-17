@@ -125,6 +125,12 @@ beforeAll(async () => {
   broken = join(scratch, 'broken');
   invalid = join(scratch, 'invalid');
   for (const dir of [root, broken, invalid]) await mkdir(dir);
+  for (const name of ['diagnostics', '--diagnostics', 'true']) {
+    await mkdir(join(scratch, name));
+    await writeFile(join(scratch, name, 'package.json'), '{}');
+  }
+  await mkdir(join(scratch, 'invalid-manifest'));
+  await writeFile(join(scratch, 'invalid-manifest', 'package.json'), '{ invalid');
   for (const [name, text] of Object.entries(inputs)) await writeFile(join(root, name), text);
   await writeFile(join(broken, 'package.json'), inputs['package.json']);
   await writeFile(join(broken, 'a.cjs'), "require('used');");
@@ -144,9 +150,10 @@ afterAll(async () => {
 function child(
   args: readonly string[],
   extraEnv: Readonly<Record<string, string>> = {},
+  workingDirectory = scratch,
 ): { status: number | null; stdout: string; stderr: string } {
   const result = spawnSync(process.execPath, [cli, ...args], {
-    cwd: scratch,
+    cwd: workingDirectory,
     encoding: 'utf8',
     timeout: 10000,
     env: { ...process.env, DEPVITALS_NO_UPDATE_CHECK: '1', ...extraEnv },
@@ -340,5 +347,138 @@ describe('entry suppresses the notifier before collaborator invocation', () => {
     }
     expect(existsSync(marker)).toBe(false);
     expect(existsSync(cache)).toBe(false);
+  });
+});
+
+describe('diagnostics argument grammar', () => {
+  it.each([
+    [['--diagnostics'], cwd, undefined],
+    [['project', '--diagnostics'], resolve(cwd, 'project'), undefined],
+    [['--diagnostics', 'project', '--format', 'json'], resolve(cwd, 'project'), 'json'],
+    [['--format', 'json', 'project', '--diagnostics'], resolve(cwd, 'project'), 'json'],
+    [['--diagnostics', '--format', 'terminal'], cwd, 'terminal'],
+    [['--diagnostics', 'true'], resolve(cwd, 'true'), undefined],
+  ] as const)('accepts %j', (args, projectPath, format) => {
+    expect(parseCliArgs(args, cwd)).toEqual({
+      kind: 'scan',
+      projectPath,
+      ...(format === undefined ? {} : { format }),
+      diagnostics: true,
+    });
+  });
+
+  it.each(['diagnostics', './--diagnostics'])('preserves literal path %s', (path) => {
+    expect(parseCliArgs([path], cwd)).toEqual({ kind: 'scan', projectPath: resolve(cwd, path) });
+  });
+
+  it.each([
+    [['--diagnostics', '--diagnostics'], 'Option --diagnostics may be specified only once.'],
+    [
+      ['--diagnostics', '--explain', 'dep'],
+      'Option --diagnostics cannot be combined with --explain.',
+    ],
+    [
+      ['--explain', 'dep', '--diagnostics'],
+      'Option --diagnostics cannot be combined with --explain.',
+    ],
+    [['--help', '--diagnostics'], 'Option --help must be used alone.'],
+    [['--diagnostics', '--version'], 'Option --version must be used alone.'],
+    [['--diagnostics', '--format', '--diagnostics'], 'Option --format requires a value.'],
+    [['--explain', '--diagnostics'], 'Option --explain requires a value.'],
+    [
+      ['--diagnostics', '--diagnostics', '--explain', 'dep'],
+      'Option --diagnostics may be specified only once.',
+    ],
+    [
+      ['--diagnostics', '--explain', 'dep', 'one', 'two'],
+      'Too many arguments: expected at most one project path.',
+    ],
+    [
+      ['--diagnostics', '--explain', 'dep', ''],
+      'Invalid project path: project path must not be empty.',
+    ],
+    [
+      ['--diagnostics', '--explain', 'dep/sub'],
+      'Invalid value for --explain: expected an exact package root (name or @scope/name), at most 214 characters.',
+    ],
+    ...['--diagnostics=true', '--diagnostics=', '--no-diagnostics', '-d', '--Diagnostics'].map(
+      (arg) => [[arg], 'Unknown option: ' + arg] as const,
+    ),
+  ] as const)('rejects %j before project access', async (args, message) => {
+    expect(parseCliArgs(args, cwd)).toEqual({ kind: 'error', message: message + '\n' + hint });
+    expect(await runCli(args, { cwd: join(scratch, 'invalid-manifest'), version })).toEqual({
+      exitCode: 1,
+      stdout: '',
+      stderr: message + '\n' + hint + '\n',
+    });
+  });
+});
+
+describe('compiled diagnostic scans', () => {
+  it.each([
+    ['--diagnostics', 'why'],
+    ['why', '--diagnostics'],
+    ['--format', 'terminal', 'why', '--diagnostics'],
+  ])('adds exact terminal diagnostics for %j', (...args) => {
+    const ordinary = child(['why']);
+    expect(child(args)).toEqual({
+      ...ordinary,
+      stdout:
+        ordinary.stdout +
+        '\nScan diagnostics\n  Source files scanned: 1\n  Nested-package source files: 0\n',
+    });
+  });
+
+  it.each([
+    ['--diagnostics', 'why', '--format', 'json'],
+    ['--format', 'json', 'why', '--diagnostics'],
+  ])('preserves ordinary JSON fields for %j', (...args) => {
+    const ordinary = child(['why', '--format', 'json']);
+    const observed = child(args);
+    const report = JSON.parse(observed.stdout) as JsonReport;
+    const { diagnostics, ...rest } = report;
+    expect(observed.status).toBe(ordinary.status);
+    expect(observed.stderr).toBe('');
+    expect(JSON.stringify(rest, null, 2) + '\n').toBe(ordinary.stdout);
+    expect(diagnostics).toEqual({
+      sourceFilesScanned: 1,
+      nestedPackageSourceFiles: 0,
+      notices: [],
+    });
+    expect(Object.keys(report).slice(-1)).toEqual(['diagnostics']);
+  });
+
+  it('reports zero sources cleanly with an implicit cwd or a literal path', () => {
+    const cleanRoot = join(scratch, 'diagnostics');
+    const diagnostic = child(['--diagnostics'], {}, cleanRoot);
+    expect(diagnostic).toEqual({
+      status: 0,
+      stdout:
+        'DepVitals\n\nNo dependency issues found.\n\nScan diagnostics\n  Source files scanned: 0\n  Nested-package source files: 0\n  No supported source files were scanned.\n',
+      stderr: '',
+    });
+    expect(child(['diagnostics']).stdout).toBe('DepVitals\n\nNo dependency issues found.\n');
+    expect(child(['./--diagnostics'])).toEqual(child(['diagnostics']));
+    expect(child(['--diagnostics', 'true'])).toEqual(diagnostic);
+  });
+
+  it.each(['invalid-manifest', 'invalid', 'broken'])('returns no partial report for %s', (path) => {
+    const ordinary = child([path]);
+    expect(ordinary.status).toBe(1);
+    expect(ordinary.stdout).toBe('');
+    expect(ordinary.stderr).not.toBe('');
+    expect(child([path, '--diagnostics'])).toEqual(ordinary);
+    expect(child([path, '--format', 'json', '--diagnostics'])).toEqual(ordinary);
+  });
+
+  it('lists the accepted diagnostics usage and option text', () => {
+    const help = child(['--help']);
+    expect(help.status).toBe(0);
+    expect(help.stdout).toContain(
+      '  depvitals [project] [--format terminal|json] [--explain <package>] [--diagnostics]\n',
+    );
+    expect(help.stdout).toContain(
+      '  --diagnostics        Include scan scope diagnostics (full scans only)\n',
+    );
   });
 });

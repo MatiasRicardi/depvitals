@@ -24,7 +24,13 @@ import { escapeControlCharacters } from '../reporters/terminalReporter.js';
 export type ParsedCommand =
   | { kind: 'help' }
   | { kind: 'version' }
-  | { kind: 'scan'; projectPath: string; format?: 'terminal' | 'json'; explain?: string }
+  | {
+      kind: 'scan';
+      projectPath: string;
+      format?: 'terminal' | 'json';
+      explain?: string;
+      diagnostics?: true;
+    }
   | { kind: 'error'; message: string };
 
 /** Help/version flags that must be used alone. */
@@ -57,6 +63,7 @@ export function parseCliArgs(args: readonly string[], cwd: string): ParsedComman
 
   let format: 'terminal' | 'json' | undefined;
   let explain: string | undefined;
+  let diagnostics = false;
   const paths: string[] = [];
   const error = (body: string): ParsedCommand => ({ kind: 'error', message: body + '\n' + HINT });
   for (let index = 0; index < args.length; index += 1) {
@@ -85,16 +92,22 @@ export function parseCliArgs(args: readonly string[], cwd: string): ParsedComman
         explain = value;
       }
       index += 1;
+    } else if (arg === '--diagnostics') {
+      if (diagnostics) return error('Option --diagnostics may be specified only once.');
+      diagnostics = true;
     } else if (arg.startsWith('-')) return { kind: 'error', message: unknownOptionMessage(arg) };
     else paths.push(arg);
   }
   if (paths.length > 1) return { kind: 'error', message: TOO_MANY_ARGUMENTS };
   if (paths[0] === '') return { kind: 'error', message: INVALID_EMPTY_PROJECT_PATH };
+  if (diagnostics && explain !== undefined)
+    return error('Option --diagnostics cannot be combined with --explain.');
   return {
     kind: 'scan',
     projectPath: paths[0] === undefined ? cwd : resolve(cwd, paths[0]),
     ...(format === undefined ? {} : { format }),
     ...(explain === undefined ? {} : { explain }),
+    ...(diagnostics ? { diagnostics: true } : {}),
   };
 }
 

@@ -104,6 +104,7 @@ async function collectNotice(
   if (
     command.kind !== 'scan' ||
     command.format === 'json' ||
+    command.diagnostics === true ||
     command.explain !== undefined ||
     result.stdout.length === 0 ||
     result.stderr.length > 0
