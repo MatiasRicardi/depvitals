@@ -469,3 +469,71 @@ describe('JSON report v1', () => {
     }
   });
 });
+
+describe('explicit JSON scan diagnostics projection', () => {
+  it('matches the independent example and appends a fresh bounded projection', async () => {
+    await project({ workspaces: ['packages/*'] }, {}, (root, base) => {
+      const diagnostics = {
+        sourceFilesScanned: 0,
+        nestedPackageSourceFiles: 0,
+        notices: ['no-supported-sources', 'workspace-declared'] as const,
+        rawManifest: { private: 'excluded from projection' },
+      };
+      const result = { ...base, diagnostics };
+      freezeDeep(result);
+      const input = { mode: 'scan' as const, result, diagnostics };
+      const before = structuredClone(input);
+      const document = createJsonReport(input, version);
+      expect(document).toEqual(example('scan-diagnostics', root));
+      expect(formatJsonReport(input, version)).toBe(JSON.stringify(document, null, 2) + '\n');
+      expect(Object.keys(document).slice(-2)).toEqual(['query', 'diagnostics']);
+      expect(Object.keys(document.diagnostics ?? {})).toEqual([
+        'sourceFilesScanned',
+        'nestedPackageSourceFiles',
+        'notices',
+      ]);
+      expect(document.diagnostics).not.toBe(diagnostics);
+      expect(document.diagnostics?.notices).not.toBe(diagnostics.notices);
+      expect(input).toEqual(before);
+      expect(formatJsonReport({ mode: 'scan', result }, version)).toBe(
+        formatJsonReport({ mode: 'scan', result: base }, version),
+      );
+      const explanation = projectPackageExplanation(result, 'absent');
+      expect(
+        createJsonReport({ mode: 'explain', result: explanation }, version),
+      ).not.toHaveProperty('diagnostics');
+    });
+  });
+
+  it('preserves findings, evidence and key values when explicitly adding nested scope', async () => {
+    await project(issueManifest, issueFiles, (_root, result) => {
+      const diagnostics = {
+        sourceFilesScanned: 3,
+        nestedPackageSourceFiles: 2,
+        notices: ['nested-package-inputs'] as const,
+      };
+      const ordinary = createJsonReport({ mode: 'scan', result }, version);
+      const document = createJsonReport({ mode: 'scan', result, diagnostics }, version);
+      const { diagnostics: projection, ...existing } = document;
+      expect(existing).toEqual(ordinary);
+      expect(projection).toEqual(diagnostics);
+    });
+  });
+});
+
+describe('existing scoped query output', () => {
+  it.each(['@scope/_demo', '@scope/-demo'])(
+    'projects the missing explanation for %s',
+    async (name) => {
+      await project({}, { 'index.mjs': `import '${name}';` }, (_root, result) => {
+        const document = createJsonReport(
+          { mode: 'explain', result: projectPackageExplanation(result, name) },
+          version,
+        );
+        expect(document.query).toEqual({ packageName: name, known: true });
+        expect(document.findings.missingDependencies).toEqual([name]);
+        expect(document.packages[0]?.status).toBe('missing');
+      });
+    },
+  );
+});

@@ -59,6 +59,7 @@ const SCHEMA_FILES = [
   ...[
     'scan-clean',
     'scan-findings',
+    'scan-diagnostics',
     'explain-missing',
     'explain-excluded',
     'explain-unknown',

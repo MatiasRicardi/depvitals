@@ -77,6 +77,11 @@ type Report = {
   counts: Record<Category, number>;
   packages: Package[];
   query: { packageName: string; known: boolean } | null;
+  diagnostics?: {
+    sourceFilesScanned: number;
+    nestedPackageSourceFiles: number;
+    notices: string[];
+  };
 };
 
 const schemaDir = new URL('../schemas/', import.meta.url);
@@ -165,6 +170,17 @@ function checkSemantics(report: Report): void {
     posix.isAbsolute(report.project.root) || win32.isAbsolute(report.project.root),
     'absolute root',
   );
+  if (report.diagnostics !== undefined) {
+    const { sourceFilesScanned, nestedPackageSourceFiles, notices } = report.diagnostics;
+    ok(nestedPackageSourceFiles <= sourceFilesScanned, 'nested count bounds');
+    ordered(
+      notices,
+      ['no-supported-sources', 'nested-package-inputs', 'workspace-declared'],
+      'scope notice order',
+    );
+    equal(notices.includes('no-supported-sources'), sourceFilesScanned === 0, 'zero-source notice');
+    equal(notices.includes('nested-package-inputs'), nestedPackageSourceFiles > 0, 'nested notice');
+  }
   for (const key of [
     'sourceExtensions',
     'excludedDirectories',
@@ -330,7 +346,7 @@ function assertCompiled(root: string, expected: Report, exit: number, query?: st
 }
 
 describe('public Draft 7 schema and compiled producer', () => {
-  it('identifies the published schema and its six target-release examples', () => {
+  it('identifies the published schema and its target-release examples', () => {
     expect(schema.$schema).toBe('http://json-schema.org/draft-07/schema#');
     expect(schema.properties.schemaVersion.const).toBe(1);
     expect(ajv.validateSchema(schema)).toBe(true);
@@ -338,7 +354,7 @@ describe('public Draft 7 schema and compiled producer', () => {
       readdirSync(examplesDir)
         .filter((file) => file.endsWith('.json'))
         .sort(),
-    ).toEqual(examples.map(({ name }) => name + '.json').sort());
+    ).toEqual([...examples.map(({ name }) => name + '.json'), 'scan-diagnostics.json'].sort());
   });
 
   it.each(examples)(
@@ -734,5 +750,118 @@ describe('semantic rejections beyond the wire schema', () => {
     expect(() => {
       checkSemantics(report);
     }).toThrow(reason);
+  });
+});
+
+describe('diagnostic report schema and scoped query parity', () => {
+  it('validates the independently authored diagnostics example and semantic invariants', () => {
+    const report = example('scan-diagnostics');
+    checkSemantics(report);
+    expect(report.tool.version).toBe('0.5.0');
+    expect(report.diagnostics).toEqual({
+      sourceFilesScanned: 0,
+      nestedPackageSourceFiles: 0,
+      notices: ['no-supported-sources', 'workspace-declared'],
+    });
+  });
+
+  it.each([
+    {},
+    { sourceFilesScanned: 0, nestedPackageSourceFiles: 0 },
+    { sourceFilesScanned: 0, notices: [] },
+    { nestedPackageSourceFiles: 0, notices: [] },
+    { sourceFilesScanned: -1, nestedPackageSourceFiles: 0, notices: [] },
+    { sourceFilesScanned: 1.5, nestedPackageSourceFiles: 0, notices: [] },
+    { sourceFilesScanned: Number.MAX_SAFE_INTEGER + 1, nestedPackageSourceFiles: 0, notices: [] },
+    { sourceFilesScanned: 1, nestedPackageSourceFiles: -1, notices: [] },
+    { sourceFilesScanned: 1, nestedPackageSourceFiles: 0.5, notices: [] },
+    { sourceFilesScanned: 1, nestedPackageSourceFiles: Number.MAX_SAFE_INTEGER + 1, notices: [] },
+    { sourceFilesScanned: 0, nestedPackageSourceFiles: 0, notices: ['unknown'] },
+    {
+      sourceFilesScanned: 0,
+      nestedPackageSourceFiles: 0,
+      notices: ['no-supported-sources', 'no-supported-sources'],
+    },
+  ])('rejects malformed diagnostics %j', (diagnostics) => {
+    expect(validate({ ...example('scan-clean'), diagnostics })).toBe(false);
+  });
+
+  it('permits safe integer maxima and future optional diagnostics fields', () => {
+    const report = {
+      ...example('scan-clean'),
+      diagnostics: {
+        sourceFilesScanned: Number.MAX_SAFE_INTEGER,
+        nestedPackageSourceFiles: Number.MAX_SAFE_INTEGER,
+        notices: ['nested-package-inputs'],
+        future: true,
+      },
+    };
+    checkSchema(report);
+    checkSemantics(report);
+  });
+
+  it('rejects recognized diagnostics on explanations', () => {
+    expect(
+      validate({
+        ...example('explain-unknown'),
+        diagnostics: example('scan-diagnostics').diagnostics,
+      }),
+    ).toBe(false);
+  });
+
+  it.each([
+    [1, 2, ['nested-package-inputs'], 'nested count bounds'],
+    [0, 0, [], 'zero-source notice'],
+    [1, 0, ['no-supported-sources'], 'zero-source notice'],
+    [1, 1, [], 'nested notice'],
+    [1, 0, ['nested-package-inputs'], 'nested notice'],
+    [1, 1, ['workspace-declared', 'nested-package-inputs'], 'scope notice order'],
+  ] as const)(
+    'rejects schema-valid inconsistent scope %i/%i/%j',
+    (total, nested, notices, reason) => {
+      const report: Report = {
+        ...example('scan-clean'),
+        diagnostics: {
+          sourceFilesScanned: total,
+          nestedPackageSourceFiles: nested,
+          notices: [...notices],
+        },
+      };
+      checkSchema(report);
+      expect(() => {
+        checkSemantics(report);
+      }).toThrow(reason);
+    },
+  );
+
+  it.each(['@scope/_demo', '@scope/-demo', 'x'.repeat(214)])(
+    'accepts the existing exact query grammar for %s',
+    (name) => {
+      const report = example('explain-unknown');
+      ok(report.query);
+      report.query.packageName = name;
+      first(report.packages).name = name;
+      checkSchema(report);
+      checkSemantics(report);
+    },
+  );
+
+  it.each([
+    '_demo',
+    '@_scope/demo',
+    '@scope/.demo',
+    '@scope/demo/subpath',
+    'demo\n',
+    'x'.repeat(215),
+  ])('rejects the invalid query %s at both schema locations', (name) => {
+    const report = example('explain-unknown');
+    ok(report.query);
+    report.query.packageName = name;
+    expect(validate(report)).toBe(false);
+    expect(
+      validate.errors?.filter(
+        (error) => error.keyword === (name.length > 214 ? 'maxLength' : 'pattern'),
+      ),
+    ).toHaveLength(2);
   });
 });

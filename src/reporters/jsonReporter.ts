@@ -3,6 +3,7 @@ import type {
   AnalysisFindings,
   DetailedAnalysisResult,
   PackageExplanation,
+  ScanDiagnostics,
 } from '../core/analyzeProject.js';
 import {
   compareStrings,
@@ -16,8 +17,12 @@ import {
 import { sourceDiscoveryDefaults } from '../scanner/sourceFiles.js';
 
 export type JsonReportInput =
-  | { readonly mode: 'scan'; readonly result: DetailedAnalysisResult }
-  | { readonly mode: 'explain'; readonly result: PackageExplanation };
+  | {
+      readonly mode: 'scan';
+      readonly result: DetailedAnalysisResult;
+      readonly diagnostics?: ScanDiagnostics;
+    }
+  | { readonly mode: 'explain'; readonly result: PackageExplanation; readonly diagnostics?: never };
 
 export type JsonReport = {
   readonly schemaVersion: 1;
@@ -34,6 +39,7 @@ export type JsonReport = {
   readonly counts: Readonly<Record<FindingCategory, number>>;
   readonly packages: readonly PackageFact[];
   readonly query: { readonly packageName: string; readonly known: boolean } | null;
+  readonly diagnostics?: ScanDiagnostics;
 };
 
 /** The caller injects actual metadata version; only completed scan/query facts are accepted. */
@@ -69,6 +75,15 @@ export function createJsonReport(input: JsonReportInput, version: string): JsonR
       input.mode === 'explain'
         ? { packageName: input.result.query.packageName, known: input.result.query.known }
         : null,
+    ...(input.mode === 'scan' && input.diagnostics !== undefined
+      ? {
+          diagnostics: {
+            sourceFilesScanned: input.diagnostics.sourceFilesScanned,
+            nestedPackageSourceFiles: input.diagnostics.nestedPackageSourceFiles,
+            notices: [...input.diagnostics.notices],
+          },
+        }
+      : {}),
   };
 }
 

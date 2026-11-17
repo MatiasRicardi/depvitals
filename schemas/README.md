@@ -2,7 +2,7 @@
 
 [report-v1.schema.json](report-v1.schema.json) is the Draft 7 schema for dependency scans and exact-package explanations. It is a data artifact, not a JavaScript API or a runtime validation dependency. The schema version is independent of the CLI release version; `tool.version` identifies the actual producing version.
 
-A report is one UTF-8 JSON document, indented by two spaces, followed by one LF. Its fields are `schemaVersion`, `tool`, `mode`, `project`, `scope`, `findings`, `counts`, `packages` and `query`, in that order. There are no timestamps, durations, banners or error-shaped documents. An operational failure produces no report.
+A report is one UTF-8 JSON document, indented by two spaces, followed by one LF. Its fields are `schemaVersion`, `tool`, `mode`, `project`, `scope`, `findings`, `counts`, `packages` and `query`, in that order. Diagnostic scans append the optional `diagnostics` object after `query`. There are no timestamps, durations, banners or error-shaped documents. An operational failure produces no report.
 
 `project.root` is the absolute native-platform root. Evidence filenames are relative paths using `/` separators, preserving casing and literal filename characters. JSON escaping preserves the original strings, including control characters and backslashes; terminal display escaping is separate. Changing the checkout root changes document identity.
 
@@ -44,4 +44,31 @@ Config fields are `kind`, `file`, `pointer`, `value`, `detector`. The filename p
 
 Pointers are RFC 6901 data pointers, not URL fragments: escape each object-key token's `~` as `~0` and `/` as `~1`; array indices are zero-based decimal without leading zeroes. A pointer identifies the exact string field/array element, not a config object or transformer options. Preserve original pointer strings through JSON escaping; do not percent-encode them or interpret literal escape text as a control character.
 
-The six [normative examples](examples/README.md) illustrate target-release documents. They are not evidence of release publication or feature availability in an earlier installed CLI. No package JavaScript entrypoint is introduced.
+The [normative examples](examples/README.md) illustrate target-release documents. They are not evidence of release publication or feature availability in an earlier installed CLI. No package JavaScript entrypoint is introduced.
+
+## Optional scan diagnostics
+
+An explicitly requested full-scan projection appends `diagnostics` with
+`sourceFilesScanned`, `nestedPackageSourceFiles` and `notices`, in that order.
+The counts are integers from 0 through 9007199254740991. They describe successfully processed
+supported sources within the effective discovery scope. Nested sources retain the selected
+root's dependency inventory. Explanations omit this object.
+
+The notice list contains applicable codes once each in the following order.
+
+| Code                    | Meaning                                                                                                                                     |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `no-supported-sources`  | Zero supported source files were scanned. Script and config evidence can still contribute.                                                  |
+| `nested-package-inputs` | At least one scanned source belongs to a manifest below the selected root.                                                                  |
+| `workspace-declared`    | The root manifest declares a nonempty string array in `workspaces` or `workspaces.packages`. Patterns are descriptive and are not expanded. |
+
+Consumers check that the nested count does not exceed the total, that the first notice appears
+exactly when the total is zero, and that the second appears exactly when the nested count is
+positive. They also check notice order. Draft 7 validates structure, ranges, known codes and
+uniqueness. The diagnostics object accepts future optional properties. Existing v1 consumers
+can ignore this added top-level property.
+
+[scan-diagnostics.json](examples/scan-diagnostics.json) shows a clean workspace declaration with
+zero sources and illustrative tool version 0.5.0. Actual reports use their package metadata version.
+The query schema accepts existing scoped names such as `@scope/_demo` and `@scope/-demo`,
+with the same 214-character bound and exact-root grammar used by the CLI.

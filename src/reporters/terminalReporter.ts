@@ -31,7 +31,11 @@
  * responsibility, so a duplicated name inside a category would be rendered twice by design.
  */
 
-import type { AnalysisResult, PackageExplanation } from '../core/analyzeProject.js';
+import type {
+  AnalysisResult,
+  PackageExplanation,
+  ScanDiagnostics,
+} from '../core/analyzeProject.js';
 
 import {
   compareEvidence,
@@ -74,15 +78,35 @@ export function hasDependencyIssues(result: AnalysisResult): boolean {
  * @returns The full terminal text: the clean message, or the heading followed by the non-empty
  *   findings sections in deterministic order.
  */
-export function formatTerminalReport(result: AnalysisResult): string {
-  if (!hasDependencyIssues(result)) {
-    return CLEAN_REPORT;
-  }
-
+export function formatTerminalReport(
+  result: AnalysisResult,
+  diagnostics?: ScanDiagnostics,
+): string {
   const sections = findingsSections(result).filter((section) => section.names.length > 0);
-
-  return `${HEADER}\n\n${sections.map(renderSection).join('\n\n')}\n`;
+  const report = hasDependencyIssues(result)
+    ? `${HEADER}\n\n${sections.map(renderSection).join('\n\n')}\n`
+    : CLEAN_REPORT;
+  if (diagnostics === undefined) return report;
+  return (
+    report +
+    '\n' +
+    [
+      'Scan diagnostics',
+      `  Source files scanned: ${String(diagnostics.sourceFilesScanned)}`,
+      `  Nested-package source files: ${String(diagnostics.nestedPackageSourceFiles)}`,
+      ...diagnostics.notices.map((code) => `  ${SCOPE_NOTICE_TEXT[code]}`),
+      '',
+    ].join('\n')
+  );
 }
+
+const SCOPE_NOTICE_TEXT: Readonly<Record<ScanDiagnostics['notices'][number], string>> = {
+  'no-supported-sources': 'No supported source files were scanned.',
+  'nested-package-inputs':
+    'Some source files belong to nested packages. Findings use the selected root inventory. Scan a nested package separately to use its inventory.',
+  'workspace-declared':
+    'The root package.json declares workspaces. This scan uses only the selected root inventory.',
+};
 
 const EXPLANATION_REASONS: Readonly<Record<PackageStatus, string>> = {
   used: 'Supported usage evidence was found within the effective scope.',
