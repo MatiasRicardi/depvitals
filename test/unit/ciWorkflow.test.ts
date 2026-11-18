@@ -34,4 +34,25 @@ describe('CI action integrity', () => {
     expect(workflow).toContain('needs: [verify, package-smoke]');
     expect(workflow).toContain('name: CI');
   });
+
+  it('provides Python and validates required Linux timer APIs before tests', () => {
+    const workflow = readFileSync(
+      new URL('../../.github/workflows/ci.yml', import.meta.url),
+      'utf8',
+    );
+    const verify = workflow.split('  verify:')[1]?.split('  package-smoke:')[0] ?? '';
+    const setup = verify
+      .split('      - name: Setup Python for Linux child-timer tests')[1]
+      ?.split('      - name:')[0];
+    expect(setup).toContain("if: ${{ runner.os == 'Linux' }}");
+    expect(setup).toMatch(/uses: actions\/setup-python@[a-f0-9]{40}/);
+    expect(setup).toContain("python-version: '3.14'");
+    const prerequisiteIndex = verify.indexOf('Verify Linux timer prerequisites');
+    const testIndex = verify.indexOf('Test (with coverage)');
+    expect(prerequisiteIndex).toBeGreaterThanOrEqual(0);
+    expect(testIndex).toBeGreaterThanOrEqual(0);
+    expect(prerequisiteIndex).toBeLessThan(testIndex);
+    expect(verify).toContain("('wait4', 'pidfd_open')");
+    expect(verify).toContain("hasattr(signal, 'pidfd_send_signal')");
+  });
 });

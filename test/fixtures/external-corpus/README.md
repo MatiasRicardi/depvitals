@@ -180,3 +180,14 @@ Query checks, identity hashing and archive validation are outside the timed inte
 The archive verifier binds every packaged byte to the measured build or checkout metadata.
 Keep the raw receipts and archives locally. This recipe does not install or execute target
 project code.
+
+## v0.5.0 integration comparison
+
+The [application catalog](v0.5.0/applications.json) adds two pinned application exports to the
+four historical inputs. The [review ledger](v0.5.0/review.json) binds all six roots, exact baseline
+archive, independent findings/exclusions, representative evidence and expected scan-scope facts.
+The [v0.5.0 comparison](../../../docs/compatibility/v0.5.0.md) records installed-artifact results,
+retained finding dispositions and repeated fresh-process latency/kernel peak-RSS measurements.
+It includes the complete Linux reproduction recipe for `scripts/compare-corpus.mjs` and its
+Python high-water helper, plus the deterministic dense positioned-evidence input. Historical
+`evaluate-corpus.mjs` modes and review sidecars are unchanged.
