@@ -50,6 +50,16 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: pnpm
 
+      - name: Setup Python for Linux child-timer tests
+        if: ${{ runner.os == 'Linux' }}
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.14'
+
+      - name: Verify Linux timer prerequisites
+        if: ${{ runner.os == 'Linux' }}
+        run: python3 -c "import os, signal, sys; assert sys.version_info >= (3, 11); assert all(hasattr(os, name) for name in ('wait4', 'pidfd_open')); assert hasattr(signal, 'pidfd_send_signal')"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 

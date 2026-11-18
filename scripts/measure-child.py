@@ -13,6 +13,10 @@ def timeout(_signal, _frame):
     raise TimeoutError("Measured child exceeded 20 seconds")
 
 
+def terminate(_signal, _frame):
+    raise InterruptedError("Measurement helper received SIGTERM")
+
+
 def main():
     if not sys.platform.startswith("linux"):
         raise RuntimeError("Peak RSS units in this helper require Linux")
@@ -21,6 +25,7 @@ def main():
         raise ValueError("Expected a child command")
     resource.setrlimit(resource.RLIMIT_FSIZE, (32 * 1024 * 1024, 32 * 1024 * 1024))
     signal.signal(signal.SIGALRM, timeout)
+    signal.signal(signal.SIGTERM, terminate)
     with open(stdout_path, "xb") as stdout, open(stderr_path, "xb") as stderr:
         signal.alarm(20)
         child = None
@@ -33,6 +38,8 @@ def main():
             elapsed_ms = (time.perf_counter_ns() - start) / 1_000_000
             child.returncode = os.waitstatus_to_exitcode(status)
         except BaseException:
+            signal.alarm(0)
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
             if child is not None and child.returncode is None:
                 # Stop ordinary descendants in the isolated session as well.
                 try:

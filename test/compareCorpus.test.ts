@@ -248,44 +248,36 @@ describe.skipIf(process.platform !== 'linux')('Linux child timer', () => {
     }
   });
 
-  it('kills and reaps a child that exceeds the real helper timeout without a success metric', () => {
-    const directory = mkdtempSync(join(tmpdir(), 'depvitals-child-timeout-'));
-    let childPid: number | undefined;
-    try {
-      const stdout = join(directory, 'stdout');
-      const metric = join(directory, 'metric.json');
-      const result = spawnSync(
-        'python3',
-        [
-          '-I',
-          helper,
-          stdout,
-          join(directory, 'stderr'),
-          metric,
-          process.execPath,
-          '-e',
-          'console.log(process.pid);setInterval(()=>{},1000)',
-        ],
-        { env: measurementEnvironment(directory, process.env), encoding: 'utf8', timeout: 25000 },
-      );
-      childPid = Number(readFileSync(stdout, 'utf8').trim());
-      expect(Number.isSafeInteger(childPid) && childPid > 0).toBe(true);
-      expect(result.error).toBeUndefined();
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain('Measured child exceeded 20 seconds');
-      expect(existsSync(metric)).toBe(false);
-      expect(() => process.kill(childPid ?? 0, 0)).toThrow(
-        expect.objectContaining({ code: 'ESRCH' }),
-      );
-    } finally {
-      if (childPid !== undefined && childPid > 0) {
-        try {
-          process.kill(childPid, 'SIGKILL');
-        } catch {
-          /* Already reaped on success. */
-        }
+  it.each(['alarm', 'sigterm'])(
+    'stops and reaps the authored child and descendant on %s without a success metric',
+    (mode) => {
+      const directory = mkdtempSync(join(tmpdir(), 'depvitals-child-cleanup-'));
+      try {
+        const supervisor = fileURLToPath(
+          new URL('./helpers/measureChildSupervisor.py', import.meta.url),
+        );
+        const result = spawnSync(
+          'python3',
+          ['-I', supervisor, mode, helper, process.execPath, directory],
+          {
+            env: measurementEnvironment(directory, process.env),
+            encoding: 'utf8',
+            timeout: 35000,
+          },
+        );
+        expect(result.error).toBeUndefined();
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stderr).toBe('');
+        expect(JSON.parse(result.stdout)).toEqual({
+          childGone: true,
+          descendantGone: true,
+          successMetric: false,
+        });
+        expect(existsSync(join(directory, 'metric.json'))).toBe(false);
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
       }
-      rmSync(directory, { recursive: true, force: true });
-    }
-  }, 30000);
+    },
+    40000,
+  );
 });

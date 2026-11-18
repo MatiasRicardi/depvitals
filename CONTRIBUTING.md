@@ -4,7 +4,14 @@ Keep changes focused on dependency analysis and the active task. Discuss broader
 
 ## Local setup
 
-Use Node.js **22.13.0 or newer** and the exact pnpm version recorded in `package.json#packageManager`. With Corepack available:
+Use Node.js **22.13.0 or newer** and the exact pnpm version recorded in `package.json#packageManager`. On Linux, also install Python **3.11 or newer** as `python3` before running `pnpm run test`,
+`pnpm run test:coverage` or `pnpm run check`. The required child-timer tests use the standard-library
+`os.wait4`, `os.pidfd_open` and `signal.pidfd_send_signal` APIs and a Linux kernel with PID-file-descriptor
+support (5.3 or newer). They exercise the real timeout and process cleanup; missing Python is a setup
+error, not a skipped test. macOS and Windows skip only these Linux-specific cases. Python is a
+development prerequisite and is not needed to install or run the published CLI.
+
+With Corepack available:
 
 ```sh
 corepack enable
