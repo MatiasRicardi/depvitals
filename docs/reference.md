@@ -120,6 +120,10 @@ The CLI additionally enforces portable literal paths and normalization, includin
 `../outside`, `src/*.js` and `./.`. VS Code supports workspace settings and relative schema
 URLs. [VS Code JSON schema settings](https://code.visualstudio.com/docs/languages/json#_json-schemas-and-settings)
 
+After v0.5.0 is released, the same mapping can use the immutable URL
+`https://raw.githubusercontent.com/MatiasRicardi/depvitals/v0.5.0/schemas/depvitals-config.schema.json`.
+The installed-schema URL also supports offline editing.
+
 ### Source path exclusions
 
 Paths are literal and relative to the selected project root. Matching is case-sensitive on every platform: use the discovered casing. A rule matches an exact normalized path or its subtree at a full segment boundary: `src/gen` does not match `src/generator`. Nonexistent valid rules have no effect. Fixed discovery exclusions remain active.
