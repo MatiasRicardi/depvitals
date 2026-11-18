@@ -248,7 +248,7 @@ describe.skipIf(process.platform !== 'linux')('Linux child timer', () => {
     }
   });
 
-  it.each(['alarm', 'sigterm'])(
+  it.each(['alarm', 'sigterm', 'missing-pids', 'missing-pids-stopped-helper'])(
     'stops and reaps the authored child and descendant on %s without a success metric',
     (mode) => {
       const directory = mkdtempSync(join(tmpdir(), 'depvitals-child-cleanup-'));
@@ -272,6 +272,7 @@ describe.skipIf(process.platform !== 'linux')('Linux child timer', () => {
           childGone: true,
           descendantGone: true,
           successMetric: false,
+          ...(mode.startsWith('missing-pids') ? { discoveryFailed: true, noChildren: true } : {}),
         });
         expect(existsSync(join(directory, 'metric.json'))).toBe(false);
       } finally {

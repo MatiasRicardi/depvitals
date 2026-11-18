@@ -47,9 +47,11 @@ describe('CI action integrity', () => {
     expect(setup).toContain("if: ${{ runner.os == 'Linux' }}");
     expect(setup).toMatch(/uses: actions\/setup-python@[a-f0-9]{40}/);
     expect(setup).toContain("python-version: '3.14'");
-    expect(verify.indexOf('Verify Linux timer prerequisites')).toBeLessThan(
-      verify.indexOf('Test (with coverage)'),
-    );
+    const prerequisiteIndex = verify.indexOf('Verify Linux timer prerequisites');
+    const testIndex = verify.indexOf('Test (with coverage)');
+    expect(prerequisiteIndex).toBeGreaterThanOrEqual(0);
+    expect(testIndex).toBeGreaterThanOrEqual(0);
+    expect(prerequisiteIndex).toBeLessThan(testIndex);
     expect(verify).toContain("('wait4', 'pidfd_open')");
     expect(verify).toContain("hasattr(signal, 'pidfd_send_signal')");
   });
