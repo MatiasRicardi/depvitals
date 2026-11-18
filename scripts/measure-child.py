@@ -26,13 +26,19 @@ def main():
         child = None
         try:
             start = time.perf_counter_ns()
-            child = subprocess.Popen(command, stdout=stdout, stderr=stderr)
+            child = subprocess.Popen(
+                command, stdout=stdout, stderr=stderr, start_new_session=True
+            )
             _, status, usage = os.wait4(child.pid, 0)
             elapsed_ms = (time.perf_counter_ns() - start) / 1_000_000
             child.returncode = os.waitstatus_to_exitcode(status)
         except BaseException:
             if child is not None and child.returncode is None:
-                child.kill()
+                # Stop ordinary descendants in the isolated session as well.
+                try:
+                    os.killpg(child.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
                 os.wait4(child.pid, 0)
                 child.returncode = -signal.SIGKILL
             raise

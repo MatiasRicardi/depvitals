@@ -50,6 +50,35 @@ function inside(root, path) {
   );
 }
 
+/** Preserve exact channel bytes when using string-based report checks. */
+export function decodeCapture(bytes) {
+  const text = bytes.toString('utf8');
+  assert(Buffer.from(text, 'utf8').equals(bytes), 'Capture contains invalid UTF-8');
+  return text;
+}
+
+export function assertReportIdentity(report, root, version) {
+  assert.equal(report.project.root, root, 'Report project root differs from selected root');
+  assert.equal(report.tool.version, version, 'Report version differs from installed artifact');
+}
+
+/** Keep optional Node instrumentation out of measured runs and immutable inputs. */
+export function measurementEnvironment(output, ambient = process.env) {
+  const env = {
+    ...ambient,
+    CI: '1',
+    DEPVITALS_NO_UPDATE_CHECK: '1',
+    NODE_DISABLE_COMPILE_CACHE: '1',
+    HOME: join(output, 'home'),
+    USERPROFILE: join(output, 'home'),
+    XDG_CACHE_HOME: join(output, 'cache'),
+    LOCALAPPDATA: join(output, 'cache'),
+  };
+  for (const name of ['NODE_OPTIONS', 'NODE_PATH', 'NODE_V8_COVERAGE', 'NODE_COMPILE_CACHE'])
+    delete env[name];
+  return env;
+}
+
 /** Review expectations are independent of the producer. The caller supplies its artifact schema. */
 export function assertScan(capture, expected, validate, diagnostics = false) {
   assert.equal(capture.signal, null, 'Child was signalled');
@@ -61,6 +90,13 @@ export function assertScan(capture, expected, validate, diagnostics = false) {
   assert.equal(report.mode, 'scan');
   assert.equal(report.query, null);
   assert.deepEqual(report.findings, expected.expectedFindings, 'Findings disagree with review');
+  assert.deepEqual(
+    report.counts,
+    Object.fromEntries(
+      Object.entries(expected.expectedFindings).map(([key, names]) => [key, names.length]),
+    ),
+    'Counts disagree with reviewed findings',
+  );
   assert.deepEqual(
     { ignorePaths: report.scope.ignorePaths, ignoreDependencies: report.scope.ignoreDependencies },
     expected.expectedExclusions,
@@ -183,11 +219,11 @@ export function compareCorpus(options) {
   const measured = verifyMeasuredArchive(packPath, ROOT, identifyBuild(ROOT));
   const target = artifact(options.targetRoot, join(dirname(packPath), pack.filename));
   assert.equal(target.identity.archiveSha256, measured.archiveSha256);
-  const sourceSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+  const checkoutHeadSha = execFileSync('git', ['rev-parse', 'HEAD'], {
     cwd: ROOT,
     encoding: 'utf8',
   }).trim();
-  const tool = identifyTool(ROOT, sourceSha);
+  const tool = identifyTool(ROOT, checkoutHeadSha);
   const inputs = entries.map((entry, index) => {
     assert(isAbsolute(roots[entry.id]), 'Corpus roots must be absolute');
     const exported = realpathSync(roots[entry.id]);
@@ -214,17 +250,7 @@ export function compareCorpus(options) {
   assert(!existsSync(output), 'Use a fresh output directory');
   mkdirSync(output);
   mkdirSync(join(output, 'captures'));
-  const env = {
-    ...process.env,
-    CI: '1',
-    DEPVITALS_NO_UPDATE_CHECK: '1',
-    HOME: join(output, 'home'),
-    USERPROFILE: join(output, 'home'),
-    XDG_CACHE_HOME: join(output, 'cache'),
-    LOCALAPPDATA: join(output, 'cache'),
-  };
-  delete env.NODE_OPTIONS;
-  delete env.NODE_PATH;
+  const env = measurementEnvironment(output);
   const helper = join(ROOT, 'scripts/measure-child.py');
   const helperHash = hash(readFileSync(helper));
   const harnessHash = hash(readFileSync(fileURLToPath(import.meta.url)));
@@ -257,7 +283,7 @@ export function compareCorpus(options) {
 
   function verify() {
     for (const file of frozenFiles) assert.equal(hash(readFileSync(file.path)), file.sha256);
-    assert.deepEqual(identifyTool(ROOT, sourceSha), tool, 'Source/build identity changed');
+    assert.deepEqual(identifyTool(ROOT, checkoutHeadSha), tool, 'Source/build identity changed');
     assert.equal(hash(readFileSync(helper)), helperHash);
     assert.equal(hash(readFileSync(fileURLToPath(import.meta.url))), harnessHash);
     for (const item of Object.values(artifacts)) {
@@ -291,8 +317,8 @@ export function compareCorpus(options) {
     const metric = json(metrics);
     return {
       ...metric,
-      stdout: readFileSync(stdout, 'utf8'),
-      stderr: readFileSync(stderr, 'utf8'),
+      stdout: decodeCapture(readFileSync(stdout)),
+      stderr: decodeCapture(readFileSync(stderr)),
     };
   }
   const probeLow = execute('rss-probe-low', [
@@ -332,8 +358,7 @@ export function compareCorpus(options) {
         const diagnostic = mode.endsWith('diagnostics');
         if (mode.startsWith('json')) {
           const report = assertScan(result, input.expected, artifacts[role].validate, diagnostic);
-          assert.equal(report.project.root, input.root);
-          assert.equal(report.tool.version, artifacts[role].identity.version);
+          assertReportIdentity(report, input.root, artifacts[role].identity.version);
           if (diagnostic)
             assert(baseline.validate(report), JSON.stringify(baseline.validate.errors));
           if (input === dense) {
@@ -394,6 +419,7 @@ export function compareCorpus(options) {
         assert.equal(result.stderr, '');
         const report = JSON.parse(result.stdout);
         assert(artifacts[role].validate(report), JSON.stringify(artifacts[role].validate.errors));
+        assertReportIdentity(report, input.root, artifacts[role].identity.version);
         assert.deepEqual(report.query, { packageName: name, known: true });
         const [item] = report.packages;
         assert.equal(item.name, name);
@@ -454,7 +480,7 @@ export function compareCorpus(options) {
     comparisonVersion: 1,
     baseline: baseline.identity,
     target: target.identity,
-    sourceSha,
+    checkoutHeadSha,
     sourceSnapshotSha256: tool.source.sha256,
     build: measured,
     reviewSha256: hash(readFileSync(join(CATALOG_DIRECTORY, 'v0.5.0/review.json'))),
@@ -477,6 +503,8 @@ export function compareCorpus(options) {
       peakRss: 'Linux wait4 ru_maxrss, KiB, per Node child',
       stdoutLimitBytes: 32 * 1024 * 1024,
       childTimeoutSeconds: 20,
+      nodeCompileCache: 'disabled (NODE_DISABLE_COMPILE_CACHE=1)',
+      nodeCoverage: 'disabled (NODE_V8_COVERAGE removed)',
       harnessSha256: harnessHash,
       helperSha256: helperHash,
       rssProbe: { lowKiB: probeLow.peakRssKiB, allocated64MiBKiB: probeHigh.peakRssKiB },
