@@ -54,6 +54,7 @@ const ROOT = resolve(SCRIPT_PATH, '..', '..');
 
 const SCHEMA_FILES = [
   'schemas/report-v1.schema.json',
+  'schemas/depvitals-config.schema.json',
   'schemas/README.md',
   'schemas/examples/README.md',
   ...[
@@ -553,6 +554,28 @@ async function main() {
         JSON.stringify(validate.errors),
       );
     }
+    const configSchema = JSON.parse(
+      readFileSync(join(installedRoot, 'schemas/depvitals-config.schema.json'), 'utf8'),
+    );
+    const configAjv = new Ajv({ allErrors: true });
+    check(
+      'installed config schema is valid Draft 7',
+      configSchema.$schema === 'http://json-schema.org/draft-07/schema#' &&
+        configAjv.validateSchema(configSchema),
+    );
+    const validateConfig = configAjv.compile(configSchema);
+    check(
+      'installed config schema accepts literal paths and scoped roots',
+      validateConfig({
+        ignorePaths: ['test/generated'],
+        ignoreDependencies: ['@scope/_demo'],
+      }),
+      JSON.stringify(validateConfig.errors),
+    );
+    check(
+      'installed config schema rejects dependency subpaths',
+      !validateConfig({ ignoreDependencies: ['@scope/pkg/subpath'] }),
+    );
     const installedManifest = JSON.parse(readFileSync(join(installedRoot, 'package.json'), 'utf8'));
     check(
       'installed manifest has no runtime or optional dependencies',

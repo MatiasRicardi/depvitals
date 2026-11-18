@@ -72,3 +72,29 @@ can ignore this added top-level property.
 zero sources and illustrative tool version 0.5.0. Actual reports use their package metadata version.
 The query schema accepts existing scoped names such as `@scope/_demo` and `@scope/-demo`,
 with the same 214-character bound and exact-root grammar used by the CLI.
+
+## Project configuration editor schema
+
+[depvitals-config.schema.json](depvitals-config.schema.json) describes the two optional
+`depvitals.config.json` exclusion arrays. It ships with v0.5.0 and is available before release
+in local builds containing this asset.
+
+With that build installed in the workspace, add this filename association to
+`.vscode/settings.json`. Merge it into an existing `json.schemas` array when applicable.
+
+```json
+{
+  "json.schemas": [
+    {
+      "fileMatch": ["/depvitals.config.json"],
+      "url": "./node_modules/depvitals/schemas/depvitals-config.schema.json"
+    }
+  ]
+}
+```
+
+The URL resolves from the workspace root and the file match selects its root configuration.
+That configuration accepts only `ignorePaths` and `ignoreDependencies`, so an instance-level
+`$schema` field is rejected. The editor schema checks structure and dependency identifiers.
+The CLI also checks complete literal path rules and normalization.
+[VS Code JSON schema settings](https://code.visualstudio.com/docs/languages/json#_json-schemas-and-settings)

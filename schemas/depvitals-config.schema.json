@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DepVitals project configuration",
+  "description": "Source discovery and dependency finding exclusions for depvitals.config.json.",
+  "type": "object",
+  "properties": {
+    "ignorePaths": {
+      "description": "Literal project-relative files or subtrees excluded from source discovery. The CLI validates portable path rules and normalizes separators and dot segments.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "\\S"
+      }
+    },
+    "ignoreDependencies": {
+      "description": "Exact package roots hidden from findings. Dependency exclusions preserve collected usage evidence.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 214,
+        "pattern": "^(?:[A-Za-z0-9][A-Za-z0-9._-]*|@[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9_-][A-Za-z0-9._-]*)(?![\\s\\S])"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {},
+    {
+      "ignorePaths": ["test/generated", "./sample data//inputs/"],
+      "ignoreDependencies": ["Foo", "@scope/_demo", "@scope/-demo"]
+    }
+  ]
+}

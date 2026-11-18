@@ -58,6 +58,7 @@ function build(root: string): readonly BuildFile[] {
 
 const schemaAssets = [
   'schemas/report-v1.schema.json',
+  'schemas/depvitals-config.schema.json',
   'schemas/README.md',
   'schemas/examples/README.md',
   ...[
@@ -165,7 +166,7 @@ describe('measurement archive binding', () => {
     await fixture((root) => {
       const files = addSchemaAssets(root);
       const result = verifyMeasuredArchive(archive(root, files), root, build(root));
-      expect(result.fileCount).toBe(14);
+      expect(result.fileCount).toBe(15);
       expect(build(root).map((file) => file.path)).toEqual(
         ['dist/cli/index.js', ...schemaAssets].sort(),
       );
@@ -193,6 +194,16 @@ describe('measurement archive binding', () => {
       });
     },
   );
+  it('rejects an omitted editor schema despite valid archive metadata', async () => {
+    await fixture((root) => {
+      const files = addSchemaAssets(root);
+      files.delete('schemas/depvitals-config.schema.json');
+      expect(() => verifyMeasuredArchive(archive(root, files), root, build(root))).toThrow(
+        'Archive file set differs from measured build',
+      );
+    });
+  });
+
   it('observes schema changes during measurement instead of accepting a stale identity', async () => {
     await fixture((root) => {
       const files = addSchemaAssets(root);
