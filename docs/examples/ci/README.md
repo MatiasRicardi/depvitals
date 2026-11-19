@@ -1,9 +1,7 @@
 # Fixed-version DepVitals checks in GitHub Actions
 
-This recipe targets **DepVitals 0.5.0 after publication**. It uses Node.js 22 (minimum 22.13.0),
-npm and an Ubuntu Actions runner. These registry commands are staged for use after v0.5.0 is
-published. Before publication, use the isolated local-tarball procedure below; its actual metadata
-version can still be 0.4.1.
+This recipe targets **DepVitals 0.5.0**. It uses Node.js 22 (minimum 22.13.0),
+npm and an Ubuntu Actions runner.
 
 Install the exact version in your project and commit the generated `package-lock.json`:
 
@@ -60,7 +58,7 @@ The optional object belongs in `depvitals-report.json`. The existing
 `depvitals-diagnostics.txt` artifact is stderr and stays empty on a completed scan, including one
 with scope notices. An operational error has an empty report and a nonempty stderr artifact;
 no partial scope counts are emitted. See the [report schema](../../../schemas/report-v1.schema.json),
-[diagnostic fields](../../../schemas/README.md) and [scan scope](../../reference.md#source-scanning-and-discovery).
+[diagnostic fields](../../../schemas/README.md) and [scope diagnostics and notice rules](../../reference.md#scan-scope-diagnostics).
 
 The unchanged verifier validates the existing v1 findings/status relationship and tolerates
 additional top-level fields. The byte-identical verifier shipped at v0.4.1 can read these new
@@ -69,9 +67,9 @@ Diagnostic schema validation is a separate producer/consumer check.
 
 ## Pre-release local consumer
 
-Before publication, substitute an absolute path to the **local candidate tarball** in the install
+To verify a development build, substitute an absolute path to its **local tarball** in the install
 command. npm generates the matching lockfile from that tarball. Use the version shown by the
-installed executable when checking the candidate. Keep the tarball and its local lockfile in a
+installed executable when checking the build. Keep the tarball and its local lockfile in a
 temporary consumer and use the registry-pinned lockfile for the published workflow.
 
 ```sh

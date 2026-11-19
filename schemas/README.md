@@ -48,7 +48,8 @@ The [normative examples](examples/README.md) illustrate target-release documents
 
 ## Optional scan diagnostics
 
-An explicitly requested full-scan projection appends `diagnostics` with
+DepVitals v0.5.0 supports optional scan diagnostics.
+`depvitals ./project --format json --diagnostics` requests the full-scan projection, which appends `diagnostics` with
 `sourceFilesScanned`, `nestedPackageSourceFiles` and `notices`, in that order.
 The counts are integers from 0 through 9007199254740991. They describe successfully processed
 supported sources within the effective discovery scope. Nested sources retain the selected
@@ -66,20 +67,24 @@ Consumers check that the nested count does not exceed the total, that the first 
 exactly when the total is zero, and that the second appears exactly when the nested count is
 positive. They also check notice order. Draft 7 validates structure, ranges, known codes and
 uniqueness. The diagnostics object accepts future optional properties. Existing v1 consumers
-can ignore this added top-level property.
+can ignore this added top-level property; the exact v0.4.1 CI verifier reads complete diagnostic
+scans without editing their artifacts. Notice-only clean reports exit 0; findings exit 1.
+Fatal errors exit 1 with empty stdout, stderr diagnostic text and no partial counts. Diagnostic
+scans bypass the optional notifier in terminal and JSON. See the
+[scope examples and argument rules](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#scan-scope-diagnostics).
 
 [scan-diagnostics.json](examples/scan-diagnostics.json) shows a clean workspace declaration with
 zero sources and illustrative tool version 0.5.0. Actual reports use their package metadata version.
 The query schema accepts existing scoped names such as `@scope/_demo` and `@scope/-demo`,
-with the same 214-character bound and exact-root grammar used by the CLI.
+with the same 214-character bound and exact-root grammar already accepted by the v0.4.1 CLI.
+This repairs schema acceptance and does not change runtime queries or findings.
 
 ## Project configuration editor schema
 
 [depvitals-config.schema.json](depvitals-config.schema.json) describes the two optional
-`depvitals.config.json` exclusion arrays. It ships with v0.5.0 and is available before release
-in local builds containing this asset.
+`depvitals.config.json` exclusion arrays. It is included in the v0.5.0 package.
 
-With that build installed in the workspace, add this filename association to
+With DepVitals installed in the workspace, add this filename association to
 `.vscode/settings.json`. Merge it into an existing `json.schemas` array when applicable.
 
 ```json
@@ -98,3 +103,13 @@ That configuration accepts only `ignorePaths` and `ignoreDependencies`, so an in
 `$schema` field is rejected. The editor schema checks structure and dependency identifiers.
 The CLI also checks complete literal path rules and normalization.
 [VS Code JSON schema settings](https://code.visualstudio.com/docs/languages/json#_json-schemas-and-settings)
+
+The same workspace mapping can pin the schema to v0.5.0 with this immutable URL:
+`https://raw.githubusercontent.com/MatiasRicardi/depvitals/v0.5.0/schemas/depvitals-config.schema.json`.
+Use the local installed asset for offline editing. For accepted config examples and CLI-only
+path limits, see the
+[editor guide](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#editor-validation).
+Names are case-sensitive exact roots of at most 214 characters. Unscoped names and scope segments
+start with an ASCII letter/digit; the package component after `@scope/` may also start with `_` or
+`-`. Continuations allow ASCII letters/digits, dot, underscore and hyphen. Subpaths, versions,
+wildcards and trailing line terminators are rejected. This is CLI grammar, not npm naming policy.

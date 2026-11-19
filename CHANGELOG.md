@@ -7,6 +7,32 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0]
+
+### Added
+
+- Opt-in `--diagnostics` for terminal and JSON full scans, reporting supported source counts,
+  nested-package source counts and ordered scope notices without changing findings or evidence.
+- A packaged Draft 7 editor schema for the two existing `depvitals.config.json` keys, with
+  workspace filename association and documented CLI-only path checks.
+- Optional diagnostic capture in the fixed-version CI recipe. The exact v0.4.1 reader accepts
+  the added scan data while preserving clean, findings, operational-error and invalid-artifact outcomes.
+
+### Fixed
+
+- Align both report-schema query patterns with scoped names already accepted by the v0.4.1 CLI,
+  including `@scope/_demo` and `@scope/-demo`. Runtime query and exclusion grammar is unchanged.
+
+### Changed
+
+- Keep JSON schema version 1 with an optional scan-only `diagnostics` object. Default reports and
+  explanations keep their existing fields; diagnostic scans bypass the optional update notifier.
+- Document scope interpretation, editor setup, the reviewed six-root integration comparison and
+  local process-cost measurements. See the [release notes](docs/releases/v0.5.0.md) and
+  [comparison](docs/compatibility/v0.5.0.md).
+
+## [0.4.1] - 2026-11-10
+
 ### Fixed
 
 - Recognize regular expressions after semicolon-free static imports and re-exports while
@@ -192,7 +218,9 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Package consumer smoke verification (`verify:package`).
 - Cross-platform CI foundation.
 
-[Unreleased]: https://github.com/MatiasRicardi/depvitals/compare/v0.4.0...main
+[Unreleased]: https://github.com/MatiasRicardi/depvitals/compare/v0.5.0...main
+[0.5.0]: https://github.com/MatiasRicardi/depvitals/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/MatiasRicardi/depvitals/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/MatiasRicardi/depvitals/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/MatiasRicardi/depvitals/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MatiasRicardi/depvitals/compare/v0.1.2...v0.2.0
