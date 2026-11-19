@@ -1,6 +1,6 @@
 # Report format v1 examples
 
-The six original normative examples describe the target v0.4.0 release. Their conceptual root is `/example/project` and their illustrative `tool.version` is `0.4.0`; actual reports use the real selected root and installed tool version. They do not claim that an earlier CLI already accepts format or explanation options. See the [schema](../report-v1.schema.json) and [format description](../README.md).
+The six original normative examples were introduced in v0.4.0 and remain valid JSON v1 examples in v0.5.0. Their conceptual root is `/example/project` and their illustrative `tool.version` is `0.4.0`; actual reports use the real selected root and installed tool version. They do not claim that an earlier CLI already accepts format or explanation options. See the [schema](../report-v1.schema.json) and [format description](../README.md).
 
 | Document                                               | Scenario and intended exit                                                                                                                                                                                               |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -22,7 +22,7 @@ The Node-preload example assumes this manifest and an empty `entry.cjs`:
 }
 ```
 
-The candidate ordinals are unlisted-tool=0, node=1, preload=2 and preload=3 before declaration filtering. The undeclared commands create no package records or missing findings. The two preload selectors retain distinct script occurrences and the escaped pointer `/scripts/check~1node~0`. Their module selector is `preload/esm`, owned by package `preload`, without installed resolution or execution. This example describes the target recognition; serializing supplied facts alone does not establish that a particular CLI version collects them.
+The candidate ordinals are unlisted-tool=0, node=1, preload=2 and preload=3 before declaration filtering. The undeclared commands create no package records or missing findings. The two preload selectors retain distinct script occurrences and the escaped pointer `/scripts/check~1node~0`. Their module selector is `preload/esm`, owned by package `preload`, without installed resolution or execution. This example illustrates supported preload recognition; serializing supplied facts alone does not establish collection behavior.
 
 Invalid manifest/config/source inputs intentionally have no report fixture. Their expected stdout is empty, stderr identifies the error and exit is 1. They must not be represented as successful clean documents.
 
@@ -43,3 +43,9 @@ that the first two codes match their count predicates and that notice order is c
 Explanations omit diagnostics. Existing v1 consumers that ignore unknown properties accept
 this extension. The [format description](../README.md#optional-scan-diagnostics) defines
 the optional projection and its structural bounds.
+
+Use `--format json --diagnostics` for the v0.5.0 full-scan projection. Ordinary reports and all explanations omit the object. Scope notices
+alone do not cause a nonzero status, and operational errors have no partial diagnostic report.
+See the [zero-source and nested examples](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#scan-scope-diagnostics)
+for reproduced terminal output and separate-root guidance. The diagnostics object describes
+source inputs and root declaration context without expanding workspace members.

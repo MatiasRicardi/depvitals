@@ -46,7 +46,7 @@ and test the project before removing it.
 See the [CLI reference](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#cli-and-json-reports),
 [JSON schema and examples](https://github.com/MatiasRicardi/depvitals/blob/main/schemas/README.md),
 [Depcheck migration guide](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#manual-migration-from-depcheck)
-and [v0.4.0 release notes](https://github.com/MatiasRicardi/depvitals/releases/tag/v0.4.0).
+and [v0.5.0 release notes](https://github.com/MatiasRicardi/depvitals/blob/main/docs/releases/v0.5.0.md).
 
 ## Quick start
 
@@ -81,9 +81,51 @@ These commands use the npm release. Documentation on `main` can describe unrelea
 
 Reports use stdout; operational errors use stderr without a partial report. Exit **0** means clean/help/version; **1** means findings/errors. An optional update notice can use stderr without changing the status.
 
+### Understand scan scope
+
+DepVitals **v0.5.0** includes optional scan scope diagnostics. Use `--diagnostics` for terminal
+output or combine it with `--format json`.
+
+For a small reproduced example, create `scope-demo/package.json` containing `{}`,
+`scope-demo/packages/child/package.json` containing
+`{"dependencies":{"child-only":"1"}}`, and `scope-demo/packages/child/index.mjs`
+containing `import 'child-only';` followed by a newline. Run from outside `scope-demo`:
+
+```sh
+depvitals ./scope-demo --diagnostics
+```
+
+```text
+DepVitals
+
+Missing dependencies (1)
+  child-only
+
+Scan diagnostics
+  Source files scanned: 1
+  Nested-package source files: 1
+  Some source files belong to nested packages. Findings use the selected root inventory. Scan a nested package separately to use its inventory.
+```
+
+The command exits **1**: the selected parent inventory does not declare `child-only`.
+Scan `depvitals ./scope-demo/packages/child --diagnostics` to use the child's declaration;
+that scan is clean and exits **0**. If omitting the child is intentional policy, use a literal
+`ignorePaths` rule and review the narrower scope.
+
+```sh
+depvitals ./scope-demo --format json --diagnostics > scope-report.json
+```
+
+The JSON command also exits **1** and appends a scope object to the report. A clean scan with
+zero supported sources is possible; supported script/config hints may still contribute evidence.
+Workspace declarations provide context without discovering or aggregating members. See the
+[scope facts and notice examples](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#scan-scope-diagnostics),
+[reviewed six-project comparison](https://github.com/MatiasRicardi/depvitals/blob/main/docs/compatibility/v0.5.0.md)
+and [v0.5.0 release notes](https://github.com/MatiasRicardi/depvitals/blob/main/docs/releases/v0.5.0.md).
+
 ## JSON reports and package explanations
 
-These examples require **v0.4.0 or newer**. To try them from a checkout, use
+DepVitals v0.5.0 supports terminal and JSON package explanations. To use a development checkout, run
 `node /path/to/depvitals/dist/cli/index.js` in place of `depvitals` after
 [building the development checkout](https://github.com/MatiasRicardi/depvitals/blob/main/CONTRIBUTING.md#local-setup).
 
@@ -97,7 +139,7 @@ depvitals --format json --explain demo-missing ./project
 ```
 
 An explanation reports one exact package. Its exit status follows that package's result. Use a full
-scan to enforce a project-wide check. The v0.4.0 [report schema and examples](https://github.com/MatiasRicardi/depvitals/blob/main/schemas/README.md)
+scan to enforce a project-wide check. The JSON v1 [report schema and examples](https://github.com/MatiasRicardi/depvitals/blob/main/schemas/README.md)
 are shipped in the npm package under `schemas/`. See the [CLI and report contract](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#cli-and-json-reports).
 
 ## CI with a fixed version
@@ -105,7 +147,7 @@ are shipped in the npm package under `schemas/`. See the [CLI and report contrac
 Install the exact version as a development dependency and commit the generated lockfile.
 
 ```sh
-npm install --save-dev --save-exact depvitals@0.4.1
+npm install --save-dev --save-exact depvitals@0.5.0
 ```
 
 Add this entry to `scripts` in `package.json`:
@@ -123,7 +165,9 @@ npm run --silent check:dependencies
 
 Use the [CI recipe](https://github.com/MatiasRicardi/depvitals/blob/main/docs/examples/ci/README.md)
 to capture and upload the report, diagnostics and status. The recipe also shows how to test a
-candidate from a local tarball before it is available on npm.
+local build from a tarball. The v0.5.0 guide keeps the
+ordinary capture by default and offers a separate `--diagnostics` opt-in. The exact v0.4.1
+verifier can read the added JSON object; diagnostic notices alone do not fail a check.
 
 ## Optional configuration
 
@@ -138,10 +182,15 @@ Requires DepVitals **0.3.0 or newer**. Create `depvitals.config.json` at the sca
 
 `ignorePaths` excludes literal source paths/subtrees; `ignoreDependencies` hides exact package names from findings. No globs. Exclusions narrow what a clean report means; excluding the only source reference can make a dependency unused. See the [configuration reference](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#optional-project-configuration) for validation and precedence.
 
+The [packaged editor schema](https://github.com/MatiasRicardi/depvitals/blob/main/schemas/depvitals-config.schema.json)
+can check the two keys in an editor. Follow the [workspace association example](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#editor-validation),
+using the installed local asset or the version-pinned URL. Keep `$schema` out of the project
+configuration; the CLI rejects unknown keys and still enforces complete literal-path rules.
+
 ## Scope and privacy
 
 Scans cover JS/TS, JSX/TSX and declaration files, literal ESM/CommonJS references, supported script commands and bounded ESLint/Jest hints. Only source evidence creates missing findings. There is no workspace aggregation, alias/tsconfig resolution, blanket `@types` inference or automatic fix; see [supported patterns and limits](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md).
 
-Core analysis is offline and never executes or modifies the project or inspects `node_modules`. After completed interactive scans, an optional update check requests public metadata for **DepVitals itself**, caches it outside the project and uploads no project data. CI, non-TTY, help/version and failed scans skip it. In v0.4.0, JSON scans and all explanations also skip it before any cache or network access. Set `DEPVITALS_NO_UPDATE_CHECK=1` to disable it; see [privacy and shell examples](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#update-notice-and-privacy).
+Core analysis is offline and never executes or modifies the project or inspects `node_modules`. After completed interactive scans, an optional update check requests public metadata for **DepVitals itself**, caches it outside the project and uploads no project data. CI, non-TTY, help/version and failed scans skip it. JSON scans and all explanations also skip it before any cache or network access. The `--diagnostics` mode bypasses it in both output formats, including interactive terminals. Set `DEPVITALS_NO_UPDATE_CHECK=1` to disable it; see [privacy and shell examples](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#update-notice-and-privacy).
 
 [Technical reference](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md) · [Contributing](https://github.com/MatiasRicardi/depvitals/blob/main/CONTRIBUTING.md) · [Changelog](https://github.com/MatiasRicardi/depvitals/blob/main/CHANGELOG.md) · [MIT license](https://github.com/MatiasRicardi/depvitals/blob/main/LICENSE)

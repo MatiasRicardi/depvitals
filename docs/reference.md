@@ -1,6 +1,6 @@
 # DepVitals technical reference
 
-This reference describes the implementation on `main`, which can include unreleased behavior. See the [README](../README.md) for commands and the [changelog](../CHANGELOG.md) for published release boundaries. DepVitals is a CLI for one project root, not a full JavaScript/TypeScript compiler, module resolver or replacement for reviewing dependency changes.
+This reference describes DepVitals v0.5.0. See the [README](../README.md) for commands and the [changelog](../CHANGELOG.md) for published release boundaries. DepVitals is a CLI for one project root, not a full JavaScript/TypeScript compiler, module resolver or replacement for reviewing dependency changes.
 
 ## Findings and evidence
 
@@ -17,10 +17,12 @@ A clean report means no issues were found through supported evidence. It does no
 
 ## CLI and JSON reports
 
-This interface targets v0.4.0 and is available in the built development checkout.
+DepVitals v0.5.0 supports JSON reports, package explanations and optional full-scan diagnostics.
+Check the installed version with standalone `--version`. JSON reports and explanations have been
+available since v0.4.0; `--diagnostics` was added in v0.5.0.
 
 ```text
-depvitals [project] [--format terminal|json] [--explain <package>]
+depvitals [project] [--format terminal|json] [--explain <package>] [--diagnostics]
 depvitals --help
 depvitals --version
 ```
@@ -33,6 +35,10 @@ depvitals --version
 - Each option can occur once, before or after the path and in either order. Use separate option
   and value tokens. Equals forms, `--json`, short format/query aliases and standalone `--` are
   argument errors. Missing, empty or dash-leading option values also fail.
+- `--diagnostics` is a case-sensitive, valueless flag for full scans only. Use it once, before
+  or after the path/format option. It cannot be combined with `--explain`. `--diagnostics=true`,
+  `--no-diagnostics` and `-d` are invalid. `--diagnostics true` selects the directory `true`;
+  the word is not a boolean value. `--format --diagnostics` is a missing-format-value error.
 - Help (`-h`, `--help`) and version (`-v`, `--version`) must be used alone. They skip the project.
 
 | Invocation result                                | Exit | stdout                  | stderr                                   |
@@ -44,6 +50,17 @@ depvitals --version
 | Invalid arguments or operational failure         |    1 | Empty                   | Diagnostic                               |
 | Standalone help or version                       |    0 | Help or version         | Empty                                    |
 
+Argument errors retain their precedence: a non-standalone help/version flag fails first;
+other token errors (unknown/missing/duplicate options) fail left to right, followed by too many
+paths, an empty path, then a valid diagnostics/explanation conflict. The conflict is checked
+before filesystem reads. For example, duplicate diagnostics wins over a later explanation
+conflict, while a second path wins over the conflict.
+
+A completed diagnostic scan exits 0 for no findings or 1 for findings, with empty stderr.
+Its optional notices do not change findings, evidence or status. Argument/operational failures
+exit 1, emit no report or partial counters, and put an escaped diagnostic on stderr. Diagnostics
+bypass the notifier before cache or network access even in interactive terminals.
+
 An explanation comes from a complete scan. An unrelated fatal input can prevent a query result.
 Unrelated dependency findings do not change the query's exit status, findings or counts. A
 declaration, retained source reference or exact dependency exclusion makes a package known.
@@ -51,7 +68,7 @@ An absent package gets an `unknown` record. A name listed only in `ignoreDepende
 `excluded` record. The explanation preserves usage evidence and underlying findings for excluded
 packages.
 
-Diagnostics escape control characters in paths, arguments and error text. A reader that closes an output pipe early leaves the computed scan status intact.
+Terminal text and error diagnostics escape control characters in paths, arguments and error text; JSON keeps decoded values. A reader that closes an output pipe early leaves the computed scan status intact.
 
 JSON stdout is one UTF-8 document with two-space indentation and one trailing LF. An operational
 error produces empty stdout, including with `--format json`. The package ships the
@@ -68,6 +85,112 @@ Offsets are zero-based UTF-16 code units, with one-based line and column. CRLF c
 break and two offset units. Script and config records identify fields with escaped RFC 6901
 JSON Pointers. The [format guide](../schemas/README.md#evidence-meaning-and-position-units) defines
 the full position and evidence rules.
+
+## Scan scope diagnostics
+
+Both commands opt into
+facts collected during the same scan; reporters do not rescan the project:
+
+```sh
+depvitals ./project --diagnostics
+depvitals ./project --format json --diagnostics
+```
+
+Terminal output appends a blank line and `Scan diagnostics` after the ordinary report, then
+`Source files scanned` and `Nested-package source files` with two-space indentation. Applicable
+notice sentences follow in the fixed code order below. Ordinary terminal output has no scope
+section. Ordinary JSON and explanations omit the object entirely.
+
+Diagnostic JSON appends `diagnostics` after `query`. Its members appear as `sourceFilesScanned`,
+`nestedPackageSourceFiles`, `notices`. Counts are safe nonnegative integers (at most
+9007199254740991); nested is at most total. These counts cover supported files whose existing
+read/extraction finished, including empty/comment-only sources and declaration files. A file
+with many references counts once. Pruned or linked sources do not count. Manifest, lockfile and
+configuration reads are not source counts unless that file was itself an eligible source.
+A required malformed/linked nested manifest still fails the scan; it produces no partial counts.
+
+| Notice code             | Condition and meaning                                                                                                                                                        |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `no-supported-sources`  | Total source count is zero. Script/config evidence can still contribute.                                                                                                     |
+| `nested-package-inputs` | Nested source count is positive; its nearest manifest lies below the selected root. Findings still use the selected root inventory.                                          |
+| `workspace-declared`    | The root has a nonempty `workspaces` array, or `workspaces.packages` array, containing only strings with nonblank trimmed values. Patterns are context and are not expanded. |
+
+Notices are unique and always follow this order; the first two cannot co-occur. A nameless or
+empty nested manifest still establishes ownership. A nested source need not belong to a declared
+workspace. Empty/mixed/blank workspace arrays, nested declarations and `pnpm-workspace.yaml` alone
+supply no workspace notice. A recognized declaration does not prove that members exist or that
+another tool accepts its patterns. No workspace inventory is aggregated.
+
+### Zero sources
+
+For `empty-project/package.json` containing `{}` and no other files, run
+`depvitals ./empty-project --diagnostics` from outside it. Exit is 0, stderr is empty, and stdout is:
+
+```text
+DepVitals
+
+No dependency issues found.
+
+Scan diagnostics
+  Source files scanned: 0
+  Nested-package source files: 0
+  No supported source files were scanned.
+```
+
+The JSON command `depvitals ./empty-project --format json --diagnostics` also exits 0 and appends
+this object to its complete report:
+
+```json
+{
+  "sourceFilesScanned": 0,
+  "nestedPackageSourceFiles": 0,
+  "notices": ["no-supported-sources"]
+}
+```
+
+### Nested inputs and workspace context
+
+The [nested README example](../README.md#understand-scan-scope) scans one child source against
+an empty parent inventory and reports the child's dependency as missing. Select the child as
+root to use its inventory, or deliberately exclude its path through `ignorePaths`. Exclusions
+narrow the result; the notice does not decide which scope is appropriate for your project.
+
+For `workspace-only/package.json` containing `{"workspaces":["packages/*"]}` and no other files,
+`depvitals ./workspace-only --diagnostics` exits 0 with empty stderr and this stdout:
+
+```text
+DepVitals
+
+No dependency issues found.
+
+Scan diagnostics
+  Source files scanned: 0
+  Nested-package source files: 0
+  No supported source files were scanned.
+  The root package.json declares workspaces. This scan uses only the selected root inventory.
+```
+
+No member directory is needed. `depvitals ./workspace-only --format json --diagnostics` appends:
+
+```json
+{
+  "sourceFilesScanned": 0,
+  "nestedPackageSourceFiles": 0,
+  "notices": ["no-supported-sources", "workspace-declared"]
+}
+```
+
+The [complete normative report](../schemas/examples/scan-diagnostics.json) uses an illustrative
+0.5.0 version and `/example/project` root; real reports use their installed version and actual
+absolute root. JSON schema remains 1. Existing v1 readers that tolerate unknown properties,
+including the exact v0.4.1 CI verifier, accept diagnostic scans. Structural schema validation
+and semantic count/notice checks remain separate. The scoped-query pattern repair aligns schema
+acceptance with the runtime grammar already shipped in v0.4.1; it changes no findings.
+
+The [six-root comparison](compatibility/v0.5.0.md) and
+[reviewed expectation ledger](../test/fixtures/external-corpus/v0.5.0/review.json) record immutable inputs,
+ordinary-output agreement, explanation samples, diagnostic scope facts and shared-host cost
+observations. They establish behavior on those inputs, not safe-removal or framework-wide claims.
 
 ## Optional project configuration
 
@@ -86,8 +209,8 @@ A leading UTF-8 BOM is accepted; comments/JSON5 are not. Unknown keys, wrong typ
 
 ### Editor validation
 
-The editor schema ships with v0.5.0. Before release, use a local build containing
-`schemas/depvitals-config.schema.json` installed in your workspace.
+The v0.5.0 package includes `schemas/depvitals-config.schema.json`. Install DepVitals in your
+workspace to use the local schema, including while offline.
 
 In VS Code, add this mapping to `.vscode/settings.json` in the workspace root. Merge the entry
 into any existing `json.schemas` array.
@@ -120,7 +243,7 @@ The CLI additionally enforces portable literal paths and normalization, includin
 `../outside`, `src/*.js` and `./.`. VS Code supports workspace settings and relative schema
 URLs. [VS Code JSON schema settings](https://code.visualstudio.com/docs/languages/json#_json-schemas-and-settings)
 
-After v0.5.0 is released, the same mapping can use the immutable URL
+To pin editor validation to v0.5.0, the same mapping can use the immutable URL
 `https://raw.githubusercontent.com/MatiasRicardi/depvitals/v0.5.0/schemas/depvitals-config.schema.json`.
 The installed-schema URL also supports offline editing.
 
@@ -259,7 +382,7 @@ A root `jest.config.js`, `.mjs`, `.cjs`, `.ts` or `.json` entry disables all man
 
 ## Update notice and privacy
 
-Core scanning is offline and never executes or modifies the analyzed project. Only a completed normal CLI scan can trigger the optional update check, after its report is written. Both stdout and stderr must be TTYs; recognized CI environments, opt-out, help/version, argument errors and failed scans suppress cache access, requests and notices. Findings alone do not suppress it. JSON scans and both explanation formats skip the notifier before any cache read, write or transport request, including with both streams interactive.
+Core scanning is offline and never executes or modifies the analyzed project. Only a completed ordinary terminal full scan can trigger the optional update check, after its report is written. Both stdout and stderr must be TTYs; recognized CI environments, opt-out, help/version, argument errors and failed scans suppress cache access, requests and notices. Findings alone do not suppress it. JSON scans, both explanation formats and all `--diagnostics` scans skip the notifier before any cache read, write or transport request, including with both streams interactive.
 
 The check requests public dist-tags for **DepVitals itself** from `https://registry.npmjs.org/-/package/depvitals/dist-tags`. It sends no project path, manifest, dependency list, source, authentication token or telemetry. Strict stable versions are compared; prerelease or malformed versions produce no notice. The lookup defaults to 400 ms and the whole optional check has a 1000 ms budget; cache/network failures are silent and cannot change the scan status.
 
@@ -284,16 +407,24 @@ These examples run the npm release; use `node dist/cli/index.js` from a local ch
 
 ## CI consumer recipe
 
-The [fixed-version GitHub Actions recipe](examples/ci/README.md) targets the v0.4.0 release.
-It captures the scan report, diagnostic and status as separate artifacts and enforces the scan
-outcome after upload. The recipe includes a local tarball substitution for candidate verification.
+The [fixed-version GitHub Actions recipe](examples/ci/README.md) pins depvitals@0.5.0 and
+provides a local-tarball consumer for development-build verification.
+Its default capture is ordinary JSON. The optional second `--diagnostics` capture argument adds
+scope facts to the JSON artifact; `depvitals-diagnostics.txt` remains stderr and is empty for
+completed scans. Keep `npm run --silent check:dependencies` for direct script enforcement.
+
+Both current and exact v0.4.1 verifiers accept clean diagnostics with notices (exit 0), enforce
+findings and operational errors (exit 1), and reject malformed, missing or inconsistent artifact
+sets (exit 2). The latter is the adapter status, not a new CLI exit code. The copied workflow
+uploads available artifacts before enforcing the recorded result. A successful capture wrapper
+alone is not a clean scan. Hosted upload is separate from local verification of the script steps.
 
 ## Manual migration from Depcheck
 
 Review the flags, policy and JSON consumers together. Depcheck documents `--json`, ignore
 patterns and a result shape with fields such as `using`, `invalidFiles` and `invalidDirs`. [Depcheck usage and JSON example](https://github.com/depcheck/depcheck#usage).
 
-| Area                | DepVitals v0.4.0                                                                                                                                                                                                                    |
+| Area                | DepVitals v0.5.0                                                                                                                                                                                                                    |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Machine output      | Use `--format json`. Read `findings`, `counts` and package `evidence` from the versioned schema.                                                                                                                                    |
 | Exclusions          | Review each `.depcheckrc` or CLI ignore rule. Translate intentional exclusions to literal `ignorePaths` or exact `ignoreDependencies` in the selected root's strict `depvitals.config.json`. Expand and review glob rules manually. |

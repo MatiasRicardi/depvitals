@@ -33,7 +33,11 @@ body:
       description: |
         Include stdout, stderr and the numeric exit status. On a build that supports them,
         use `--format json` for the scan and `--explain <package>` for the affected package.
-        Keep an empty stdout explicit for an operational error. Redact private paths or values.
+        For scope questions, include a v0.5.0 full scan
+        with `--format json --diagnostics`. Run package explanations separately; `--diagnostics`
+        cannot be combined with `--explain`. Keep an empty stdout explicit for an operational
+        error. Reports include absolute project paths and source/script/config values;
+        redact private paths or values before attaching them.
     validations:
       required: true
   - type: input
@@ -41,7 +45,7 @@ body:
     attributes:
       label: DepVitals version
       description: Run depvitals --version. For a development build, include the commit SHA.
-      placeholder: '0.4.1 or development commit SHA'
+      placeholder: '0.5.0 or development commit SHA'
     validations:
       required: true
   - type: input
