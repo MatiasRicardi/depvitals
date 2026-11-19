@@ -262,6 +262,9 @@ function verifyCiAdoption(tarballPath, packed, npmEnv) {
     [
       'install',
       '--package-lock-only',
+      '--package-lock',
+      '--lockfile-version=3',
+      '--save',
       '--ignore-scripts',
       '--save-dev',
       '--save-exact',
@@ -291,7 +294,27 @@ function verifyCiAdoption(tarballPath, packed, npmEnv) {
     version.status === 0 && version.stdout === packed.version + '\n',
   );
 
+  verifyInstalledArchive(
+    join(project, 'node_modules/depvitals'),
+    archiveFiles(readFileSync(tarballPath)),
+  );
+  check('CI recipe installs the exact packaged bytes', true);
+  const validate = new Ajv({ allErrors: true }).compile(
+    JSON.parse(
+      readFileSync(join(project, 'node_modules/depvitals/schemas/report-v1.schema.json'), 'utf8'),
+    ),
+  );
+  const validateArchived = new Ajv({ allErrors: true }).compile(
+    JSON.parse(readFileSync(join(ROOT, 'test/fixtures/report-schemas/v0.4.1.schema.json'), 'utf8')),
+  );
   const cleanManifest = readFileSync(manifestPath, 'utf8');
+  const diagnosticManifest = JSON.stringify({
+    ...JSON.parse(cleanManifest),
+    scripts: {
+      ...JSON.parse(cleanManifest).scripts,
+      'check:dependencies': 'depvitals --format json --diagnostics',
+    },
+  });
   const findingsManifest = JSON.stringify({
     ...JSON.parse(cleanManifest),
     dependencies: { 'ci-unused-only': '*' },
@@ -300,7 +323,7 @@ function verifyCiAdoption(tarballPath, packed, npmEnv) {
   const configPath = join(project, 'depvitals.config.json');
   const cleanSource = sideEffect + ';\n';
   const findingsSource = cleanSource + "require('ci-missing-only');\n";
-  writeFileSync(join(project, 'eslint.config.cjs'), cleanSource);
+  const configSourcePath = join(project, 'eslint.config.cjs');
   const outputPaths = (directory) =>
     ['report.json', 'diagnostics.txt', 'status.txt'].map((name) =>
       join(directory, 'depvitals-' + name),
@@ -315,6 +338,45 @@ function verifyCiAdoption(tarballPath, packed, npmEnv) {
       source: cleanSource,
       exit: 0,
       findings: [[], [], []],
+    },
+    {
+      name: 'zero-source-diagnostics',
+      manifest: diagnosticManifest,
+      source: undefined,
+      exit: 0,
+      diagnostics: {
+        sourceFilesScanned: 0,
+        nestedPackageSourceFiles: 0,
+        notices: ['no-supported-sources'],
+      },
+      findings: [[], [], []],
+    },
+    {
+      name: 'clean-diagnostics',
+      manifest: diagnosticManifest,
+      source: cleanSource,
+      exit: 0,
+      diagnostics: { sourceFilesScanned: 2, nestedPackageSourceFiles: 0, notices: [] },
+      findings: [[], [], []],
+    },
+    {
+      name: 'findings-diagnostics',
+      manifest: JSON.stringify({
+        ...JSON.parse(diagnosticManifest),
+        dependencies: { 'ci-unused-only': '*' },
+      }),
+      source: findingsSource,
+      exit: 1,
+      diagnostics: { sourceFilesScanned: 2, nestedPackageSourceFiles: 0, notices: [] },
+      findings: [['ci-unused-only'], [], ['ci-missing-only']],
+    },
+    {
+      name: 'fatal-diagnostics',
+      manifest: '{',
+      source: cleanSource,
+      exit: 1,
+      diagnostics: true,
+      error: 'package.json',
     },
     {
       name: 'findings',
@@ -355,16 +417,27 @@ function verifyCiAdoption(tarballPath, packed, npmEnv) {
     },
   ]) {
     writeFileSync(manifestPath, row.manifest);
-    writeFileSync(sourcePath, row.source);
+    if (row.source === undefined) {
+      rmSync(sourcePath, { force: true });
+      rmSync(configSourcePath, { force: true });
+    } else {
+      writeFileSync(sourcePath, row.source);
+      writeFileSync(configSourcePath, cleanSource);
+    }
     if (row.config === undefined) rmSync(configPath, { force: true });
     else writeFileSync(configPath, row.config);
     const before = snapshotFixtures([project]);
     const reportDir = join(artifacts, row.name);
-    const capture = run('bash', [join(recipe, 'capture-report.sh'), reportDir], project, {
-      ...process.env,
-      CI: '1',
-      DEPVITALS_NO_UPDATE_CHECK: '1',
-    });
+    const capture = run(
+      'bash',
+      [join(recipe, 'capture-report.sh'), reportDir, ...(row.diagnostics ? ['--diagnostics'] : [])],
+      project,
+      {
+        ...process.env,
+        CI: '1',
+        DEPVITALS_NO_UPDATE_CHECK: '1',
+      },
+    );
     check(
       `CI recipe capture leaves artifacts for ${row.name}`,
       capture.status === 0,
@@ -389,6 +462,30 @@ function verifyCiAdoption(tarballPath, packed, npmEnv) {
     } else {
       const document = JSON.parse(report);
       check(
+        `CI recipe emits current-schema JSON for ${row.name}`,
+        validate(document),
+        JSON.stringify(validate.errors),
+      );
+      check(
+        `CI recipe preserves installed tool version for ${row.name}`,
+        document.tool.version === packed.version,
+      );
+      if (row.diagnostics) {
+        check(
+          `CI recipe diagnostic facts agree for ${row.name}`,
+          isDeepStrictEqual(document.diagnostics, row.diagnostics),
+        );
+        check(
+          `CI recipe diagnostic scan passes archived schema for ${row.name}`,
+          validateArchived(document),
+          JSON.stringify(validateArchived.errors),
+        );
+      } else
+        check(
+          `CI recipe omits optional facts for ${row.name}`,
+          !Object.hasOwn(document, 'diagnostics'),
+        );
+      check(
         `CI recipe preserves exact findings for ${row.name}`,
         diagnostics === '' &&
           JSON.stringify([
@@ -408,16 +505,39 @@ function verifyCiAdoption(tarballPath, packed, npmEnv) {
         );
       }
     }
-    if (row.name === 'clean') {
+    if (row.error === undefined) {
       const silent = run('npm', ['run', '--silent', 'check:dependencies'], project);
       check(
-        'CI recipe silent package script matches direct JSON bytes',
-        silent.status === 0 && silent.stdout === report && silent.stderr === '',
+        `CI recipe silent package script matches direct JSON bytes for ${row.name}`,
+        silent.status === row.exit && silent.stdout === report && silent.stderr === '',
       );
     }
     check(
       `CI recipe preserves project inputs for ${row.name}`,
       snapshotsEqual(before, snapshotFixtures([project])) && !existsSync(marker),
+    );
+  }
+
+  for (const [name, args] of [
+    ['unknown', ['--unknown']],
+    ['attached-value', ['--diagnostics=true']],
+    ['shell-text', ['--diagnostics; touch ' + marker]],
+    ['extra', ['--diagnostics', 'extra']],
+  ]) {
+    const directory = join(artifacts, 'bad-' + name);
+    const rejected = run(
+      'bash',
+      [join(recipe, 'capture-report.sh'), directory, ...args],
+      project,
+      npmEnv,
+    );
+    check(
+      `CI recipe rejects ${name} arguments without partial artifacts`,
+      rejected.status === 2 &&
+        rejected.stdout === '' &&
+        rejected.stderr !== '' &&
+        !existsSync(directory) &&
+        !existsSync(marker),
     );
   }
 
