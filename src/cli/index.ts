@@ -24,7 +24,8 @@ const version = JSON.parse(
 
 // A pipeline consumer may close its end after reading enough output. The scan status still applies.
 function handleOutputError(error: NodeJS.ErrnoException): void {
-  if (error.code !== 'EPIPE') throw error;
+  // macOS pipe-backed stdio may report ENOTCONN after the reader disconnects.
+  if (error.code !== 'EPIPE' && error.code !== 'ENOTCONN') throw error;
 }
 process.stdout.on('error', handleOutputError);
 process.stderr.on('error', handleOutputError);
