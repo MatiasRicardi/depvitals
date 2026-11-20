@@ -11,7 +11,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { JsonReport } from '../src/reporters/jsonReporter.js';
@@ -228,7 +228,7 @@ describe('v0.4.0 release audit', () => {
     );
     const result = spawnSync(
       process.execPath,
-      ['--import', disconnectedOutput, entry, project, '--format', 'json'],
+      ['--import', pathToFileURL(disconnectedOutput).href, entry, project, '--format', 'json'],
       { env, encoding: 'utf8', timeout: 10_000 },
     );
     expect(result.error).toBeUndefined();
@@ -247,7 +247,7 @@ describe('v0.4.0 release audit', () => {
     );
     const result = spawnSync(
       process.execPath,
-      ['--import', failedOutput, entry, project, '--format', 'json'],
+      ['--import', pathToFileURL(failedOutput).href, entry, project, '--format', 'json'],
       { env, encoding: 'utf8', timeout: 10_000 },
     );
     expect(result.error).toBeUndefined();
