@@ -20,6 +20,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Preserve the computed scan status when a closed output stream reports `ENOTCONN` on macOS.
 - Align both report-schema query patterns with scoped names already accepted by the v0.4.1 CLI,
   including `@scope/_demo` and `@scope/-demo`. Runtime query and exclusion grammar is unchanged.
 

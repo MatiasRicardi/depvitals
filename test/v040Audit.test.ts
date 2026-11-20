@@ -11,7 +11,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { JsonReport } from '../src/reporters/jsonReporter.js';
@@ -208,6 +208,52 @@ describe('v0.4.0 release audit', () => {
       status: 'used',
       evidence: [{ command: 'tsx/$0', via: 'node-preload', occurrence: 1 }],
     });
+  });
+
+  it.each([
+    ['EPIPE', 0],
+    ['EPIPE', 1],
+    ['ENOTCONN', 0],
+    ['ENOTCONN', 1],
+  ] as const)('preserves scan exit %s/%s on a disconnected output', (code, status) => {
+    if (status === 1) writeFileSync(join(project, 'index.mjs'), "import 'missing';\n");
+    const disconnectedOutput = join(lab, 'disconnected-output.mjs');
+    writeFileSync(
+      disconnectedOutput,
+      `process.stdout.write = () => {
+        queueMicrotask(() => process.stdout.emit('error',
+          Object.assign(new Error('disconnected output'), {code: ${JSON.stringify(code)}})));
+        return true;
+      };`,
+    );
+    const result = spawnSync(
+      process.execPath,
+      ['--import', pathToFileURL(disconnectedOutput).href, entry, project, '--format', 'json'],
+      { env, encoding: 'utf8', timeout: 10_000 },
+    );
+    expect(result.error).toBeUndefined();
+    expect(result).toMatchObject({ status, signal: null, stdout: '', stderr: '' });
+  });
+
+  it('propagates an output error that is not a disconnection', () => {
+    const failedOutput = join(lab, 'failed-output.mjs');
+    writeFileSync(
+      failedOutput,
+      `process.stdout.write = () => {
+        queueMicrotask(() => process.stdout.emit('error',
+          Object.assign(new Error('output failure'), {code: 'EIO'})));
+        return true;
+      };`,
+    );
+    const result = spawnSync(
+      process.execPath,
+      ['--import', pathToFileURL(failedOutput).href, entry, project, '--format', 'json'],
+      { env, encoding: 'utf8', timeout: 10_000 },
+    );
+    expect(result.error).toBeUndefined();
+    expect(result).toMatchObject({ status: 1, signal: null, stdout: '' });
+    expect(result.stderr).toContain('EIO');
+    expect(result.stderr).toContain('output failure');
   });
 
   it.each([0, 1])(
