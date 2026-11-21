@@ -82,6 +82,11 @@ export type ExtractModuleSpecifiersOptions = {
   module?: boolean | 'detect';
 };
 
+/** A lexical hint for JS files that may contain JSX. The tokenizer still decides where tags start. */
+export function hasJsxTagHint(source: string): boolean {
+  return JSX_TAG_HINT.test(source);
+}
+
 /**
  * Extract the statically knowable module specifiers from `source`.
  *
@@ -5210,7 +5215,9 @@ function isLineTerminator(ch: string | undefined): boolean {
   return ch === '\n' || ch === '\r' || ch === '\u2028' || ch === '\u2029';
 }
 
-const IDENTIFIER_START = /^[$_\p{ID_Start}]$/u;
+const IDENTIFIER_START_CLASS = String.raw`[$_\p{ID_Start}]`;
+const IDENTIFIER_START = new RegExp(`^${IDENTIFIER_START_CLASS}$`, 'u');
+const JSX_TAG_HINT = new RegExp(`</${IDENTIFIER_START_CLASS}|/>`, 'u');
 const IDENTIFIER_PART = /^[$_\u200C\u200D\p{ID_Continue}]$/u;
 
 function isIdentifierStartAt(source: string, index: number): boolean {

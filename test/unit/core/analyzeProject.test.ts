@@ -610,6 +610,48 @@ describe('Step 76 mode boundaries and bounded reads', () => {
     }
   });
 
+  it.each([
+    ['index.js', '<Élément>'],
+    ['index.mjs', '<𐐀Tag>'],
+    ['index.cjs', '<$Tag>'],
+    ['index.js', '<_Tag>'],
+    ['index.js', '<Element>'],
+    ['index.js', '<>'],
+    ['index.jsx', '<Élément>'],
+    ['index.tsx', '<Élément>'],
+  ])('analyzes JSX in %s with opening tag %s', async (file, opening) => {
+    const closing = opening.replace('<', '</');
+    const source = `const view = ${opening}require('decoy'){require('real')}${closing};`;
+    const result = await analyzeTemporaryProject(
+      { dependencies: { real: '1' } },
+      { [file]: source },
+    );
+    expect(result.unusedDependencies).toEqual([]);
+    expect(result.missingDependencies).toEqual([]);
+  });
+
+  it('retains expression evidence in a self-closing JS tag', async () => {
+    const result = await analyzeTemporaryProject(
+      {},
+      {
+        'index.js': "const view = <Élément value={require('attribute-real')} />;",
+      },
+    );
+    expect(result.missingDependencies).toEqual(['attribute-real']);
+  });
+
+  it('keeps JavaScript comparison and division and a plain TS assertion', async () => {
+    const result = await analyzeTemporaryProject(
+      {},
+      {
+        'index.js':
+          "const hint = '</Élément>'; const ratio = value <threshold / require('division-real') / 2;",
+        'types.ts': "const view = <Élément>require('assertion-real'); const hint = '</Élément>';",
+      },
+    );
+    expect(result.missingDependencies).toEqual(['assertion-real', 'division-real']);
+  });
+
   it('does not turn ambiguous-file lexical failures into a successful report', async () => {
     const error = await captureAnalysisError(() =>
       analyzeTemporaryProject(

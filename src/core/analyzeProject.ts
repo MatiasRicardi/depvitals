@@ -59,6 +59,7 @@ import {
 import { discoverSourceFiles } from '../scanner/sourceFiles.js';
 import {
   collectModuleSpecifiers,
+  hasJsxTagHint,
   type PositionedModuleSpecifierOccurrence,
 } from '../scanner/moduleSpecifiers.js';
 import { classifyPackageSpecifier, isPackageSelfReference } from '../scanner/packageSpecifier.js';
@@ -600,7 +601,7 @@ function usesJsxSyntax(file: string, source: string): boolean {
     return true;
   }
 
-  return /\.(?:js|mjs|cjs)$/.test(lower) && /<\/[A-Za-z]|\/>/.test(source);
+  return /\.(?:js|mjs|cjs)$/.test(lower) && hasJsxTagHint(source);
 }
 
 /**
