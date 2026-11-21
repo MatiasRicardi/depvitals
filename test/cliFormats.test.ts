@@ -227,6 +227,105 @@ describe('compiled format/query outcomes', () => {
     expect(result.stderr).toContain('could not be analyzed: Unterminated regex literal\n');
   });
 
+  it('skips TS declaration regex decoys and reports the real adjacent references', async () => {
+    const project = await mkdtemp(join(scratch, 'ts-statement-regex-'));
+    const manifest = '{"dependencies":{"real-pkg":"1"}}';
+    const source = [
+      'export type Text = string',
+      "/require('alias-decoy')/.test('x');",
+      'declare const value: string',
+      "/require('ambient-decoy')/.test('x');",
+      "import 'real-pkg';",
+      "const ratio: number = 12 / require('real-pkg') / 2;",
+      '',
+    ].join('\n');
+
+    await writeFile(join(project, 'package.json'), manifest);
+    await writeFile(join(project, 'index.ts'), source);
+    const result = child([project, '--format', 'json']);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    const report = JSON.parse(result.stdout) as JsonReport;
+    expect(report.findings).toEqual({
+      unusedDependencies: [],
+      unusedDevDependencies: [],
+      missingDependencies: [],
+    });
+    expect(report.packages).toEqual([
+      expect.objectContaining({
+        name: 'real-pkg',
+        status: 'used',
+        evidence: [
+          {
+            kind: 'source',
+            file: 'index.ts',
+            reference: 'import',
+            specifier: 'real-pkg',
+            position: { offset: source.indexOf("'real-pkg'"), line: 5, column: 8 },
+          },
+          {
+            kind: 'source',
+            file: 'index.ts',
+            reference: 'require',
+            specifier: 'real-pkg',
+            position: { offset: source.lastIndexOf("'real-pkg'"), line: 6, column: 36 },
+          },
+        ],
+      }),
+    ]);
+    expect(await readFile(join(project, 'index.ts'), 'utf8')).toBe(source);
+  });
+
+  it('preserves multiline function and import type boundaries through the CLI', async () => {
+    const project = await mkdtemp(join(scratch, 'ts-multiline-type-'));
+    const source = [
+      'type F = ()',
+      '  => string',
+      "/require('arrow-decoy')/.test('x');",
+      'type T = import',
+      "  ('real-pkg').T",
+      "/require('import-decoy')/.test('x');",
+      '',
+    ].join('\n');
+    await writeFile(join(project, 'package.json'), '{"dependencies":{"real-pkg":"1"}}');
+    await writeFile(join(project, 'index.ts'), source);
+
+    const result = child([project, '--format', 'json']);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    const report = JSON.parse(result.stdout) as JsonReport;
+    expect(report.findings).toEqual({
+      unusedDependencies: [],
+      unusedDevDependencies: [],
+      missingDependencies: [],
+    });
+    expect(report.packages).toEqual([
+      expect.objectContaining({
+        name: 'real-pkg',
+        status: 'used',
+        evidence: [
+          {
+            kind: 'source',
+            file: 'index.ts',
+            reference: 'dynamic-import',
+            specifier: 'real-pkg',
+            position: { offset: source.indexOf("'real-pkg'"), line: 5, column: 4 },
+          },
+        ],
+      }),
+    ]);
+  });
+
+  it('keeps malformed regex input fatal after a TypeScript alias', async () => {
+    const project = await mkdtemp(join(scratch, 'incomplete-ts-statement-regex-'));
+    await writeFile(join(project, 'package.json'), '{}');
+    await writeFile(join(project, 'index.mts'), 'type Text = string\n/unterminated\n');
+    const result = child([project, '--format', 'json']);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('could not be analyzed: Unterminated regex literal\n');
+  });
+
   it('keeps why a project path and explicit terminal scan byte-compatible', () => {
     const legacy = child(['why']);
     expect(legacy.status).toBe(1);
