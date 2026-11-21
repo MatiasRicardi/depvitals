@@ -384,6 +384,46 @@ describe('compiled format/query outcomes', () => {
     },
   );
 
+  it('keeps left shifts as operators when a string enables JSX discovery', async () => {
+    const project = await mkdtemp(join(scratch, 'jsx-left-shifts-'));
+    const source = [
+      "const hint = '</Élément>';",
+      'const result = 1 <<count;',
+      'let target = 1;',
+      'target <<=count;',
+      "const fn = (require = 1 <<count) => require('shadowed');",
+      "require('real-pkg');",
+      '',
+    ].join('\n');
+    await writeFile(join(project, 'package.json'), '{"dependencies":{"real-pkg":"1"}}');
+    await writeFile(join(project, 'index.js'), source);
+
+    const result = child([project, '--format', 'json']);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    const report = JSON.parse(result.stdout) as JsonReport;
+    expect(report.findings).toEqual({
+      unusedDependencies: [],
+      unusedDevDependencies: [],
+      missingDependencies: [],
+    });
+    expect(report.packages).toEqual([
+      expect.objectContaining({
+        name: 'real-pkg',
+        status: 'used',
+        evidence: [
+          {
+            kind: 'source',
+            file: 'index.js',
+            reference: 'require',
+            specifier: 'real-pkg',
+            position: { offset: source.indexOf("'real-pkg'"), line: 6, column: 9 },
+          },
+        ],
+      }),
+    ]);
+  });
+
   it('keeps why a project path and explicit terminal scan byte-compatible', () => {
     const legacy = child(['why']);
     expect(legacy.status).toBe(1);

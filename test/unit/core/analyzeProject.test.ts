@@ -611,17 +611,16 @@ describe('Step 76 mode boundaries and bounded reads', () => {
   });
 
   it.each([
-    ['index.js', '<Élément>'],
-    ['index.mjs', '<𐐀Tag>'],
-    ['index.cjs', '<$Tag>'],
-    ['index.js', '<_Tag>'],
-    ['index.js', '<Element>'],
-    ['index.js', '<>'],
-    ['index.jsx', '<Élément>'],
-    ['index.tsx', '<Élément>'],
-  ])('analyzes JSX in %s with opening tag %s', async (file, opening) => {
-    const closing = opening.replace('<', '</');
-    const source = `const view = ${opening}require('decoy'){require('real')}${closing};`;
+    ['index.js', 'Élément'],
+    ['index.mjs', '𐐀Tag'],
+    ['index.cjs', '$Tag'],
+    ['index.js', '_Tag'],
+    ['index.js', 'Element'],
+    ['index.js', ''],
+    ['index.jsx', 'Élément'],
+    ['index.tsx', 'Élément'],
+  ])('analyzes JSX in %s with tag %j', async (file, tag) => {
+    const source = `const view = <${tag}>require('decoy'){require('real')}</${tag}>;`;
     const result = await analyzeTemporaryProject(
       { dependencies: { real: '1' } },
       { [file]: source },
