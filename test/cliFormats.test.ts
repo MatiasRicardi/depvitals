@@ -163,6 +163,70 @@ function child(
 }
 
 describe('compiled format/query outcomes', () => {
+  it('preserves real evidence after keyword member division and a labeled break', async () => {
+    const project = await mkdtemp(join(scratch, 'statement-regex-'));
+    const manifest = '{"dependencies":{"real-pkg":"1"}}';
+    const division =
+      "const counters = { break: 12 };\nconst result = counters.break\n  / require('real-pkg') / 2;\n";
+    const statement = [
+      'outer: for (;;) {',
+      '  break outer',
+      `  /['"]/g.test('x');`,
+      `  /require('decoy')/.test('x');`,
+      '}',
+      "import 'real-pkg';",
+      '',
+    ].join('\n');
+
+    await writeFile(join(project, 'package.json'), manifest);
+    await writeFile(join(project, 'division.cjs'), division);
+    await writeFile(join(project, 'statement.mjs'), statement);
+    const result = child([project, '--format', 'json']);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    const report = JSON.parse(result.stdout) as JsonReport;
+    expect(report.findings).toEqual({
+      unusedDependencies: [],
+      unusedDevDependencies: [],
+      missingDependencies: [],
+    });
+    expect(report.packages).toEqual([
+      expect.objectContaining({
+        name: 'real-pkg',
+        status: 'used',
+        evidence: [
+          {
+            kind: 'source',
+            file: 'division.cjs',
+            reference: 'require',
+            specifier: 'real-pkg',
+            position: { offset: division.indexOf("'real-pkg'"), line: 3, column: 13 },
+          },
+          {
+            kind: 'source',
+            file: 'statement.mjs',
+            reference: 'import',
+            specifier: 'real-pkg',
+            position: { offset: statement.indexOf("'real-pkg'"), line: 6, column: 8 },
+          },
+        ],
+      }),
+    ]);
+    expect(await readFile(join(project, 'package.json'), 'utf8')).toBe(manifest);
+    expect(await readFile(join(project, 'division.cjs'), 'utf8')).toBe(division);
+    expect(await readFile(join(project, 'statement.mjs'), 'utf8')).toBe(statement);
+  });
+
+  it('reports an incomplete regex after debugger without emitting a partial report', async () => {
+    const project = await mkdtemp(join(scratch, 'incomplete-statement-regex-'));
+    await writeFile(join(project, 'package.json'), '{}');
+    await writeFile(join(project, 'index.mjs'), 'debugger\n/unterminated\n');
+    const result = child([project, '--format', 'json']);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('could not be analyzed: Unterminated regex literal\n');
+  });
+
   it('keeps why a project path and explicit terminal scan byte-compatible', () => {
     const legacy = child(['why']);
     expect(legacy.status).toBe(1);

@@ -162,6 +162,7 @@ type Token = {
       readonly kind: 'identifier';
       readonly value: string;
       readonly propertyName?: boolean;
+      readonly restrictedStatement?: 'jump' | 'debugger';
       readonly offset: number;
       readonly endOffset: number;
     }
@@ -1184,20 +1185,30 @@ function tokenize(
     const atRoot =
       braceContexts.length === 0 && parenDepth === 0 && bracketDepth === 0 && frames.length === 0;
 
-    // A static module declaration cannot continue with division after its source literal.
     if (ch === '/') {
+      const previous = tokens[tokens.length - 1];
+      const beforePrevious = tokens[tokens.length - 2];
+      // ASI ends a jump or debugger statement here. Only a label on the jump keyword's
+      // own line belongs to that statement; a name on the next line may start an expression.
+      const afterRestrictedStatement =
+        tokenLineBreakBefore &&
+        prevKind === 'identifier' &&
+        previous?.kind === 'identifier' &&
+        (previous.restrictedStatement !== undefined ||
+          (previous.lineBreakBefore !== true &&
+            beforePrevious?.kind === 'identifier' &&
+            beforePrevious.restrictedStatement === 'jump'));
       if (
+        // A static module declaration cannot continue with division after its source literal.
         (tokenLineBreakBefore && moduleDeclarationSource === tokens.length - 1) ||
+        afterRestrictedStatement ||
         isRegexStart(
           prevKind,
           prevPunct,
-          prevIsExpressionKeyword ||
-            (tokenLineBreakBefore &&
-              (isIdentifier(tokens[tokens.length - 1], 'break') ||
-                isIdentifier(tokens[tokens.length - 1], 'continue'))),
+          prevIsExpressionKeyword,
           afterControlHead,
           closedObjectBrace,
-          tokens[tokens.length - 1],
+          previous,
         )
       ) {
         const start = i;
@@ -1500,6 +1511,18 @@ function tokenize(
       if (singleArrowContext?.requireScope !== undefined) {
         requireScopes.push(singleArrowContext.requireScope);
       }
+      const isJump = value === 'break' || value === 'continue';
+      const restrictedStatement =
+        (isJump || value === 'debugger') &&
+        !inType &&
+        !isMemberName &&
+        !(prevKind === 'punct' && prevPunct === '#') &&
+        !insideObjectLiteral() &&
+        !insideClassBody()
+          ? isJump
+            ? 'jump'
+            : 'debugger'
+          : undefined;
       emit({
         kind: 'identifier',
         value,
@@ -1510,6 +1533,7 @@ function tokenize(
           ? { requireScope: requireScopes[requireScopes.length - 1] }
           : {}),
         ...(isMemberName ? { propertyName: true } : {}),
+        ...(restrictedStatement === undefined ? {} : { restrictedStatement }),
         ...(moduleSignal ? { moduleSignal: true } : {}),
       });
       // Once the mode is known, only the definitive module pass should validate the remainder.
