@@ -1143,6 +1143,63 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(source)).toEqual(['real']);
     });
 
+    it.each([
+      ['exported alias', 'export type T = string\n'],
+      ['generic alias', 'type T<A = string> = A\n'],
+      ['comment before assignment', 'type T/**/= string\r\n'],
+      ['multiline union', 'type T =\n  | readonly [string]\n  | number\n'],
+      ['conditional type', 'type T<A> = A extends string\n  ? string\n  : number\n'],
+      ['terminal import type', "type T = import('type-real').T\n"],
+      ['ambient binding', 'declare const value: string\n'],
+      ['ambient function type', 'declare const fn: (value: string) => boolean\n'],
+      ['ambient bindings', 'declare var first: string, second: number\n'],
+      ['ambient typed binding after an initializer', 'declare const first = 1, second: number\n'],
+      ['unannotated ambient binding', 'declare const value\n'],
+      ['ambient signature', 'declare function fn(require: unknown): { value: string }\n'],
+      ['ambient scalar signature', 'declare function fn(require: unknown): string\n'],
+      ['explicit semicolon', 'type T = string; '],
+    ])('skips a regex after a TypeScript %s', (_name, declaration) => {
+      const source = `${declaration}/require('decoy')/.test('x');\nrequire('real');`;
+      const expected = declaration.includes('type-real') ? ['type-real', 'real'] : ['real'];
+      expect(
+        extractModuleSpecifiers(source, { typescript: true }).map((item) => item.specifier),
+      ).toEqual(expected);
+    });
+
+    it('still sees multiline type imports, a subsequent TSX expression and reexports', () => {
+      const source = `type T = import('first').T
+        | import('second').T
+      <Box>{require('jsx-real')}</Box>;
+      export { other } from 'export-real';`;
+
+      expect(
+        extractModuleSpecifiers(source, { typescript: true, jsx: true }).map(
+          (item) => item.specifier,
+        ),
+      ).toEqual(['first', 'second', 'jsx-real', 'export-real']);
+    });
+
+    it('keeps runtime division after an initializer, a class field and a contextual name', () => {
+      const source = `declare const literal = 12;
+      const ratio: number = 12
+        / require('expression') / 2;
+      class C { declare member: string; field = obj.type
+        / require('class-field') / 2; }
+      const type = 12;
+      type / require('contextual') / 2;`;
+
+      expect(
+        extractModuleSpecifiers(source, { typescript: true }).map((item) => item.specifier),
+      ).toEqual(['expression', 'class-field', 'contextual']);
+    });
+
+    it('returns to expression grammar before a new line starting with an assertion', () => {
+      const source = "type T = string\n<T>require('assertion') / require('division') / 2;";
+      expect(
+        extractModuleSpecifiers(source, { typescript: true }).map((item) => item.specifier),
+      ).toEqual(['assertion', 'division']);
+    });
+
     it('ignores a regex used as an object literal property value', () => {
       expect(specifiers(`const config = { re: /require\\('fake-prop'\\)/, n: 1 };`)).toEqual([]);
     });

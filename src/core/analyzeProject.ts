@@ -568,6 +568,7 @@ async function readAndExtract(
   try {
     const occurrences = collectModuleSpecifiers(source, {
       jsx: usesJsxSyntax(file, source),
+      typescript: /\.(?:[cm]?ts|tsx)$/u.test(file),
       module: sourceModuleMode(file, packageType),
     });
     return occurrences;

@@ -76,6 +76,8 @@ export type ExtractModuleSpecifiersOptions = {
   // inside `{...}` expression containers is still lexed, so real specifiers are found and JSX can
   // not be mistaken for regex/division. Only meaningful for `.jsx`/`.tsx` source.
   jsx?: boolean;
+  /** Enable statement boundaries that are only valid in TypeScript source. */
+  typescript?: boolean;
   /** Explicit module/script grammar, or bounded syntax detection for ambiguous `.js` input. */
   module?: boolean | 'detect';
 };
@@ -107,13 +109,14 @@ export function collectModuleSpecifiers(
   options: ExtractModuleSpecifiersOptions = {},
 ): readonly PositionedModuleSpecifierOccurrence[] {
   const jsx = options.jsx ?? false;
+  const typescript = options.typescript ?? false;
   // Ambiguous input gets one non-interpreting lexical probe and one definitive extraction. No
   // source reread, parser retry after an exception, or repeated per-statement suffix scans.
   const module =
     options.module === 'detect'
-      ? tokenize(source, jsx, false, true).some((token) => token.moduleSignal === true)
+      ? tokenize(source, jsx, typescript, false, true).some((token) => token.moduleSignal === true)
       : (options.module ?? false);
-  const occurrences = interpret(tokenize(source, jsx, module));
+  const occurrences = interpret(tokenize(source, jsx, typescript, module));
   let cursor = 0;
   let line = 1;
   let column = 1;
@@ -273,6 +276,12 @@ type TypeDepth = {
 type TypeAnnotation = TypeDepth &
   (
     | { readonly role: 'return'; readonly signature: OwnedSignature }
+    | {
+        readonly role: 'declaration';
+        readonly form: 'alias' | 'ambient-variable';
+        readonly owner: LexicalDepth;
+        phase: 'header' | 'type';
+      }
     | { readonly role: 'field'; readonly owner: ClassContext; readonly member: ClassMember }
     | { readonly role: 'parameter'; readonly owner: ParameterContext }
     | { readonly role: 'class-header'; readonly owner: PendingClassContext }
@@ -339,8 +348,9 @@ type Frame =
  */
 function tokenize(
   source: string,
-  jsx = false,
-  module = false,
+  jsx: boolean,
+  typescript: boolean,
+  module: boolean,
   detectModule = false,
 ): readonly Token[] {
   const tokens: Token[] = [];
@@ -440,6 +450,7 @@ function tokenize(
   let colonIsExpression = false;
   const expressionFunctionContexts: ExpressionFuncContext[] = [];
   let typeAnnotation: TypeAnnotation | undefined;
+  let ambientInitializer: LexicalDepth | undefined;
   const parameterContexts: ParameterContext[] = [];
   let closedParameterSignature: OwnedSignature | undefined;
   let bracketDepth = 0;
@@ -463,6 +474,25 @@ function tokenize(
     braceContexts.length === context.braceDepth &&
     frames.length === context.frameDepth;
 
+  const startTypeDeclaration = (
+    form: 'alias' | 'ambient-variable',
+    phase: 'header' | 'type',
+  ): TypeAnnotation => ({
+    role: 'declaration',
+    form,
+    phase,
+    owner: {
+      parenDepth,
+      bracketDepth,
+      braceDepth: braceContexts.length,
+      frameDepth: frames.length,
+    },
+    parenDepth: 0,
+    bracketDepth: 0,
+    braceDepth: 0,
+    angleDepth: 0,
+    typeOperandExpected: true,
+  });
   const insideObjectLiteral = (): boolean =>
     braceContexts[braceContexts.length - 1]?.role === 'object';
   const insideClassBody = (): boolean => braceContexts[braceContexts.length - 1]?.role === 'class';
@@ -720,6 +750,40 @@ function tokenize(
       isIdentifierStartAt(source, i) || isUnicodeEscapeStart(source, i)
         ? readIdentifier(source, i)
         : undefined;
+    const declaration = typeAnnotation?.role === 'declaration' ? typeAnnotation : undefined;
+    if (declaration !== undefined && atLexicalDepth(declaration.owner) && atTypeRoot(declaration)) {
+      const ambient = declaration.form === 'ambient-variable';
+      if (ambient && ch === '=' && source[i + 1] !== '>') {
+        // Scan the initializer as an expression, but retain ownership of the next binding.
+        ambientInitializer = declaration.owner;
+        typeAnnotation = undefined;
+        inType = false;
+      } else if (ambient && ch === ',') {
+        declaration.phase = 'header';
+        declaration.typeOperandExpected = true;
+      } else if (declaration.phase === 'header' && ch === (ambient ? ':' : '=')) {
+        declaration.phase = 'type';
+        declaration.typeOperandExpected = true;
+      } else if (
+        tokenLineBreakBefore &&
+        (ch === '/' || (!declaration.typeOperandExpected && !'.|&?:'.includes(ch)))
+      ) {
+        // A slash cannot continue a type. Other new lines may still lead into a union,
+        // intersection or conditional type after a complete operand.
+        typeAnnotation = undefined;
+        inType = false;
+        resetExpressionState();
+      }
+    }
+    if (
+      typescript &&
+      typeAnnotation === undefined &&
+      (ch === '<' || (ch === '=' && source[i + 1] !== '=' && source[i + 1] !== '>')) &&
+      startsTypeAlias(tokens)
+    ) {
+      typeAnnotation = startTypeDeclaration('alias', ch === '<' ? 'header' : 'type');
+      inType = true;
+    }
     if (
       typeAnnotation?.role === 'assertion' &&
       atLexicalDepth(typeAnnotation.owner) &&
@@ -743,6 +807,27 @@ function tokenize(
       afterControlHead = false;
       typeAnnotation = undefined;
       inType = false;
+    }
+    if (
+      ambientInitializer !== undefined &&
+      typeAnnotation === undefined &&
+      atLexicalDepth(ambientInitializer)
+    ) {
+      const previous = tokens[tokens.length - 1];
+      if (ch === ',') {
+        typeAnnotation = startTypeDeclaration('ambient-variable', 'header');
+        ambientInitializer = undefined;
+        inType = true;
+      } else if (
+        ch === ';' ||
+        ch === '}' ||
+        (tokenLineBreakBefore &&
+          previous !== undefined &&
+          isMemberExpressionEnd(previous) &&
+          !expressionContinues(ch, identifier?.value))
+      ) {
+        ambientInitializer = undefined;
+      }
     }
     const expressionOwner = expressionFunctionContexts[expressionFunctionContexts.length - 1];
     if (
@@ -833,7 +918,15 @@ function tokenize(
       ((typeAnnotation === undefined && tokenLineBreakBefore && ch !== '{' && ch !== ':') ||
         (ch === '}' &&
           (typeAnnotation === undefined ||
-            (typeAnnotation.role === 'return' && atTypeRoot(typeAnnotation)))))
+            (typeAnnotation.role === 'return' && atTypeRoot(typeAnnotation)))) ||
+        (typescript &&
+          tokenLineBreakBefore &&
+          ch === '/' &&
+          typeAnnotation?.role === 'return' &&
+          typeAnnotation.signature.isFunctionKeyword &&
+          typeAnnotation.signature.context.requireScope === pendingBodylessSignature.requireScope &&
+          !pendingBodylessSignature.isExpression &&
+          atTypeRoot(typeAnnotation)))
     ) {
       closeRequireScope(pendingFunctionContexts.pop()?.requireScope);
       typeAnnotation = undefined;
@@ -1085,7 +1178,15 @@ function tokenize(
         typeAnnotation = undefined;
         inType = false;
         lineTerminatorSinceLastToken = false;
-      } else if (atRoot && (ch === ';' || ch === ',' || ch === ')' || ch === ']' || ch === '}')) {
+      } else if (
+        atRoot &&
+        (ch === ';' ||
+          (ch === ',' &&
+            !(annotation.role === 'declaration' && annotation.form === 'ambient-variable')) ||
+          ch === ')' ||
+          ch === ']' ||
+          ch === '}')
+      ) {
         // A signature with no body of its own. Neither the annotation nor a pending signature may
         // outlive it, otherwise later code (a JSX text `<`, another method body, an async arrow) is
         // misread.
@@ -1559,6 +1660,23 @@ function tokenize(
           angleDepth: 0,
           typeOperandExpected: true,
         };
+      }
+      if (
+        typescript &&
+        typeAnnotation === undefined &&
+        !isMemberName &&
+        !tokenLineBreakBefore &&
+        !insideClassBody() &&
+        (value === 'const' || value === 'let' || value === 'var')
+      ) {
+        const modifier = tokens[tokens.length - 2];
+        if (
+          modifier?.kind === 'identifier' &&
+          modifier.value === 'declare' &&
+          !modifier.propertyName
+        ) {
+          typeAnnotation = startTypeDeclaration('ambient-variable', 'header');
+        }
       }
       prevKind = 'identifier';
       afterControlHead = false;
@@ -3783,6 +3901,20 @@ function expressionContinues(next: string, identifier: string | undefined): bool
     EXPRESSION_CONTINUATION_CHARACTERS.has(next) ||
     identifier === 'in' ||
     identifier === 'instanceof'
+  );
+}
+
+/** Recognize the name of a type alias immediately before its parameters or assignment. */
+function startsTypeAlias(tokens: readonly Token[]): boolean {
+  const name = tokens[tokens.length - 1];
+  const keyword = tokens[tokens.length - 2];
+  return (
+    name?.kind === 'identifier' &&
+    !name.lineBreakBefore &&
+    keyword?.kind === 'identifier' &&
+    keyword.value === 'type' &&
+    !keyword.propertyName &&
+    !isIdentifier(tokens[tokens.length - 3], 'import')
   );
 }
 
