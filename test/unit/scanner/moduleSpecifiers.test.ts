@@ -1102,6 +1102,47 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(source)).toEqual([]);
     });
 
+    it.each([
+      ['ordinary keyword member', 'obj.break\n'],
+      ['same-line keyword member', 'obj.break '],
+      ['optional keyword member', 'obj?.continue\r\n'],
+      ['debugger member', 'obj.debugger /*\n*/ '],
+      ['computed keyword member', "obj['break']\n"],
+    ])('keeps division after %s', (_name, operand) => {
+      expect(specifiers(`const ratio = ${operand}/ require('real') / 2;`)).toEqual(['real']);
+    });
+
+    it('keeps division after a private keyword member', () => {
+      expect(
+        specifiers(`class C { #break = 12; f() { return this.#break
+        / require('real') / 2; } }`),
+      ).toEqual(['real']);
+    });
+
+    it.each([
+      ['bare break', 'break\n'],
+      ['bare continue', 'continue\r\n'],
+      ['labeled break', 'break outer\n'],
+      ['labeled continue', 'continue outer /*\n*/ '],
+      ['semicolon', 'break outer; '],
+      ['bare debugger', 'debugger\n'],
+      ['debugger after a label', 'nested: debugger /*\r\n*/ '],
+      ['break after a control head', 'if (ready) break outer\n'],
+    ])('skips a regex after %s', (_name, statement) => {
+      const source = `outer: for (;;) { ${statement}/require('decoy')/.test('x'); }
+        import 'real';`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('does not treat a name on the line after break as its label', () => {
+      const source = `for (;;) { break
+        operand / require('real') / 2;
+      }`;
+
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
     it('ignores a regex used as an object literal property value', () => {
       expect(specifiers(`const config = { re: /require\\('fake-prop'\\)/, n: 1 };`)).toEqual([]);
     });
