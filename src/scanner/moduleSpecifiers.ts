@@ -82,6 +82,11 @@ export type ExtractModuleSpecifiersOptions = {
   module?: boolean | 'detect';
 };
 
+/** A lexical hint for JS files that may contain JSX. The tokenizer still decides where tags start. */
+export function hasJsxTagHint(source: string): boolean {
+  return JSX_TAG_HINT.test(source);
+}
+
 /**
  * Extract the statically knowable module specifiers from `source`.
  *
@@ -358,6 +363,7 @@ function tokenize(
   const typeArgumentBounds = new Map<number, number | null>();
   const n = source.length;
   let i = 0;
+  let leftShiftTail = -1;
   // Whether the previous identifier token is an expression-starting keyword (return, typeof, ...).
   // Such keywords start an expression, so a following `/` begins a regex rather than division.
   let prevIsExpressionKeyword = false;
@@ -1055,10 +1061,22 @@ function tokenize(
     // while the JavaScript inside `{...}` containers is lexed normally. Expression position is the
     // same test that decides a regex literal, so a comparison (`a < b`, `f() < x`) is never JSX, and
     // a TypeScript type-argument list (`<T,>`, `<T extends U>`) is excluded explicitly.
+    // The second character of a shift is still operator punctuation. A following
+    // third `<` can start a JSX operand, even without intervening whitespace.
     if (
       jsx &&
       typeAnnotation === undefined &&
       ch === '<' &&
+      i !== leftShiftTail &&
+      source[i + 1] === '<'
+    ) {
+      leftShiftTail = i + 1;
+    }
+    if (
+      jsx &&
+      typeAnnotation === undefined &&
+      ch === '<' &&
+      i !== leftShiftTail &&
       i + 1 < n &&
       isRegexStart(
         prevKind,
@@ -2316,6 +2334,7 @@ function arrowFollowsParameters(
   let prevPunct: string | undefined;
 
   let k = open;
+  let leftShiftTail = -1;
   const jsxFrames: Frame[] = [];
   const typeArgumentBounds = new Map<number, number | null>();
 
@@ -2378,7 +2397,17 @@ function arrowFollowsParameters(
     }
     if (
       jsx &&
+      frame?.kind !== 'jsx-text' &&
       ch === '<' &&
+      k !== leftShiftTail &&
+      source[k + 1] === '<'
+    ) {
+      leftShiftTail = k + 1;
+    }
+    if (
+      jsx &&
+      ch === '<' &&
+      k !== leftShiftTail &&
       (frame?.kind === 'jsx-text' || isRegexStart(prevKind, prevPunct, false, false, false))
     ) {
       if (source[k + 1] === '>') {
@@ -5210,7 +5239,9 @@ function isLineTerminator(ch: string | undefined): boolean {
   return ch === '\n' || ch === '\r' || ch === '\u2028' || ch === '\u2029';
 }
 
-const IDENTIFIER_START = /^[$_\p{ID_Start}]$/u;
+const IDENTIFIER_START_CLASS = String.raw`[$_\p{ID_Start}]`;
+const IDENTIFIER_START = new RegExp(`^${IDENTIFIER_START_CLASS}$`, 'u');
+const JSX_TAG_HINT = new RegExp(`</${IDENTIFIER_START_CLASS}|/>`, 'u');
 const IDENTIFIER_PART = /^[$_\u200C\u200D\p{ID_Continue}]$/u;
 
 function isIdentifierStartAt(source: string, index: number): boolean {

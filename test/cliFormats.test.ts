@@ -326,6 +326,104 @@ describe('compiled format/query outcomes', () => {
     expect(result.stderr).toContain('could not be analyzed: Unterminated regex literal\n');
   });
 
+  it.each(['js', 'jsx'])(
+    'preserves Unicode JSX evidence in a compiled .%s scan',
+    async (extension) => {
+      const project = await mkdtemp(join(scratch, 'unicode-jsx-'));
+      const file = `index.${extension}`;
+      const statement =
+        "const view = <Élément>require('decoy'){require('expression-pkg')}</Élément>;";
+      const source = `import 'real-pkg';\n${statement}\n`;
+      const manifest = '{"dependencies":{"real-pkg":"1","expression-pkg":"1"}}';
+      await writeFile(join(project, 'package.json'), manifest);
+      await writeFile(join(project, file), source);
+
+      const result = child([project, '--format', 'json']);
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+      const report = JSON.parse(result.stdout) as JsonReport;
+      expect(report.findings).toEqual({
+        unusedDependencies: [],
+        unusedDevDependencies: [],
+        missingDependencies: [],
+      });
+      expect(report.packages).toEqual([
+        expect.objectContaining({
+          name: 'expression-pkg',
+          status: 'used',
+          evidence: [
+            {
+              kind: 'source',
+              file,
+              reference: 'require',
+              specifier: 'expression-pkg',
+              position: {
+                offset: source.indexOf("'expression-pkg'"),
+                line: 2,
+                column: statement.indexOf("'expression-pkg'") + 1,
+              },
+            },
+          ],
+        }),
+        expect.objectContaining({
+          name: 'real-pkg',
+          status: 'used',
+          evidence: [
+            {
+              kind: 'source',
+              file,
+              reference: 'import',
+              specifier: 'real-pkg',
+              position: { offset: 7, line: 1, column: 8 },
+            },
+          ],
+        }),
+      ]);
+      expect(await readFile(join(project, file), 'utf8')).toBe(source);
+      expect(await readFile(join(project, 'package.json'), 'utf8')).toBe(manifest);
+    },
+  );
+
+  it('keeps left shifts as operators when a string enables JSX discovery', async () => {
+    const project = await mkdtemp(join(scratch, 'jsx-left-shifts-'));
+    const source = [
+      "const hint = '</Élément>';",
+      'const result = 1 <<count;',
+      'let target = 1;',
+      'target <<=count;',
+      "const fn = (require = 1 <<count) => require('shadowed');",
+      "require('real-pkg');",
+      '',
+    ].join('\n');
+    await writeFile(join(project, 'package.json'), '{"dependencies":{"real-pkg":"1"}}');
+    await writeFile(join(project, 'index.js'), source);
+
+    const result = child([project, '--format', 'json']);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    const report = JSON.parse(result.stdout) as JsonReport;
+    expect(report.findings).toEqual({
+      unusedDependencies: [],
+      unusedDevDependencies: [],
+      missingDependencies: [],
+    });
+    expect(report.packages).toEqual([
+      expect.objectContaining({
+        name: 'real-pkg',
+        status: 'used',
+        evidence: [
+          {
+            kind: 'source',
+            file: 'index.js',
+            reference: 'require',
+            specifier: 'real-pkg',
+            position: { offset: source.indexOf("'real-pkg'"), line: 6, column: 9 },
+          },
+        ],
+      }),
+    ]);
+  });
+
   it('keeps why a project path and explicit terminal scan byte-compatible', () => {
     const legacy = child(['why']);
     expect(legacy.status).toBe(1);

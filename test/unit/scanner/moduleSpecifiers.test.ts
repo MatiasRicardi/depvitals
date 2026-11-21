@@ -1212,6 +1212,18 @@ describe('extractModuleSpecifiers', () => {
       ).toEqual(['assertion', 'division']);
     });
 
+    it('keeps a JSX operand immediately after a left shift', () => {
+      expect(jsxSpecifiers("const view = 1 <<<Élément>{require('real')}</Élément>;")).toEqual([
+        'real',
+      ]);
+    });
+
+    it('keeps left shifts in arrow parameter defaults with JSX enabled', () => {
+      const source = `const fn = (require = 1 <<count) => require('shadowed');
+        require('real');`;
+      expect(jsxSpecifiers(source)).toEqual(['real']);
+    });
+
     it('ignores a regex used as an object literal property value', () => {
       expect(specifiers(`const config = { re: /require\\('fake-prop'\\)/, n: 1 };`)).toEqual([]);
     });
