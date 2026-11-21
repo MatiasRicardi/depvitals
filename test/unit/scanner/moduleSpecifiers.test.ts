@@ -1150,6 +1150,8 @@ describe('extractModuleSpecifiers', () => {
       ['multiline union', 'type T =\n  | readonly [string]\n  | number\n'],
       ['conditional type', 'type T<A> = A extends string\n  ? string\n  : number\n'],
       ['terminal import type', "type T = import('type-real').T\n"],
+      ['function type with a newline before its arrow', 'type F = ()\n  => string\n'],
+      ['import type with a newline before its argument', "type T = import\n  ('type-real').T\n"],
       ['ambient binding', 'declare const value: string\n'],
       ['ambient function type', 'declare const fn: (value: string) => boolean\n'],
       ['ambient bindings', 'declare var first: string, second: number\n'],
@@ -1165,6 +1167,16 @@ describe('extractModuleSpecifiers', () => {
         extractModuleSpecifiers(source, { typescript: true }).map((item) => item.specifier),
       ).toEqual(expected);
     });
+
+    it.each(['string', 'Namespace.import'])(
+      'ends a type alias to %s before a parenthesized TSX expression',
+      (type) => {
+        const source = `type T = ${type}\n(<Box>{require('jsx-real')}</Box>);`;
+        expect(extractModuleSpecifiers(source, { typescript: true, jsx: true })).toEqual([
+          { specifier: 'jsx-real', kind: 'require' },
+        ]);
+      },
+    );
 
     it('still sees multiline type imports, a subsequent TSX expression and reexports', () => {
       const source = `type T = import('first').T

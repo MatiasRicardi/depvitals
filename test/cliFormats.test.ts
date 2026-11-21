@@ -276,6 +276,46 @@ describe('compiled format/query outcomes', () => {
     expect(await readFile(join(project, 'index.ts'), 'utf8')).toBe(source);
   });
 
+  it('preserves multiline function and import type boundaries through the CLI', async () => {
+    const project = await mkdtemp(join(scratch, 'ts-multiline-type-'));
+    const source = [
+      'type F = ()',
+      '  => string',
+      "/require('arrow-decoy')/.test('x');",
+      'type T = import',
+      "  ('real-pkg').T",
+      "/require('import-decoy')/.test('x');",
+      '',
+    ].join('\n');
+    await writeFile(join(project, 'package.json'), '{"dependencies":{"real-pkg":"1"}}');
+    await writeFile(join(project, 'index.ts'), source);
+
+    const result = child([project, '--format', 'json']);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    const report = JSON.parse(result.stdout) as JsonReport;
+    expect(report.findings).toEqual({
+      unusedDependencies: [],
+      unusedDevDependencies: [],
+      missingDependencies: [],
+    });
+    expect(report.packages).toEqual([
+      expect.objectContaining({
+        name: 'real-pkg',
+        status: 'used',
+        evidence: [
+          {
+            kind: 'source',
+            file: 'index.ts',
+            reference: 'dynamic-import',
+            specifier: 'real-pkg',
+            position: { offset: source.indexOf("'real-pkg'"), line: 5, column: 4 },
+          },
+        ],
+      }),
+    ]);
+  });
+
   it('keeps malformed regex input fatal after a TypeScript alias', async () => {
     const project = await mkdtemp(join(scratch, 'incomplete-ts-statement-regex-'));
     await writeFile(join(project, 'package.json'), '{}');

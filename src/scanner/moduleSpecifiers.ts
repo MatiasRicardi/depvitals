@@ -281,6 +281,7 @@ type TypeAnnotation = TypeDepth &
         readonly form: 'alias' | 'ambient-variable';
         readonly owner: LexicalDepth;
         phase: 'header' | 'type';
+        importCallPending: boolean;
       }
     | { readonly role: 'field'; readonly owner: ClassContext; readonly member: ClassMember }
     | { readonly role: 'parameter'; readonly owner: ParameterContext }
@@ -481,6 +482,7 @@ function tokenize(
     role: 'declaration',
     form,
     phase,
+    importCallPending: false,
     owner: {
       parenDepth,
       bracketDepth,
@@ -753,6 +755,10 @@ function tokenize(
     const declaration = typeAnnotation?.role === 'declaration' ? typeAnnotation : undefined;
     if (declaration !== undefined && atLexicalDepth(declaration.owner) && atTypeRoot(declaration)) {
       const ambient = declaration.form === 'ambient-variable';
+      const continuesImport = ch === '(' && declaration.importCallPending;
+      const continuesArrow =
+        ch === '=' && source[i + 1] === '>' && isPunct(tokens[tokens.length - 1], ')');
+      declaration.importCallPending = false;
       if (ambient && ch === '=' && source[i + 1] !== '>') {
         // Scan the initializer as an expression, but retain ownership of the next binding.
         ambientInitializer = declaration.owner;
@@ -766,10 +772,14 @@ function tokenize(
         declaration.typeOperandExpected = true;
       } else if (
         tokenLineBreakBefore &&
-        (ch === '/' || (!declaration.typeOperandExpected && !'.|&?:'.includes(ch)))
+        (ch === '/' ||
+          (!declaration.typeOperandExpected &&
+            !continuesArrow &&
+            !continuesImport &&
+            !'.|&?:'.includes(ch)))
       ) {
-        // A slash cannot continue a type. Other new lines may still lead into a union,
-        // intersection or conditional type after a complete operand.
+        // A slash cannot continue a type. A function type's arrow or an import type's
+        // opening parenthesis can still follow a line break.
         typeAnnotation = undefined;
         inType = false;
         resetExpressionState();
@@ -1383,6 +1393,12 @@ function tokenize(
             typeAnnotation.conditionalOperand = true;
           }
           typeAnnotation.importCallPending = value === 'import';
+        } else if (typeAnnotation.role === 'declaration' && atTypeRoot(typeAnnotation)) {
+          typeAnnotation.importCallPending =
+            typeAnnotation.phase === 'type' &&
+            typeAnnotation.typeOperandExpected &&
+            value === 'import' &&
+            !(prevKind === 'punct' && prevPunct === '.');
         }
         // `as const` completes an assertion, while prefix keywords still expect an operand.
         typeAnnotation.typeOperandExpected =
