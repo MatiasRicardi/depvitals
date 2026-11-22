@@ -93,6 +93,9 @@ function verifyPackageFindings(report) {
     if (pkg.status !== expectedStatus) throw new Error('Package status disagrees with findings.');
   }
 
+  if ([...excludedNames].some((name) => !seen.has(name))) {
+    throw new Error('Report scope excludes an unlisted package.');
+  }
   if ([...remaining.values()].some((names) => names.size > 0)) {
     throw new Error('Report findings disagree with package findings.');
   }
