@@ -1,16 +1,17 @@
 # Fixed-version DepVitals checks in GitHub Actions
 
-This recipe targets **DepVitals 0.5.0**. It uses Node.js 22 (minimum 22.13.0),
+This recipe targets **DepVitals 0.6.0** and report schema v2. It uses Node.js 22 (minimum 22.13.0),
 npm and an Ubuntu Actions runner.
 
 Install the exact version in your project and commit the generated `package-lock.json`:
 
 ```sh
-npm install --save-dev --save-exact depvitals@0.5.0
+npm install --save-dev --save-exact depvitals@0.6.0 ajv@6.15.0
 ```
 
-Add the package script to your existing manifest and run it with `npm run --silent check:dependencies`
-for machine-readable output. Use the command directly as a CI step to propagate the scan exit status:
+The artifact verifier uses the installed report schema and the pinned Ajv dev dependency.
+For a direct CLI check, the DepVitals package and this script suffice. Run
+`npm run --silent check:dependencies` for machine-readable output and the scan exit status:
 
 ```json
 {
@@ -18,7 +19,7 @@ for machine-readable output. Use the command directly as a CI step to propagate 
     "check:dependencies": "depvitals --format json"
   },
   "devDependencies": {
-    "depvitals": "0.5.0"
+    "depvitals": "0.6.0"
   }
 }
 ```
@@ -57,13 +58,12 @@ artifact directory. Supply exactly one optional literal `--diagnostics`.
 The optional object belongs in `depvitals-report.json`. The existing
 `depvitals-diagnostics.txt` artifact is stderr and stays empty on a completed scan, including one
 with scope notices. An operational error has an empty report and a nonempty stderr artifact;
-no partial scope counts are emitted. See the [report schema](../../../schemas/report-v1.schema.json),
+no partial scope counts are emitted. See the [report schema](../../../schemas/report-v2.schema.json),
 [diagnostic fields](../../../schemas/README.md) and [scope diagnostics and notice rules](../../reference.md#scan-scope-diagnostics).
 
-The unchanged verifier validates the existing v1 findings/status relationship and tolerates
-additional top-level fields. The byte-identical verifier shipped at v0.4.1 can read these new
-scan artifacts. This reader compatibility does not add the new flag to the old producer.
-Diagnostic schema validation is a separate producer/consumer check.
+The verifier checks the installed Draft 7 schema and the v2 scan's findings, package facts,
+diagnostic counts and recorded status. For v1 workflows, use the exact DepVitals 0.5.0 pin and
+the [v0.5.0 recipe](https://github.com/MatiasRicardi/depvitals/tree/v0.5.0/docs/examples/ci).
 
 ## Pre-release local consumer
 
@@ -74,7 +74,7 @@ temporary consumer and use the registry-pinned lockfile for the published workfl
 
 ```sh
 npm install --save-dev --save-exact --ignore-scripts --package-lock --lockfile-version=3 \
-  /absolute/path/to/depvitals-candidate.tgz
+  /absolute/path/to/depvitals-candidate.tgz ajv@6.15.0
 npm ci --ignore-scripts --include=dev
 ```
 

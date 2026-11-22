@@ -21,6 +21,7 @@
  *     -> cleanup (always, even on failure)
  */
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -30,12 +31,14 @@ import {
   statSync,
   readdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { isDeepStrictEqual } from 'node:util';
 
 import Ajv from 'ajv';
@@ -51,6 +54,7 @@ import {
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const ROOT = resolve(SCRIPT_PATH, '..', '..');
+const require = createRequire(import.meta.url);
 
 const SCHEMA_FILES = [
   'schemas/report-v1.schema.json',
@@ -312,7 +316,7 @@ function verifyCiAdoption(tarballPath, packed, npmEnv) {
   check('CI recipe installs the exact packaged bytes', true);
   const validate = new Ajv({ allErrors: true }).compile(
     JSON.parse(
-      readFileSync(join(project, 'node_modules/depvitals/schemas/report-v1.schema.json'), 'utf8'),
+      readFileSync(join(project, 'node_modules/depvitals/schemas/report-v2.schema.json'), 'utf8'),
     ),
   );
   const validateArchived = new Ajv({ allErrors: true }).compile(
@@ -335,12 +339,21 @@ function verifyCiAdoption(tarballPath, packed, npmEnv) {
   const cleanSource = sideEffect + ';\n';
   const findingsSource = cleanSource + "require('ci-missing-only');\n";
   const configSourcePath = join(project, 'eslint.config.cjs');
+  const tsconfigPath = join(project, 'tsconfig.json');
   const outputPaths = (directory) =>
     ['report.json', 'diagnostics.txt', 'status.txt'].map((name) =>
       join(directory, 'depvitals-' + name),
     );
-  const verify = (paths) =>
-    run(process.execPath, [join(recipe, 'verify-report.mjs'), ...paths], project);
+  const verifierDirectory = join(project, 'node_modules', 'depvitals-local-ci-recipe');
+  const verifier = join(verifierDirectory, 'verify-report.mjs');
+  mkdirSync(verifierDirectory);
+  copyFileSync(join(recipe, 'verify-report.mjs'), verifier);
+  symlinkSync(
+    dirname(require.resolve('ajv/package.json')),
+    join(project, 'node_modules', 'ajv'),
+    'junction',
+  );
+  const verify = (paths) => run(process.execPath, [verifier, ...paths], project);
 
   for (const row of [
     {
@@ -359,6 +372,28 @@ function verifyCiAdoption(tarballPath, packed, npmEnv) {
         sourceFilesScanned: 0,
         nestedPackageSourceFiles: 0,
         notices: ['no-supported-sources'],
+      },
+      findings: [[], [], []],
+    },
+    {
+      name: 'typescript-extends',
+      manifest: JSON.stringify({
+        ...JSON.parse(cleanManifest),
+        devDependencies: { 'ci-shared-config': '1' },
+      }),
+      tsconfig: '{"extends":"ci-shared-config/node22.json",}',
+      exit: 0,
+      findings: [[], [], []],
+    },
+    {
+      name: 'skipped-tsconfig-diagnostics',
+      manifest: diagnosticManifest,
+      tsconfig: '{"extends":[false]}',
+      exit: 0,
+      diagnostics: {
+        sourceFilesScanned: 0,
+        nestedPackageSourceFiles: 0,
+        notices: ['no-supported-sources', 'tsconfig-skipped'],
       },
       findings: [[], [], []],
     },
@@ -437,6 +472,8 @@ function verifyCiAdoption(tarballPath, packed, npmEnv) {
     }
     if (row.config === undefined) rmSync(configPath, { force: true });
     else writeFileSync(configPath, row.config);
+    if (row.tsconfig === undefined) rmSync(tsconfigPath, { force: true });
+    else writeFileSync(tsconfigPath, row.tsconfig);
     const before = snapshotFixtures([project]);
     const reportDir = join(artifacts, row.name);
     const capture = run(
@@ -487,9 +524,8 @@ function verifyCiAdoption(tarballPath, packed, npmEnv) {
           isDeepStrictEqual(document.diagnostics, row.diagnostics),
         );
         check(
-          `CI recipe diagnostic scan passes archived schema for ${row.name}`,
-          validateArchived(document),
-          JSON.stringify(validateArchived.errors),
+          `CI recipe v2 diagnostic scan rejects the archived v1 schema for ${row.name}`,
+          !validateArchived(document),
         );
       } else
         check(
@@ -505,6 +541,22 @@ function verifyCiAdoption(tarballPath, packed, npmEnv) {
             document.findings.missingDependencies,
           ]) === JSON.stringify(row.findings),
       );
+      if (row.name === 'typescript-extends') {
+        const expected = [
+          {
+            kind: 'config',
+            file: 'tsconfig.json',
+            pointer: '/extends',
+            value: 'ci-shared-config/node22.json',
+            detector: 'typescript',
+          },
+        ];
+        check(
+          'CI recipe retains installed TypeScript evidence',
+          document.packages[0]?.status === 'used' &&
+            isDeepStrictEqual(document.packages[0].evidence, expected),
+        );
+      }
       if (row.name === 'exclusion') {
         const excluded = document.packages.find(({ name }) => name === 'ci-unused-only');
         check(
@@ -777,6 +829,7 @@ async function main() {
 
     mkdirSync(cleanDir, { recursive: true });
     mkdirSync(findingsDir, { recursive: true });
+    writeFileSync(join(cleanDir, 'tsconfig.json'), '{invalid root tsconfig');
 
     writeFileSync(
       join(cleanDir, 'package.json'),
@@ -1455,8 +1508,8 @@ require('real');`,
       const document = JSON.parse(result.stdout);
       check(
         `installed ${mode} JSON satisfies Draft 7: ${directory}`,
-        validate(document),
-        JSON.stringify(validate.errors),
+        validateV2(document),
+        JSON.stringify(validateV2.errors),
       );
       check(
         `installed ${mode} JSON identity and exact findings: ${directory}`,
@@ -1703,6 +1756,8 @@ require('real');`,
 
     for (const args of [
       [cleanDir, '--format', 'json'],
+      [cleanDir, '--diagnostics'],
+      [cleanDir, '--diagnostics', '--format', 'json'],
       [findingsDir, '--explain', 'lodash'],
       [findingsDir, '--format', 'json', '--explain', 'missing-pkg'],
       [invalidTemplateDir, '--format', 'json', '--explain', 'real'],

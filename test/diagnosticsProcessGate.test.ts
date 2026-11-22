@@ -24,7 +24,7 @@ const historicalSchema = readFileSync(
   new URL('./fixtures/report-schemas/v0.4.1.schema.json', import.meta.url),
 );
 const validate = new Ajv({ allErrors: true }).compile(
-  JSON.parse(readFileSync(new URL('report-v1.schema.json', schemas), 'utf8')) as object,
+  JSON.parse(readFileSync(new URL('report-v2.schema.json', schemas), 'utf8')) as object,
 );
 // Exact schema bytes from the verified published v0.4.1 archive, SHA-256
 // a5f241de21a61018fd4a3023bc56bb0db9789c2ac5052e369b9ec0229bcd5285.
@@ -215,7 +215,7 @@ function report(args: readonly string[], selectedRoot = root): JsonReport {
   expect(output.stderr).toBe('');
   const doc = JSON.parse(output.stdout) as JsonReport;
   expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
-  expect(validateHistorical(doc), JSON.stringify(validateHistorical.errors)).toBe(true);
+  expect(validateHistorical(doc)).toBe(false);
   return doc;
 }
 
@@ -282,6 +282,30 @@ describe('compiled diagnostics compatibility', () => {
         },
       ]);
     }
+  });
+
+  it('appends one skipped-config notice without changing a completed scan', () => {
+    project(
+      { workspaces: ['child'] },
+      {
+        ...nestedFiles,
+        'tsconfig.json': '{"extends":["shared", false]}',
+        'child/tsconfig.json': '{"extends":"unused"}',
+      },
+    );
+    const ordinary = report([]);
+    const { diagnostics, ...rest } = report(['--diagnostics']);
+    expect(rest).toEqual(ordinary);
+    expect(diagnostics).toEqual({
+      sourceFilesScanned: 2,
+      nestedPackageSourceFiles: 1,
+      notices: ['nested-package-inputs', 'workspace-declared', 'tsconfig-skipped'],
+    });
+    expect(run(['--diagnostics'])).toMatchObject({ status: 1, stderr: '' });
+    expect(run(['--diagnostics']).stdout).toContain(
+      'Root tsconfig.json was skipped. It could not be read as supported TypeScript configuration.\n',
+    );
+    expect(report(['--explain', 'leaf-only'])).not.toHaveProperty('diagnostics');
   });
 
   it('resets ownership for a separately selected child inventory', () => {
@@ -360,7 +384,7 @@ describe('compiled diagnostics compatibility', () => {
       diagnostic: 'could not be analyzed',
     },
   ])('keeps $name fail-closed in both formats', ({ files, diagnostic }) => {
-    project({}, files);
+    project({}, { ...files, 'tsconfig.json': '{invalid' });
     const ordinary = run([]);
     expect(ordinary.status).toBe(1);
     expect(ordinary.stdout).toBe('');

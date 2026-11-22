@@ -76,7 +76,7 @@ function example(name: string, root: string): JsonReport {
   const expected = JSON.parse(
     readFileSync(new URL(`../../../schemas/examples/${name}.json`, import.meta.url), 'utf8'),
   ) as JsonReport;
-  return { ...expected, tool: { name: 'depvitals', version }, project: { root } };
+  return { ...expected, schemaVersion: 2, tool: { name: 'depvitals', version }, project: { root } };
 }
 function freezeDeep(value: unknown): void {
   if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return;
@@ -86,7 +86,7 @@ function freezeDeep(value: unknown): void {
 
 const issueManifest = { dependencies: { unused: '1' }, devDependencies: { 'unused-tool': '1' } };
 const issueFiles = { 'src/index.ts': "import item from 'missing';\n" };
-describe('JSON report v1', () => {
+describe('JSON report v2', () => {
   it.each([
     { name: 'scan-clean', manifest: {}, files: {}, query: null },
     { name: 'scan-findings', manifest: issueManifest, files: issueFiles, query: null },

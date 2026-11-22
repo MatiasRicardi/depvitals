@@ -106,6 +106,8 @@ const SCOPE_NOTICE_TEXT: Readonly<Record<ScanDiagnostics['notices'][number], str
     'Some source files belong to nested packages. Findings use the selected root inventory. Scan a nested package separately to use its inventory.',
   'workspace-declared':
     'The root package.json declares workspaces. This scan uses only the selected root inventory.',
+  'tsconfig-skipped':
+    'Root tsconfig.json was skipped. It could not be read as supported TypeScript configuration.',
 };
 
 const EXPLANATION_REASONS: Readonly<Record<PackageStatus, string>> = {

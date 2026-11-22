@@ -598,6 +598,16 @@ describe('offline external corpus identities', () => {
 });
 
 describe('reviewed target observations', () => {
+  // The historical evaluator's v1 wire contract stays frozen. These fixtures have no
+  // v2-only fields; preserve the real child process and change only its version token.
+  const runHistoricalProjection: Runner = (command, args, options) => {
+    const result = spawnSync(command, args, options);
+    if (!args.includes('--format') || result.stdout === '') return result;
+    const prefix = '{\n  "schemaVersion": 2,';
+    expect(result.stdout.startsWith(prefix)).toBe(true);
+    return { ...result, stdout: '{\n  "schemaVersion": 1,' + result.stdout.slice(prefix.length) };
+  };
+
   function target(): Input {
     writeFileSync(
       join(project, 'package.json'),
@@ -681,7 +691,7 @@ describe('reviewed target observations', () => {
     const receipt = evaluateCorpus(measuredTarget(), (command, args, options) => {
       if (args[0] === '--import')
         measuredCalls.push(args.includes('--format') ? 'json' : 'terminal');
-      return spawnSync(command, args, options);
+      return runHistoricalProjection(command, args, options);
     });
     expect(receipt.cost).toMatchObject({
       warmups: 2,
@@ -706,7 +716,7 @@ describe('reviewed target observations', () => {
     let measuredCalls = 0;
     expect(() =>
       evaluateCorpus(measuredTarget(), (command, args, options) => {
-        const result = spawnSync(command, args, options);
+        const result = runHistoricalProjection(command, args, options);
         if (args[0] === '--import' && ++measuredCalls === 3) {
           return { ...result, stdout: result.stdout + 'changed\n' };
         }
@@ -721,7 +731,7 @@ describe('reviewed target observations', () => {
     const archive = join(dirname(args.packPath), `depvitals-${args.toolIdentity.version}.tgz`);
     expect(() =>
       evaluateCorpus(args, (command, argv, options) => {
-        const result = spawnSync(command, argv, options);
+        const result = runHistoricalProjection(command, argv, options);
         if (argv.includes('--explain')) appendFileSync(archive, 'changed');
         return result;
       }),
@@ -729,7 +739,7 @@ describe('reviewed target observations', () => {
   }, 15_000);
 
   it('matches the reviewed F1 delta in compiled terminal, JSON scan and query', () => {
-    expect(evaluateCorpus(target())).toMatchObject({
+    expect(evaluateCorpus(target(), runHistoricalProjection)).toMatchObject({
       mode: 'reviewed-target-observation',
       expectationsReviewed: true,
       observations: [
@@ -754,7 +764,7 @@ describe('reviewed target observations', () => {
   it.each(['scan', 'explain'])('rejects unrelated findings in JSON %s output', (mode) => {
     expect(() =>
       evaluateCorpus(target(), (command, args, options) => {
-        const result = spawnSync(command, args, { ...options, encoding: 'utf8' });
+        const result = runHistoricalProjection(command, args, options);
         if (!args.includes('--format') || args.includes('--explain') !== (mode === 'explain'))
           return result;
         const report = JSON.parse(result.stdout) as {

@@ -25,7 +25,7 @@ const groups = [
 ] as const;
 const references = ['import', 'export-from', 'dynamic-import', 'require'] as const;
 const vias = ['direct', 'mapping', 'runner', 'node-preload'] as const;
-const detectors = ['eslint', 'jest'] as const;
+const detectors = ['eslint', 'jest', 'typescript'] as const;
 
 type Category = (typeof categories)[number];
 type Group = (typeof groups)[number];
@@ -63,7 +63,7 @@ type Package = {
   evidence: Evidence[];
 };
 type Report = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   tool: { name: 'depvitals'; version: string };
   mode: 'scan' | 'explain';
   project: { root: string };
@@ -92,7 +92,7 @@ function readJson(url: URL): unknown {
   return JSON.parse(readFileSync(url, 'utf8'));
 }
 
-const schema = readJson(new URL('report-v1.schema.json', schemaDir)) as {
+const schema = readJson(new URL('report-v2.schema.json', schemaDir)) as {
   $schema: string;
   properties: { schemaVersion: { const: number } };
 };
@@ -105,7 +105,8 @@ function checkSchema(value: unknown): asserts value is Report {
 }
 
 function example(name: string): Report {
-  const report = readJson(new URL(name + '.json', examplesDir));
+  const legacy = readJson(new URL(name + '.json', examplesDir)) as object;
+  const report = { ...legacy, schemaVersion: 2 };
   checkSchema(report);
   return report;
 }
@@ -175,7 +176,7 @@ function checkSemantics(report: Report): void {
     ok(nestedPackageSourceFiles <= sourceFilesScanned, 'nested count bounds');
     ordered(
       notices,
-      ['no-supported-sources', 'nested-package-inputs', 'workspace-declared'],
+      ['no-supported-sources', 'nested-package-inputs', 'workspace-declared', 'tsconfig-skipped'],
       'scope notice order',
     );
     equal(notices.includes('no-supported-sources'), sourceFilesScanned === 0, 'zero-source notice');
@@ -346,9 +347,9 @@ function assertCompiled(root: string, expected: Report, exit: number, query?: st
 }
 
 describe('public Draft 7 schema and compiled producer', () => {
-  it('identifies the published schema and its target-release examples', () => {
+  it('identifies the v2 schema and the preserved example inventory', () => {
     expect(schema.$schema).toBe('http://json-schema.org/draft-07/schema#');
-    expect(schema.properties.schemaVersion.const).toBe(1);
+    expect(schema.properties.schemaVersion.const).toBe(2);
     expect(ajv.validateSchema(schema)).toBe(true);
     expect(
       readdirSync(examplesDir)
@@ -371,6 +372,44 @@ describe('public Draft 7 schema and compiled producer', () => {
           'query' in scenario ? scenario.query : undefined,
         );
       });
+    },
+  );
+
+  it.each([false, true])(
+    'matches the v2 TypeScript explanation fixture (excluded=%s)',
+    (excluded) => {
+      const selector = '@scope/shared/node22.json';
+      const name = excluded ? 'explain-typescript-excluded' : 'explain-typescript-used';
+      const expected = readJson(new URL('v2/' + name + '.json', examplesDir));
+      checkSchema(expected);
+      checkSemantics(expected);
+      withProject(
+        { devDependencies: { '@scope/shared': '1' } },
+        {
+          'tsconfig.json': JSON.stringify({
+            extends: excluded ? ['./local.json', selector] : selector,
+          }),
+          ...(excluded
+            ? { 'depvitals.config.json': '{"ignoreDependencies":["@scope/shared"]}' }
+            : {}),
+          'local.json': '{"extends":"never-read"}',
+        },
+        (root) => {
+          assertCompiled(
+            root,
+            { ...expected, tool: { name: 'depvitals', version }, project: { root } },
+            0,
+            '@scope/shared',
+          );
+          const scan = compiled(root);
+          expect(scan).toMatchObject({ status: 0, stderr: '' });
+          const document: unknown = JSON.parse(scan.stdout);
+          checkSchema(document);
+          checkSemantics(document);
+          expect(document.mode).toBe('scan');
+          expect(document.packages).toEqual(expected.packages);
+        },
+      );
     },
   );
 
@@ -532,7 +571,7 @@ function alterEvidence(name: string, change: (fact: Evidence) => object): unknow
 
 describe('structural rejection by Draft 7', () => {
   it.each([
-    ['unsupported schema version', () => ({ ...example('scan-clean'), schemaVersion: 2 })],
+    ['unsupported schema version', () => ({ ...example('scan-clean'), schemaVersion: 1 })],
     ['missing required field', () => ({ ...example('scan-clean'), counts: undefined })],
     [
       'wrong count type',

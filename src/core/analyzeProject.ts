@@ -107,7 +107,7 @@ export type ScanDiagnostics = {
   readonly sourceFilesScanned: number;
   readonly nestedPackageSourceFiles: number;
   readonly notices: readonly (
-    'no-supported-sources' | 'nested-package-inputs' | 'workspace-declared'
+    'no-supported-sources' | 'nested-package-inputs' | 'workspace-declared' | 'tsconfig-skipped'
   )[];
 };
 
@@ -238,13 +238,23 @@ export async function analyzeProjectDetailed(
     findings,
     packages: packageFacts(manifest, usage.evidence, ignored, underlyingFindings, findings),
     ...(options.diagnostics
-      ? { diagnostics: scanDiagnostics(usage, context.rawManifest['workspaces']) }
+      ? {
+          diagnostics: scanDiagnostics(
+            usage,
+            context.rawManifest['workspaces'],
+            context.tsconfigSkipped,
+          ),
+        }
       : {}),
   };
 }
 
 /** Optional workspace metadata is descriptive and never expands the scan inventory. */
-function scanDiagnostics(usage: CollectedUsage, workspaces: unknown): ScanDiagnostics {
+function scanDiagnostics(
+  usage: CollectedUsage,
+  workspaces: unknown,
+  tsconfigSkipped: boolean,
+): ScanDiagnostics {
   const patterns: unknown =
     typeof workspaces === 'object' && workspaces !== null && !Array.isArray(workspaces)
       ? (workspaces as Record<string, unknown>)['packages']
@@ -257,6 +267,7 @@ function scanDiagnostics(usage: CollectedUsage, workspaces: unknown): ScanDiagno
   if (usage.sourceFilesScanned === 0) notices.push('no-supported-sources');
   if (usage.nestedPackageSourceFiles > 0) notices.push('nested-package-inputs');
   if (workspaceDeclared) notices.push('workspace-declared');
+  if (tsconfigSkipped) notices.push('tsconfig-skipped');
   return {
     sourceFilesScanned: usage.sourceFilesScanned,
     nestedPackageSourceFiles: usage.nestedPackageSourceFiles,

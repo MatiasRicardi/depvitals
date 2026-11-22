@@ -45,7 +45,14 @@ describe('readRootTsconfig', () => {
     await fs.writeFile(config, '{"references":[{"path":"./secondary.json"}]}');
     const context = await createScanContext(root);
 
-    expect(vi.mocked(fs.readFile).mock.calls.some(([path]) => path === config)).toBe(false);
+    expect(vi.mocked(fs.readFile).mock.calls.filter(([path]) => path === config)).toEqual([
+      [config],
+    ]);
+    expect(
+      vi.mocked(fs.readFile).mock.calls.some(([path]) => path === join(root, 'secondary.json')),
+    ).toBe(false);
+    expect(context.tsconfigSkipped).toBe(false);
+    expect(context.configEvidence).toEqual([]);
     vi.clearAllMocks();
     expect(await readRootTsconfig(context.manifest.root, context.rootEntries)).toEqual({
       kind: 'usable',
