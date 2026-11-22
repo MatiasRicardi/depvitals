@@ -11,7 +11,7 @@ import {
   hasRootJestConfigEntries,
 } from '../detectors/jestManifestConfig.js';
 import { loadProjectManifestData, type ProjectManifest } from '../scanner/projectManifest.js';
-import { compareEvidence, compareStrings, type ConfigEvidence } from './evidence.js';
+import { compareEvidence, compareStrings, type ConfigOccurrence } from './evidence.js';
 
 export type ScanContext = {
   readonly manifest: ProjectManifest;
@@ -20,10 +20,7 @@ export type ScanContext = {
   readonly rootEntries: readonly string[];
   readonly eslintPrecedence: LegacyEslintPrecedence;
   readonly jestConfigBarrier: boolean;
-  readonly configEvidence: readonly {
-    readonly packageName: string;
-    readonly evidence: ConfigEvidence;
-  }[];
+  readonly configEvidence: readonly ConfigOccurrence[];
 };
 
 /** Validate root/manifest, then strict policy, then collect only the selected detector sources. */
@@ -32,7 +29,7 @@ export async function createScanContext(projectRoot: string): Promise<ScanContex
   const { config, rootEntries } = await readProjectConfigSnapshot(manifest.root);
   const eslintPrecedence = legacyEslintPrecedenceFromEntries(rootEntries);
   const jestConfigBarrier = hasRootJestConfigEntries(rootEntries);
-  const configEvidence: { readonly packageName: string; readonly evidence: ConfigEvidence }[] = [];
+  const configEvidence: ConfigOccurrence[] = [];
   if (!eslintPrecedence.hardBarrier) {
     if (eslintPrecedence.legacyRcJsonEntryName !== undefined) {
       const occurrences = await collectEslintRcJsonUsageForManifest(manifest, eslintPrecedence);

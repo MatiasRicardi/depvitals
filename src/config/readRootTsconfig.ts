@@ -6,7 +6,7 @@ export type RootTsconfig =
   | { readonly kind: 'absent' | 'skipped' }
   | { readonly kind: 'usable'; readonly extends: string | readonly string[] | undefined };
 
-const FILENAME = 'tsconfig.json';
+export const ROOT_TSCONFIG_FILENAME = 'tsconfig.json';
 const UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 /** Select only an exact root entry from the scan's existing directory snapshot. */
@@ -14,9 +14,9 @@ export async function readRootTsconfig(
   root: string,
   rootEntries: readonly string[],
 ): Promise<RootTsconfig> {
-  if (!rootEntries.includes(FILENAME)) return { kind: 'absent' };
+  if (!rootEntries.includes(ROOT_TSCONFIG_FILENAME)) return { kind: 'absent' };
 
-  const path = join(root, FILENAME);
+  const path = join(root, ROOT_TSCONFIG_FILENAME);
   try {
     if (!(await lstat(path)).isFile()) return { kind: 'skipped' };
     const text = UTF8.decode(await readFile(path));
