@@ -503,6 +503,7 @@ describe('Step 62: the analysis path has no network or execution capability', ()
     // Steps 87–89 add the config readers, pure path/name policies and shared error; Step92 loads them in the CLI.
     // Step103 adds only the internal evidence model and pure ordering/path/pointer helpers.
     // Step108 adds the internal per-scan root/policy/precedence handoff.
+    // Step 151 adds the internal reader for the canonical root tsconfig.
     expect(modules).toEqual([
       'cli/entry.ts',
       'cli/index.ts',
@@ -517,6 +518,7 @@ describe('Step 62: the analysis path has no network or execution capability', ()
       'config/ignorePaths.ts',
       'config/projectConfigError.ts',
       'config/readProjectConfig.ts',
+      'config/readRootTsconfig.ts',
       'core/analyzeProject.ts',
       'core/evidence.ts',
       'core/scanContext.ts',
