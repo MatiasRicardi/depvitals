@@ -1,5 +1,8 @@
 # DepVitals JSON report format v1
 
+The [Draft 7 report v2 schema](report-v2.schema.json) and its [examples](examples/v2/README.md)
+describe the v0.6.0 target format. The sections below document v1.
+
 [report-v1.schema.json](report-v1.schema.json) is the Draft 7 schema for dependency scans and exact-package explanations. It is a data artifact, not a JavaScript API or a runtime validation dependency. The schema version is independent of the CLI release version; `tool.version` identifies the actual producing version.
 
 A report is one UTF-8 JSON document, indented by two spaces, followed by one LF. Its fields are `schemaVersion`, `tool`, `mode`, `project`, `scope`, `findings`, `counts`, `packages` and `query`, in that order. Diagnostic scans append the optional `diagnostics` object after `query`. There are no timestamps, durations, banners or error-shaped documents. An operational failure produces no report.

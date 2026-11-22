@@ -1,0 +1,440 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/MatiasRicardi/depvitals/v0.6.0/schemas/report-v2.schema.json",
+  "title": "DepVitals report schema version 2",
+  "description": "Dependency scan and exact-package explanation documents. Counts, ordering, status consistency and provenance semantics are described in the accompanying README; consumers must check cross-field invariants in addition to schema validation.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "tool",
+    "mode",
+    "project",
+    "scope",
+    "findings",
+    "counts",
+    "packages",
+    "query"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "tool": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {
+          "const": "depvitals"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "mode": {
+      "enum": ["scan", "explain"]
+    },
+    "project": {
+      "type": "object",
+      "required": ["root"],
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "scope": {
+      "type": "object",
+      "required": ["sourceExtensions", "excludedDirectories", "ignorePaths", "ignoreDependencies"],
+      "properties": {
+        "sourceExtensions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "excludedDirectories": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "ignorePaths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "ignoreDependencies": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "findings": {
+      "type": "object",
+      "required": ["unusedDependencies", "unusedDevDependencies", "missingDependencies"],
+      "properties": {
+        "unusedDependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "unusedDevDependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "missingDependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "counts": {
+      "type": "object",
+      "required": ["unusedDependencies", "unusedDevDependencies", "missingDependencies"],
+      "properties": {
+        "unusedDependencies": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unusedDevDependencies": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "missingDependencies": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    },
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "status",
+          "declaredIn",
+          "excluded",
+          "underlyingFindings",
+          "findings",
+          "evidence"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "enum": ["used", "unused", "missing", "excluded", "declared", "unknown"]
+          },
+          "declaredIn": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "dependencies",
+                "devDependencies",
+                "peerDependencies",
+                "optionalDependencies"
+              ]
+            },
+            "uniqueItems": true
+          },
+          "excluded": {
+            "type": "boolean"
+          },
+          "underlyingFindings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["unusedDependencies", "unusedDevDependencies", "missingDependencies"]
+            },
+            "uniqueItems": true
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["unusedDependencies", "unusedDevDependencies", "missingDependencies"]
+            },
+            "uniqueItems": true
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": ["kind", "file", "reference", "specifier", "position"],
+                  "properties": {
+                    "kind": {
+                      "const": "source"
+                    },
+                    "file": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "reference": {
+                      "enum": ["import", "export-from", "dynamic-import", "require"]
+                    },
+                    "specifier": {
+                      "type": "string"
+                    },
+                    "position": {
+                      "type": "object",
+                      "required": ["offset", "line", "column"],
+                      "properties": {
+                        "offset": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "line": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "column": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "required": ["kind", "file", "pointer", "command", "via", "occurrence"],
+                  "properties": {
+                    "kind": {
+                      "const": "script"
+                    },
+                    "file": {
+                      "const": "package.json"
+                    },
+                    "pointer": {
+                      "type": "string",
+                      "pattern": "^/scripts/"
+                    },
+                    "command": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "via": {
+                      "enum": ["direct", "mapping", "runner", "node-preload"]
+                    },
+                    "occurrence": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "required": ["kind", "file", "pointer", "value", "detector"],
+                  "properties": {
+                    "kind": {
+                      "const": "config"
+                    },
+                    "file": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "pointer": {
+                      "type": "string",
+                      "pattern": "^/"
+                    },
+                    "value": {
+                      "type": "string"
+                    },
+                    "detector": {
+                      "enum": ["eslint", "jest", "typescript"]
+                    }
+                  },
+                  "additionalProperties": true,
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "detector": {
+                            "const": "typescript"
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "file": {
+                            "const": "tsconfig.json"
+                          },
+                          "pointer": {
+                            "pattern": "^/extends(?:/(?:0|[1-9][0-9]*))?(?![\\s\\S])"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,213}|@[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9_-][A-Za-z0-9._-]*)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[A-Za-z0-9._-]+)*(?![\\s\\S])",
+                            "if": {
+                              "pattern": "^@"
+                            },
+                            "then": {
+                              "description": "The scoped package root is at most 214 characters. Capture the suffix to measure only the root.",
+                              "pattern": "^(?=@[^/]+/[^/]+((?:/[^/]+)*)(?![\\s\\S]))[\\s\\S]{1,214}\\1(?![\\s\\S])"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "query": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": ["packageName", "known"],
+          "properties": {
+            "packageName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 214,
+              "pattern": "^(?:[A-Za-z0-9][A-Za-z0-9._-]*|@[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9_-][A-Za-z0-9._-]*)(?![\\s\\S])"
+            },
+            "known": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "diagnostics": {
+      "type": "object",
+      "required": ["sourceFilesScanned", "nestedPackageSourceFiles", "notices"],
+      "properties": {
+        "sourceFilesScanned": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "nestedPackageSourceFiles": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "notices": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "no-supported-sources",
+              "nested-package-inputs",
+              "workspace-declared",
+              "tsconfig-skipped"
+            ]
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "scan"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "query": {
+            "type": "null"
+          },
+          "packages": {
+            "items": {
+              "properties": {
+                "status": {
+                  "not": {
+                    "const": "unknown"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "explain"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "query": {
+            "type": "object",
+            "required": ["packageName", "known"],
+            "properties": {
+              "packageName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 214,
+                "pattern": "^(?:[A-Za-z0-9][A-Za-z0-9._-]*|@[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9_-][A-Za-z0-9._-]*)(?![\\s\\S])"
+              },
+              "known": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          },
+          "packages": {
+            "minItems": 1,
+            "maxItems": 1
+          }
+        },
+        "not": {
+          "required": ["diagnostics"]
+        }
+      }
+    }
+  ]
+}
