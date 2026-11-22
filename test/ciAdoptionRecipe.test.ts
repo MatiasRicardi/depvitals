@@ -1,5 +1,8 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -7,11 +10,12 @@ import {
   readdirSync,
   statSync,
   realpathSync,
+  symlinkSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import Ajv from 'ajv';
@@ -22,8 +26,27 @@ import type { JsonReport } from '../src/reporters/jsonReporter.js';
 
 const recipe = new URL('../docs/examples/ci/', import.meta.url);
 const adapter = fileURLToPath(new URL('verify-report.mjs', recipe));
+const legacyAdapter = fileURLToPath(
+  new URL('./fixtures/report-readers/v0.5.0.mjs', import.meta.url),
+);
+const require = createRequire(import.meta.url);
+const reportSchema = new URL('../schemas/report-v2.schema.json', import.meta.url);
+
+function prepareAdapter(root: string): string {
+  const modules = join(root, 'node_modules');
+  const schemas = join(modules, 'depvitals', 'schemas');
+  const recipeDirectory = join(modules, 'depvitals-local-ci-recipe');
+  mkdirSync(schemas, { recursive: true });
+  mkdirSync(recipeDirectory, { recursive: true });
+  symlinkSync(dirname(require.resolve('ajv/package.json')), join(modules, 'ajv'), 'junction');
+  copyFileSync(reportSchema, join(schemas, 'report-v2.schema.json'));
+  const verifier = join(recipeDirectory, 'verify-report.mjs');
+  copyFileSync(adapter, verifier);
+  return verifier;
+}
+
 const clean = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   tool: { name: 'depvitals', version: '0.4.0' },
   mode: 'scan',
   project: { root: '/fixture' },
@@ -85,6 +108,7 @@ function verify(
   report: string | undefined,
   diagnostics: string,
   status: string,
+  legacy = false,
 ): {
   status: number | null;
   stdout: string;
@@ -101,10 +125,14 @@ function verify(
       const path = paths[index];
       if (path !== undefined && contents !== undefined) writeFileSync(path, contents);
     }
-    const result = spawnSync(process.execPath, [adapter, ...paths], {
-      encoding: 'utf8',
-      timeout: 10_000,
-    });
+    const result = spawnSync(
+      process.execPath,
+      [legacy ? legacyAdapter : prepareAdapter(scratch), ...paths],
+      {
+        encoding: 'utf8',
+        timeout: 10_000,
+      },
+    );
     expect(result.error).toBeUndefined();
     expect(result.signal).toBeNull();
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
@@ -114,6 +142,29 @@ function verify(
 }
 
 describe('consumer report verification', () => {
+  it('binds the legacy reader and distinguishes the two report versions', () => {
+    expect(createHash('sha256').update(readFileSync(legacyAdapter)).digest('hex')).toBe(
+      'da69550dfd7d17bd83e3fff9a1df3907a3b6b61dedc767fe57bfc41b1cd807d9',
+    );
+    const v1 = json({ ...clean, schemaVersion: 1 });
+    expect(verify(v1, '', '0\n', true).status).toBe(0);
+    expect(verify(json(clean), '', '0\n', true).status).toBe(2);
+    expect(verify(v1, '', '0\n').status).toBe(2);
+    expect(verify('', 'operational error\n', '1\n', true).status).toBe(1);
+  });
+
+  it.each([
+    { sourceFilesScanned: '0', nestedPackageSourceFiles: 0, notices: ['no-supported-sources'] },
+    { sourceFilesScanned: 1, nestedPackageSourceFiles: 2, notices: ['nested-package-inputs'] },
+    {
+      sourceFilesScanned: 0,
+      nestedPackageSourceFiles: 0,
+      notices: ['tsconfig-skipped', 'no-supported-sources'],
+    },
+  ])('rejects invalid diagnostic shape or semantics %j', (diagnostics) => {
+    expect(verify(json({ ...clean, diagnostics }), '', '0\n').status).toBe(2);
+  });
+
   it('accepts a clean scan and additive data', () => {
     const report = {
       ...clean,
@@ -168,7 +219,7 @@ describe('consumer report verification', () => {
       label: 'missing package status with empty visible findings',
       report: { ...clean, packages: findings.packages.map((pkg) => ({ ...pkg, findings: [] })) },
       status: '0\n',
-      error: 'Package status disagrees with findings.',
+      error: 'Package findings disagree with underlying findings.',
     },
   ])('rejects $label', ({ report, status, error }) => {
     expect(verify(json(report), '', status)).toEqual({
@@ -191,7 +242,7 @@ describe('consumer report verification', () => {
     ['partial JSON', '{"schemaVersion":1', '', '0\n'],
     ['npm banner', 'npm run\n' + json(clean), '', '0\n'],
     ['trailing content', json(clean) + '{}', '', '0\n'],
-    ['wrong schema', json({ ...clean, schemaVersion: 2 }), '', '0\n'],
+    ['wrong schema', json({ ...clean, schemaVersion: 1 }), '', '0\n'],
     [
       'query mode',
       json({ ...clean, mode: 'explain', query: { packageName: 'x', known: false } }),
@@ -245,9 +296,7 @@ const actualVersion = (
   }
 ).version;
 const validateReport = new Ajv({ allErrors: true }).compile(
-  JSON.parse(
-    readFileSync(new URL('../schemas/report-v1.schema.json', import.meta.url), 'utf8'),
-  ) as object,
+  JSON.parse(readFileSync(reportSchema, 'utf8')) as object,
 );
 function snapshotProject(root: string): unknown {
   return readdirSync(root, { recursive: true, withFileTypes: true })
@@ -341,6 +390,7 @@ describe.skipIf(process.platform === 'win32')('real CLI capture recipe', () => {
       delete env['NODE_OPTIONS'];
       delete env['NODE_PATH'];
       delete env['NODE_V8_COVERAGE'];
+      const verifier = prepareAdapter(project);
       const before = snapshotProject(project);
       const result = spawnSync('bash', [captureScript, output, ...row.args], {
         cwd: project,
@@ -376,7 +426,7 @@ describe.skipIf(process.platform === 'win32')('real CLI capture recipe', () => {
         if (row.diagnostic === undefined) expect(document).not.toHaveProperty('diagnostics');
         else expect(document.diagnostics).toEqual(row.diagnostic);
       }
-      const verified = spawnSync(process.execPath, [adapter, ...paths], {
+      const verified = spawnSync(process.execPath, [verifier, ...paths], {
         cwd: project,
         env,
         encoding: 'utf8',
@@ -434,7 +484,7 @@ describe.skipIf(process.platform === 'win32')('real CLI capture recipe', () => {
 it.each([
   { sourceFilesScanned: 0, nestedPackageSourceFiles: 0, notices: ['no-supported-sources'] },
   { sourceFilesScanned: 4, nestedPackageSourceFiles: 1, notices: ['nested-package-inputs'] },
-])('keeps additive diagnostic facts separate from v1 enforcement %j', (diagnostics) => {
+])('checks v2 diagnostic facts separately from findings %j', (diagnostics) => {
   expect(verify(json({ ...clean, diagnostics }), '', '0\n')).toEqual({
     status: 0,
     stdout: 'DepVitals scan passed.\n',

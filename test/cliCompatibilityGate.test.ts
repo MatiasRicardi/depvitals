@@ -175,7 +175,7 @@ describe('compiled scan and explanation compatibility', () => {
 
     const report = json(repeat(['why', '--format', 'json'], scratch), 1);
     expect(report).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       tool: { name: 'depvitals', version },
       project: { root },
       mode: 'scan',

@@ -1,6 +1,6 @@
 # DepVitals technical reference
 
-This reference describes DepVitals v0.5.0. See the [README](../README.md) for commands and the [changelog](../CHANGELOG.md) for published release boundaries. DepVitals is a CLI for one project root, not a full JavaScript/TypeScript compiler, module resolver or replacement for reviewing dependency changes.
+This reference describes the current development build targeting DepVitals v0.6.0. See the [README](../README.md) for commands and the [changelog](../CHANGELOG.md) for published release boundaries. DepVitals is a CLI for one project root, not a full JavaScript/TypeScript compiler, module resolver or replacement for reviewing dependency changes.
 
 ## Findings and evidence
 
@@ -17,7 +17,7 @@ A clean report means no issues were found through supported evidence. It does no
 
 ## CLI and JSON reports
 
-DepVitals v0.5.0 supports JSON reports, package explanations and optional full-scan diagnostics.
+The current build supports JSON v2 reports, package explanations and optional full-scan diagnostics.
 Check the installed version with standalone `--version`. JSON reports and explanations have been
 available since v0.4.0; `--diagnostics` was added in v0.5.0.
 
@@ -72,11 +72,13 @@ Terminal text and error diagnostics escape control characters in paths, argument
 
 JSON stdout is one UTF-8 document with two-space indentation and one trailing LF. An operational
 error produces empty stdout, including with `--format json`. The package ships the
-[Draft 7 schema](../schemas/report-v1.schema.json), [format guide](../schemas/README.md) and
-[normative examples](../schemas/examples/README.md). Consumers should validate the report and its
-cross-field counts, finding and package relationships. `schemaVersion` identifies the report
-contract and `tool.version` identifies the installed CLI. Version 1 permits additive fields.
-Breaking field, type or meaning changes require a new schema version.
+[Draft 7 report v2 schema](../schemas/report-v2.schema.json),
+[v2 semantic contract](../schemas/README.md#report-v2-semantic-contract) and
+[normative v2 examples](../schemas/examples/v2/README.md). Consumers validate the report and its
+cross-field counts, finding and package relationships. Every completed scan or explanation emits
+`schemaVersion: 2`. `tool.version` identifies the installed CLI package. Use the
+[tagged v0.5.0 schema and guide](https://github.com/MatiasRicardi/depvitals/tree/v0.5.0/schemas)
+with that historical v1 producer.
 
 The report identifies the absolute native project root, effective source extensions, fixed
 directory exclusions and normalized user exclusions. Evidence paths are project-relative with
@@ -114,6 +116,7 @@ A required malformed/linked nested manifest still fails the scan; it produces no
 | `no-supported-sources`  | Total source count is zero. Script/config evidence can still contribute.                                                                                                     |
 | `nested-package-inputs` | Nested source count is positive; its nearest manifest lies below the selected root. Findings still use the selected root inventory.                                          |
 | `workspace-declared`    | The root has a nonempty `workspaces` array, or `workspaces.packages` array, containing only strings with nonblank trimmed values. Patterns are context and are not expanded. |
+| `tsconfig-skipped`      | The exact root `tsconfig.json` entry was selected and could not be read as supported configuration. This notice appears once and last. An absent entry emits no notice.      |
 
 Notices are unique and always follow this order; the first two cannot co-occur. A nameless or
 empty nested manifest still establishes ownership. A nested source need not belong to a declared
@@ -180,12 +183,12 @@ No member directory is needed. `depvitals ./workspace-only --format json --diagn
 }
 ```
 
-The [complete normative report](../schemas/examples/scan-diagnostics.json) uses an illustrative
-0.5.0 version and `/example/project` root; real reports use their installed version and actual
-absolute root. JSON schema remains 1. Existing v1 readers that tolerate unknown properties,
-including the exact v0.4.1 CI verifier, accept diagnostic scans. Structural schema validation
-and semantic count/notice checks remain separate. The scoped-query pattern repair aligns schema
-acceptance with the runtime grammar already shipped in v0.4.1; it changes no findings.
+The [complete v2 diagnostic example](../schemas/examples/v2/scan-diagnostics.json) uses an
+illustrative CLI version of 0.6.0 and root `/example/project`. It also shows a skipped TypeScript
+configuration. Actual reports use the installed package version and selected absolute root.
+The [v2 semantic contract](../schemas/README.md#report-v2-semantic-contract) defines the skip
+predicate and required notice order. Structural validation and semantic count/notice checks
+are separate.
 
 The [six-root comparison](compatibility/v0.5.0.md) and
 [reviewed expectation ledger](../test/fixtures/external-corpus/v0.5.0/review.json) record immutable inputs,
@@ -407,24 +410,27 @@ These examples run the npm release; use `node dist/cli/index.js` from a local ch
 
 ## CI consumer recipe
 
-The [fixed-version GitHub Actions recipe](examples/ci/README.md) pins depvitals@0.5.0 and
-provides a local-tarball consumer for development-build verification.
+The [v2 GitHub Actions recipe](examples/ci/README.md) targets `depvitals@0.6.0` and
+`ajv@6.15.0`. Its local-tarball instructions cover development-build verification.
 Its default capture is ordinary JSON. The optional second `--diagnostics` capture argument adds
 scope facts to the JSON artifact; `depvitals-diagnostics.txt` remains stderr and is empty for
 completed scans. Keep `npm run --silent check:dependencies` for direct script enforcement.
 
-Both current and exact v0.4.1 verifiers accept clean diagnostics with notices (exit 0), enforce
-findings and operational errors (exit 1), and reject malformed, missing or inconsistent artifact
-sets (exit 2). The latter is the adapter status, not a new CLI exit code. The copied workflow
-uploads available artifacts before enforcing the recorded result. A successful capture wrapper
-alone is not a clean scan. Hosted upload is separate from local verification of the script steps.
+The v2 verifier accepts clean diagnostic scans with notices (exit 0), enforces findings and
+operational errors (exit 1), and rejects malformed, unsupported, missing or inconsistent artifact
+sets (adapter exit 2). The copied workflow uploads available artifacts before enforcing the
+recorded result. Hosted upload is separate from local verification of the script steps.
+
+**Historical v1 compatibility.** The exact v0.4.1 verifier accepted the diagnostic scan reports
+introduced in v0.5.0 because those reports used schema version 1. The v1 verifiers reject version 2.
+For v1, pin `depvitals@0.5.0` with the [tagged v0.5.0 recipe](https://github.com/MatiasRicardi/depvitals/tree/v0.5.0/docs/examples/ci).
 
 ## Manual migration from Depcheck
 
 Review the flags, policy and JSON consumers together. Depcheck documents `--json`, ignore
 patterns and a result shape with fields such as `using`, `invalidFiles` and `invalidDirs`. [Depcheck usage and JSON example](https://github.com/depcheck/depcheck#usage).
 
-| Area                | DepVitals v0.5.0                                                                                                                                                                                                                    |
+| Area                | Current DepVitals build                                                                                                                                                                                                             |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Machine output      | Use `--format json`. Read `findings`, `counts` and package `evidence` from the versioned schema.                                                                                                                                    |
 | Exclusions          | Review each `.depcheckrc` or CLI ignore rule. Translate intentional exclusions to literal `ignorePaths` or exact `ignoreDependencies` in the selected root's strict `depvitals.config.json`. Expand and review glob rules manually. |

@@ -1,8 +1,14 @@
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 
+const require = createRequire(import.meta.url);
 const categories = ['unusedDependencies', 'unusedDevDependencies', 'missingDependencies'];
-const scopeKeys = ['sourceExtensions', 'excludedDirectories', 'ignorePaths', 'ignoreDependencies'];
-const strings = (value) => Array.isArray(value) && value.every((item) => typeof item === 'string');
+const noticeOrder = [
+  'no-supported-sources',
+  'nested-package-inputs',
+  'workspace-declared',
+  'tsconfig-skipped',
+];
 
 function readArtifacts(paths) {
   if (paths.length !== 3) throw new Error('Expected report, diagnostics and status paths.');
@@ -13,42 +19,102 @@ function readArtifacts(paths) {
   }
 }
 
+function verifySchema(report) {
+  let validate;
+  try {
+    const Ajv = require('ajv');
+    const schema = JSON.parse(
+      readFileSync(require.resolve('depvitals/schemas/report-v2.schema.json'), 'utf8'),
+    );
+    if (
+      schema.$schema !== 'http://json-schema.org/draft-07/schema#' ||
+      schema.properties?.schemaVersion?.const !== 2
+    ) {
+      throw new Error('Unexpected installed report schema.');
+    }
+    validate = new Ajv().compile(schema);
+  } catch {
+    throw new Error('Installed Ajv or DepVitals report v2 schema is missing or invalid.');
+  }
+  if (!validate(report)) throw new Error('Expected a valid DepVitals v2 report.');
+}
+
 function verifyPackageFindings(report) {
   const remaining = new Map(categories.map((key) => [key, new Set(report.findings[key])]));
   for (const [key, names] of remaining) {
-    if (names.size !== report.counts[key]) throw new Error('Duplicate report findings.');
+    if (names.size !== report.counts[key]) throw new Error('Invalid findings or counts.');
   }
 
+  const excludedNames = new Set(report.scope.ignoreDependencies);
   const seen = new Set();
   for (const pkg of report.packages) {
-    if (
-      typeof pkg?.name !== 'string' ||
-      seen.has(pkg.name) ||
-      !strings(pkg.declaredIn) ||
-      typeof pkg.excluded !== 'boolean' ||
-      !strings(pkg.underlyingFindings) ||
-      !strings(pkg.findings) ||
-      !Array.isArray(pkg.evidence)
-    ) {
-      throw new Error('Invalid package record.');
-    }
+    if (seen.has(pkg.name)) throw new Error('Duplicate package name.');
     seen.add(pkg.name);
     for (const category of pkg.findings) {
-      if (!remaining.get(category)?.delete(pkg.name)) {
+      if (!remaining.get(category).delete(pkg.name)) {
         throw new Error('Package findings disagree with report findings.');
       }
     }
 
-    const expected = pkg.findings.includes('missingDependencies')
-      ? ['missing']
-      : pkg.findings.length > 0
-        ? ['unused']
-        : ['used', 'declared', 'excluded'];
-    if (!expected.includes(pkg.status)) throw new Error('Package status disagrees with findings.');
+    if (pkg.excluded !== excludedNames.has(pkg.name)) {
+      throw new Error('Package exclusion disagrees with report scope.');
+    }
+    const expectedVisible = pkg.excluded ? [] : pkg.underlyingFindings;
+    if (
+      pkg.findings.length !== expectedVisible.length ||
+      !pkg.findings.every((category) => expectedVisible.includes(category))
+    ) {
+      throw new Error('Package findings disagree with underlying findings.');
+    }
+    const expectedUnderlying = [];
+    if (pkg.declaredIn.length === 0 && pkg.evidence.some(({ kind }) => kind === 'source')) {
+      expectedUnderlying.push('missingDependencies');
+    }
+    if (pkg.evidence.length === 0) {
+      if (pkg.declaredIn.includes('dependencies')) expectedUnderlying.push('unusedDependencies');
+      if (pkg.declaredIn.includes('devDependencies'))
+        expectedUnderlying.push('unusedDevDependencies');
+    }
+    if (
+      pkg.underlyingFindings.length !== expectedUnderlying.length ||
+      !pkg.underlyingFindings.every((category) => expectedUnderlying.includes(category))
+    ) {
+      throw new Error('Package underlying findings disagree with declarations or evidence.');
+    }
+    const expectedStatus = pkg.excluded
+      ? 'excluded'
+      : expectedUnderlying.includes('missingDependencies')
+        ? 'missing'
+        : expectedUnderlying.length > 0
+          ? 'unused'
+          : pkg.evidence.length > 0
+            ? 'used'
+            : 'declared';
+    if (pkg.status !== expectedStatus) throw new Error('Package status disagrees with findings.');
   }
 
   if ([...remaining.values()].some((names) => names.size > 0)) {
     throw new Error('Report findings disagree with package findings.');
+  }
+}
+
+function verifyDiagnostics(diagnostics) {
+  if (diagnostics === undefined) return;
+  const { sourceFilesScanned: total, nestedPackageSourceFiles: nested, notices } = diagnostics;
+  if (
+    nested > total ||
+    notices.includes('no-supported-sources') !== (total === 0) ||
+    notices.includes('nested-package-inputs') !== nested > 0
+  ) {
+    throw new Error('Diagnostic notices disagree with source counts.');
+  }
+  if (
+    notices.some(
+      (notice, index) =>
+        index > 0 && noticeOrder.indexOf(notices[index - 1]) >= noticeOrder.indexOf(notice),
+    )
+  ) {
+    throw new Error('Diagnostic notices are out of order.');
   }
 }
 
@@ -68,30 +134,12 @@ function verify(paths) {
     throw new Error('Expected one complete JSON report.');
   }
 
-  if (
-    report?.schemaVersion !== 1 ||
-    report.mode !== 'scan' ||
-    report.query !== null ||
-    report.tool?.name !== 'depvitals' ||
-    typeof report.tool.version !== 'string' ||
-    report.tool.version.trim() === '' ||
-    typeof report.project?.root !== 'string' ||
-    report.project.root === '' ||
-    !scopeKeys.every((key) => strings(report.scope?.[key])) ||
-    !Array.isArray(report.packages)
-  ) {
-    throw new Error('Expected a DepVitals v1 scan report.');
-  }
-
-  if (
-    !categories.every(
-      (key) =>
-        strings(report.findings?.[key]) && report.counts?.[key] === report.findings[key].length,
-    )
-  ) {
-    throw new Error('Invalid findings or counts.');
+  verifySchema(report);
+  if (report.mode !== 'scan' || report.tool.version.trim() === '') {
+    throw new Error('Expected a DepVitals v2 scan report.');
   }
   verifyPackageFindings(report);
+  verifyDiagnostics(report.diagnostics);
   const [unused, unusedDev, missing] = categories.map((key) => report.counts[key]);
   const hasFindings = unused > 0 || unusedDev > 0 || missing > 0;
   if (status !== (hasFindings ? '1\n' : '0\n')) {

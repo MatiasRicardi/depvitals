@@ -126,23 +126,22 @@ describe('root TypeScript extends usage', () => {
       const cli = await runCli(['--format', 'json'], { cwd: root, version: '0.5.0' });
       expect(cli.exitCode).toBe(1);
       expect(cli.stderr).toBe('');
-      const v1Report = JSON.parse(cli.stdout) as JsonReport;
-      expect(v1Report).toMatchObject({
-        schemaVersion: 1,
+      const v2Report = JSON.parse(cli.stdout) as JsonReport;
+      expect(v2Report).toMatchObject({
+        schemaVersion: 2,
         findings: {
           unusedDependencies: ['nested', 'secondary'],
-          unusedDevDependencies: ['config-only'],
+          unusedDevDependencies: [],
         },
       });
-      expect(v1Report.packages.find(({ name }) => name === 'path')).toMatchObject({
+      expect(v2Report.packages.find(({ name }) => name === 'path')).toMatchObject({
         status: 'excluded',
-        evidence: [],
+        evidence: [occurrence('path', '/extends/2', 'path').evidence],
       });
-      expect(v1Report.packages.find(({ name }) => name === 'peer')).toMatchObject({
-        status: 'declared',
-        evidence: [],
+      expect(v2Report.packages.find(({ name }) => name === 'peer')).toMatchObject({
+        status: 'used',
+        evidence: [occurrence('peer', '/extends/4', 'peer').evidence],
       });
-      expect(cli.stdout).not.toContain('"detector": "typescript"');
 
       const context = await createScanContext(root);
       const config = await readRootTsconfig(context.manifest.root, context.rootEntries);

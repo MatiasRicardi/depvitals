@@ -83,7 +83,7 @@ Reports use stdout; operational errors use stderr without a partial report. Exit
 
 ### Understand scan scope
 
-DepVitals **v0.5.0** includes optional scan scope diagnostics. Use `--diagnostics` for terminal
+Use `--diagnostics` for terminal
 output or combine it with `--format json`.
 
 For a small reproduced example, create `scope-demo/package.json` containing `{}`,
@@ -125,7 +125,7 @@ and [v0.5.0 release notes](https://github.com/MatiasRicardi/depvitals/blob/main/
 
 ## JSON reports and package explanations
 
-DepVitals v0.5.0 supports terminal and JSON package explanations. To use a development checkout, run
+DepVitals supports terminal and JSON package explanations. To use a development checkout, run
 `node /path/to/depvitals/dist/cli/index.js` in place of `depvitals` after
 [building the development checkout](https://github.com/MatiasRicardi/depvitals/blob/main/CONTRIBUTING.md#local-setup).
 
@@ -139,16 +139,21 @@ depvitals --format json --explain demo-missing ./project
 ```
 
 An explanation reports one exact package. Its exit status follows that package's result. Use a full
-scan to enforce a project-wide check. The JSON v1 [report schema and examples](https://github.com/MatiasRicardi/depvitals/blob/main/schemas/README.md)
-are shipped in the npm package under `schemas/`. See the [CLI and report contract](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#cli-and-json-reports).
+scan to enforce a project-wide check. The current build emits `schemaVersion: 2` for every completed
+JSON scan and explanation. Validate these reports with the [report v2 schema and examples](https://github.com/MatiasRicardi/depvitals/blob/main/schemas/README.md#report-v2-semantic-contract),
+shipped under `schemas/`. `tool.version` identifies the CLI package version.
+For the historical v0.5.0 producer, use its [report v1 schema and guide](https://github.com/MatiasRicardi/depvitals/tree/v0.5.0/schemas).
 
 ## CI with a fixed version
 
-Install the exact version as a development dependency and commit the generated lockfile.
+For JSON v2, pin the v0.6.0 release or install a tarball built from the current checkout.
+Commit the generated lockfile for your selected install.
 
 ```sh
-npm install --save-dev --save-exact depvitals@0.5.0
+npm install --ignore-scripts --save-dev --save-exact depvitals@0.6.0
 ```
+
+To rehearse before publication, substitute the path to the local tarball for `depvitals@0.6.0`.
 
 Add this entry to `scripts` in `package.json`:
 
@@ -163,11 +168,11 @@ npm ci --ignore-scripts --include=dev
 npm run --silent check:dependencies
 ```
 
-Use the [CI recipe](https://github.com/MatiasRicardi/depvitals/blob/main/docs/examples/ci/README.md)
-to capture and upload the report, diagnostics and status. The recipe also shows how to test a
-local build from a tarball. The v0.5.0 guide keeps the
-ordinary capture by default and offers a separate `--diagnostics` opt-in. The exact v0.4.1
-verifier can read the added JSON object; diagnostic notices alone do not fail a check.
+The [v2 CI recipe](https://github.com/MatiasRicardi/depvitals/blob/main/docs/examples/ci/README.md)
+captures and uploads the report, diagnostics and status, then enforces the result with the
+installed v2 schema and pinned Ajv. Use `--diagnostics` to include scope facts. Notices alone do
+not fail a check. For a historical JSON v1 workflow, pair the exact `depvitals@0.5.0` pin with its
+[tagged v1 recipe](https://github.com/MatiasRicardi/depvitals/tree/v0.5.0/docs/examples/ci).
 
 ## Optional configuration
 

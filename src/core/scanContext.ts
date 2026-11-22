@@ -1,5 +1,6 @@
 /** Internal per-invocation inputs. No global cache or atomic filesystem snapshot is implied. */
 import { readProjectConfigSnapshot, type ProjectConfig } from '../config/readProjectConfig.js';
+import { readRootTsconfig } from '../config/readRootTsconfig.js';
 import {
   collectEslintConfigUsage,
   legacyEslintPrecedenceFromEntries,
@@ -10,6 +11,7 @@ import {
   collectJestConfigUsage,
   hasRootJestConfigEntries,
 } from '../detectors/jestManifestConfig.js';
+import { collectTypescriptConfigUsage } from '../detectors/typescriptConfig.js';
 import { loadProjectManifestData, type ProjectManifest } from '../scanner/projectManifest.js';
 import { compareEvidence, compareStrings, type ConfigOccurrence } from './evidence.js';
 
@@ -20,6 +22,7 @@ export type ScanContext = {
   readonly rootEntries: readonly string[];
   readonly eslintPrecedence: LegacyEslintPrecedence;
   readonly jestConfigBarrier: boolean;
+  readonly tsconfigSkipped: boolean;
   readonly configEvidence: readonly ConfigOccurrence[];
 };
 
@@ -46,6 +49,13 @@ export async function createScanContext(projectRoot: string): Promise<ScanContex
     const occurrences = collectJestConfigUsage(raw['jest'], manifest.declaredDependencyNames);
     for (const occurrence of occurrences) configEvidence.push(occurrence);
   }
+  const tsconfig = await readRootTsconfig(manifest.root, rootEntries);
+  for (const occurrence of collectTypescriptConfigUsage(
+    tsconfig,
+    manifest.declaredDependencyNames,
+  )) {
+    configEvidence.push(occurrence);
+  }
   configEvidence.sort(
     (a, b) =>
       compareStrings(a.packageName, b.packageName) || compareEvidence(a.evidence, b.evidence),
@@ -57,6 +67,7 @@ export async function createScanContext(projectRoot: string): Promise<ScanContex
     rootEntries,
     eslintPrecedence,
     jestConfigBarrier,
+    tsconfigSkipped: tsconfig.kind === 'skipped',
     configEvidence,
   };
 }

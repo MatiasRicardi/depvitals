@@ -25,7 +25,7 @@ export type JsonReportInput =
   | { readonly mode: 'explain'; readonly result: PackageExplanation; readonly diagnostics?: never };
 
 export type JsonReport = {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly tool: { readonly name: 'depvitals'; readonly version: string };
   readonly mode: 'scan' | 'explain';
   readonly project: { readonly root: string };
@@ -52,7 +52,7 @@ export function createJsonReport(input: JsonReportInput, version: string): JsonR
     missingDependencies: names(result.findings.missingDependencies),
   };
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     tool: { name: 'depvitals', version },
     mode: input.mode,
     project: { root: result.projectRoot },

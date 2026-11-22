@@ -285,7 +285,12 @@ describe('frozen F1 Node preload controls', () => {
           stderr: '',
           stdout:
             JSON.stringify(
-              { ...expected, project: { root }, tool: { name: 'depvitals', version } },
+              {
+                ...expected,
+                schemaVersion: 2,
+                project: { root },
+                tool: { name: 'depvitals', version },
+              },
               null,
               2,
             ) + '\n',

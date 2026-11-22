@@ -14,7 +14,7 @@ const schema = JSON.parse(
   readFileSync(new URL('../schemas/depvitals-config.schema.json', import.meta.url), 'utf8'),
 ) as object;
 const reportSchema = JSON.parse(
-  readFileSync(new URL('../schemas/report-v1.schema.json', import.meta.url), 'utf8'),
+  readFileSync(new URL('../schemas/report-v2.schema.json', import.meta.url), 'utf8'),
 ) as object;
 const validate = new Ajv({ allErrors: true }).compile(schema);
 const validateReport = new Ajv({ allErrors: true }).compile(reportSchema);
