@@ -13,5 +13,5 @@ The selected root is `/example/project`. The report version records the wire for
 | [explain-typescript-excluded.json](explain-typescript-excluded.json) | The same dependency is excluded through the exact ignore list. The selector is item 1 in `["./local.json", "@scope/shared/node22.json"]`, so the retained pointer is `/extends/1`. Exit 0. |
 
 `typescript` evidence identifies a decoded selector in the selected root's `tsconfig.json`.
-The schema checks the evidence file, pointer and selector shape. Package matching, findings
-consistency and diagnostic predicates also depend on the report's other fields.
+The [v2 semantic contract](../../README.md#report-v2-semantic-contract) defines package matching,
+findings consistency, evidence ordering and the conditions for `tsconfig-skipped`.

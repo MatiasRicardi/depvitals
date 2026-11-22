@@ -1,7 +1,33 @@
-# DepVitals JSON report format v1
+# DepVitals JSON report formats
+
+## Report v2 semantic contract
 
 The [Draft 7 report v2 schema](report-v2.schema.json) and its [examples](examples/v2/README.md)
-describe the v0.6.0 target format. The sections below document v1.
+describe the v0.6.0 target format. V2 inherits the v1 envelope, counts, status and finding
+consistency, ordering, duplicate identity, provenance and diagnostic rules documented below,
+with these additions:
+
+- **TypeScript configuration evidence.** The `typescript` detector records a selector from the
+  selected root's exact `tsconfig.json` entry. Its file is `tsconfig.json`, its pointer is
+  `/extends` for a scalar or `/extends/<index>` for an array using its original zero-based index,
+  and its value is the exact decoded selector, including any subpath. It credits only an exact,
+  case-sensitive package root declared by the selected manifest. The evidence can suppress unused
+  findings and remains visible for excluded packages. After the shared kind and file keys, config
+  evidence sorts by `pointer`, detector rank (`eslint`, `jest`, `typescript`), then `value`.
+  Config identity is inherited from v1, so selectors at distinct pointers remain distinct.
+- **Skipped root TypeScript configuration.** On a completed scan with diagnostics, emit
+  `tsconfig-skipped` if the exact root entry was present in the directory snapshot and was skipped.
+  This covers links, non-regular entries, disappearance after selection, inspection or read errors,
+  invalid UTF-8, malformed JSONC, a non-object root, duplicate decoded top-level `extends` keys,
+  and an `extends` value other than a string or an array of strings. An absent exact entry, an
+  object without `extends`, an empty array and unsupported selector strings in an otherwise
+  valid document produce no skipped-config notice. When applicable, the notice appears exactly
+  once, after all other applicable notices. It records a producer observation. Consumers check
+  its representation and ordering from the report. The notice leaves exit status and source counts unchanged.
+
+Consumers apply the inherited cross-field and provenance checks alongside v2 schema validation.
+
+## Report v1 and inherited semantics
 
 [report-v1.schema.json](report-v1.schema.json) is the Draft 7 schema for dependency scans and exact-package explanations. It is a data artifact, not a JavaScript API or a runtime validation dependency. The schema version is independent of the CLI release version; `tool.version` identifies the actual producing version.
 
