@@ -54,6 +54,8 @@ const ROOT = resolve(SCRIPT_PATH, '..', '..');
 
 const SCHEMA_FILES = [
   'schemas/report-v1.schema.json',
+  'schemas/report-v2.schema.json',
+  'schemas/examples/v2/README.md',
   'schemas/depvitals-config.schema.json',
   'schemas/README.md',
   'schemas/examples/README.md',
@@ -66,6 +68,13 @@ const SCHEMA_FILES = [
     'explain-unknown',
     'explain-node-preload',
   ].map((name) => `schemas/examples/${name}.json`),
+  ...[
+    'scan-clean',
+    'scan-findings',
+    'scan-diagnostics',
+    'explain-typescript-used',
+    'explain-typescript-excluded',
+  ].map((name) => `schemas/examples/v2/${name}.json`),
 ];
 
 /** Required files that must be present inside the packaged `package/` tree. */
@@ -665,15 +674,32 @@ async function main() {
       schema.$schema === 'http://json-schema.org/draft-07/schema#' &&
         schema.properties?.schemaVersion?.const === 1,
     );
-    const validate = new Ajv({ allErrors: true }).compile(schema);
+    const schemaV2 = JSON.parse(
+      readFileSync(join(installedRoot, 'schemas/report-v2.schema.json'), 'utf8'),
+    );
+    check(
+      'installed public schema is Draft 7 report version 2',
+      schemaV2.$schema === 'http://json-schema.org/draft-07/schema#' &&
+        schemaV2.properties?.schemaVersion?.const === 2,
+    );
+    const ajv = new Ajv({ allErrors: true });
+    const validate = ajv.compile(schema);
+    const validateV2 = ajv.compile(schemaV2);
     for (const file of SCHEMA_FILES.filter(
       (path) => path.startsWith('schemas/examples/') && path.endsWith('.json'),
     )) {
       const example = JSON.parse(readFileSync(join(installedRoot, file), 'utf8'));
+      const [matching, other] = file.startsWith('schemas/examples/v2/')
+        ? [validateV2, validate]
+        : [validate, validateV2];
       check(
-        `installed normative example satisfies Draft 7: ${file}`,
-        validate(example),
-        JSON.stringify(validate.errors),
+        `installed normative example satisfies its Draft 7 schema: ${file}`,
+        matching(example),
+        JSON.stringify(matching.errors),
+      );
+      check(
+        `installed normative example rejects the other report version: ${file}`,
+        !other(example),
       );
     }
     const configSchema = JSON.parse(

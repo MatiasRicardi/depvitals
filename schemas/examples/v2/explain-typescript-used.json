@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 2,
+  "tool": {
+    "name": "depvitals",
+    "version": "0.6.0"
+  },
+  "mode": "explain",
+  "project": {
+    "root": "/example/project"
+  },
+  "scope": {
+    "sourceExtensions": [".cjs", ".cts", ".js", ".jsx", ".mjs", ".mts", ".ts", ".tsx"],
+    "excludedDirectories": [
+      ".cache",
+      ".git",
+      ".next",
+      ".nuxt",
+      ".turbo",
+      "build",
+      "coverage",
+      "dist",
+      "node_modules",
+      "out"
+    ],
+    "ignorePaths": [],
+    "ignoreDependencies": []
+  },
+  "findings": {
+    "unusedDependencies": [],
+    "unusedDevDependencies": [],
+    "missingDependencies": []
+  },
+  "counts": {
+    "unusedDependencies": 0,
+    "unusedDevDependencies": 0,
+    "missingDependencies": 0
+  },
+  "packages": [
+    {
+      "name": "@scope/shared",
+      "status": "used",
+      "declaredIn": ["devDependencies"],
+      "excluded": false,
+      "underlyingFindings": [],
+      "findings": [],
+      "evidence": [
+        {
+          "kind": "config",
+          "file": "tsconfig.json",
+          "pointer": "/extends",
+          "value": "@scope/shared/node22.json",
+          "detector": "typescript"
+        }
+      ]
+    }
+  ],
+  "query": {
+    "packageName": "@scope/shared",
+    "known": true
+  }
+}
