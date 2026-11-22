@@ -77,6 +77,7 @@ const REQUIRED_FILES = [
   'package/dist/cli/index.js',
   'package/dist/config/readProjectConfig.js',
   'package/dist/config/readRootTsconfig.js',
+  'package/dist/detectors/typescriptConfig.js',
   'package/dist/config/ignorePaths.js',
   'package/dist/config/ignoreDependencies.js',
   'package/dist/config/projectConfigError.js',

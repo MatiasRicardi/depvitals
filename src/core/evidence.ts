@@ -49,13 +49,17 @@ export type ScriptEvidence = {
   /** Script-wide accepted external candidate ordinal, before declaration filtering. */
   occurrence: number;
 };
-export const CONFIG_DETECTORS = ['eslint', 'jest'] as const;
+export const CONFIG_DETECTORS = ['eslint', 'jest', 'typescript'] as const;
 export type ConfigEvidence = {
   kind: 'config';
   file: string;
   pointer: string;
   value: string;
   detector: (typeof CONFIG_DETECTORS)[number];
+};
+export type ConfigOccurrence = {
+  readonly packageName: string;
+  readonly evidence: ConfigEvidence;
 };
 export type Evidence = SourceEvidence | ScriptEvidence | ConfigEvidence;
 export type PackageFact = {
