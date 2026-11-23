@@ -165,6 +165,53 @@ describe('consumer report verification', () => {
     expect(verify(json({ ...clean, diagnostics }), '', '0\n').status).toBe(2);
   });
 
+  it('accepts an exact exclusion-only package and rejects an omitted record', () => {
+    const report = {
+      ...clean,
+      scope: { ...clean.scope, ignoreDependencies: ['ci-ignored'] },
+    };
+    const excluded = {
+      name: 'ci-ignored',
+      status: 'excluded',
+      declaredIn: [],
+      excluded: true,
+      underlyingFindings: [],
+      findings: [],
+      evidence: [],
+    };
+    expect(verify(json({ ...report, packages: [excluded] }), '', '0\n').status).toBe(0);
+    expect(verify(json(report), '', '0\n')).toEqual({
+      status: 2,
+      stdout: '',
+      stderr: 'Invalid DepVitals analysis artifacts. Report scope excludes an unlisted package.\n',
+    });
+  });
+
+  it.each([
+    ['file', 'nested/tsconfig.json'],
+    ['pointer', '/extends/01'],
+    ['value', './local.json'],
+  ])('rejects invalid TypeScript evidence %s (%s)', (field, value) => {
+    const evidence = {
+      kind: 'config',
+      file: 'tsconfig.json',
+      detector: 'typescript',
+      pointer: '/extends/1',
+      value: 'ci-used/base.json',
+    };
+    const report = { ...clean, packages: [{ ...usedPackage, evidence: [evidence] }] };
+    expect(verify(json(report), '', '0\n').status).toBe(0);
+    const invalid = {
+      ...report,
+      packages: [{ ...usedPackage, evidence: [{ ...evidence, [field]: value }] }],
+    };
+    expect(verify(json(invalid), '', '0\n')).toEqual({
+      status: 2,
+      stdout: '',
+      stderr: 'Invalid DepVitals analysis artifacts. Expected a valid DepVitals v2 report.\n',
+    });
+  });
+
   it('accepts a clean scan and additive data', () => {
     const report = {
       ...clean,
@@ -203,6 +250,44 @@ describe('consumer report verification', () => {
   });
 
   it.each([
+    {
+      label: 'duplicate package names',
+      report: { ...clean, packages: [usedPackage, usedPackage] },
+      status: '0\n',
+      error: 'Duplicate package name.',
+    },
+    {
+      label: 'status inconsistent with evidence',
+      report: { ...clean, packages: [{ ...usedPackage, status: 'declared' }] },
+      status: '0\n',
+      error: 'Package status disagrees with findings.',
+    },
+    {
+      label: 'excluded package absent from the scope policy',
+      report: { ...clean, packages: [{ ...usedPackage, excluded: true, status: 'excluded' }] },
+      status: '0\n',
+      error: 'Package exclusion disagrees with report scope.',
+    },
+    {
+      label: 'missing finding backed by config instead of source evidence',
+      report: {
+        ...findings,
+        packages: findings.packages.map((pkg) => ({
+          ...pkg,
+          evidence: [
+            {
+              kind: 'config',
+              file: 'tsconfig.json',
+              detector: 'typescript',
+              pointer: '/extends',
+              value: 'ci-missing/base.json',
+            },
+          ],
+        })),
+      },
+      status: '1\n',
+      error: 'Package underlying findings disagree with declarations or evidence.',
+    },
     {
       label: 'package findings omitted from the summary',
       report: { ...clean, packages: findings.packages },
