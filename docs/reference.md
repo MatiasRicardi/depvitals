@@ -258,7 +258,7 @@ Both `/` and `\` are accepted as separators on every host. Leading `./`, repeate
 
 Globs, negation and pattern matching are unsupported: `*`, `?`, `[`, `]`, `{`, `}` and `!` are reserved and rejected even in literal filenames. Exclude a containing literal directory instead. `$` and `~` remain literal; there is no environment/home expansion or following of rule destinations.
 
-Path exclusions apply to source discovery, not mandatory metadata or dedicated detector reads. Ignoring `package.json` does not bypass required manifest validation; retained source still requires its nearest scope metadata. Ignoring `.eslintrc.json` does not bypass its dedicated detector read. Ignoring `eslint.config.js` skips its imports but its presence still blocks legacy ESLint hints. No ignored file can reactivate a lower-priority detector source.
+Path exclusions apply to source discovery, not mandatory metadata or dedicated detector reads. Ignoring `package.json` does not bypass required manifest validation; retained source still requires its nearest scope metadata. Ignoring `.eslintrc.json` or `tsconfig.json` does not bypass its dedicated detector read. Ignoring `eslint.config.js` skips its imports but its presence still blocks legacy ESLint hints. No ignored file can reactivate a lower-priority detector source.
 
 ### Dependency finding exclusions
 
@@ -383,6 +383,43 @@ Transform keys and options contents are not package evidence. The `jsdom` shorth
 
 A root `jest.config.js`, `.mjs`, `.cjs`, `.ts` or `.json` entry disables all manifest Jest hints, regardless of contents or filesystem entry type. Names match case-insensitively. `.mts`/`.cts` are not in this fixed barrier list. Script arguments do not activate that barrier. Ordinary imports in supported JS/TS config files remain source evidence, not broad framework-configuration support.
 
+## Root TypeScript configuration
+
+The exact lowercase `tsconfig.json` in the selected root can supply config evidence. The reader
+accepts a regular UTF-8 JSON object with one optional leading BOM, line or block comments, and a
+trailing comma after the last object member or array item. A single top-level `extends` may be
+a string or an array of strings. An absent field or an empty array supplies no evidence. A
+duplicate decoded `extends` key or a non-string array item makes the whole input unusable.
+
+A package selector such as `@scope/shared/node22.json` credits an exact, case-sensitive root
+declaration for `@scope/shared`. Relative and absolute paths and unsupported selectors supply
+no evidence. Other eligible elements in a valid array still count. A selector supplies no
+missing finding when the package is undeclared. All four declaration groups can retain evidence.
+Only `dependencies` and `devDependencies` are checked for unused findings.
+
+This example uses `@scope/shared` declared in `devDependencies`.
+
+```jsonc
+{
+  // Credit only the explicit package selector.
+  "extends": ["./local.json", "@scope/shared/node22.json"],
+}
+```
+
+`depvitals ./project --format json --explain @scope/shared` exits 0, reports `used` and includes
+one `config` record with detector `typescript`, file `tsconfig.json`, pointer `/extends/1` and
+value `@scope/shared/node22.json`. A scalar uses `/extends`. An exact dependency exclusion
+keeps the evidence and changes the status to `excluded`.
+
+This is a static read of the selected root config. The reader leaves the selected targets,
+nested or alternative configs, `references`, `compilerOptions.types`, `typeRoots` and aliases
+uninterpreted. It never opens the referenced config to check that it exists or can be loaded.
+
+A selected but unusable entry contributes a single final `tsconfig-skipped` notice only in
+completed diagnostic scans. It leaves findings and exit status unchanged. An absent entry
+produces no notice. A mandatory input failure still produces an operational error with empty
+stdout. See the [v2 schema guide](../schemas/README.md#report-v2-semantic-contract).
+
 ## Update notice and privacy
 
 Core scanning is offline and never executes or modifies the analyzed project. Only a completed ordinary terminal full scan can trigger the optional update check, after its report is written. Both stdout and stderr must be TTYs; recognized CI environments, opt-out, help/version, argument errors and failed scans suppress cache access, requests and notices. Findings alone do not suppress it. JSON scans, both explanation formats and all `--diagnostics` scans skip the notifier before any cache read, write or transport request, including with both streams interactive.
@@ -411,8 +448,9 @@ These examples run the npm release; use `node dist/cli/index.js` from a local ch
 ## CI consumer recipe
 
 The [v2 GitHub Actions recipe](examples/ci/README.md) targets `depvitals@0.6.0` and
-`ajv@6.15.0`. Its local-tarball instructions cover development-build verification.
-Its default capture is ordinary JSON. The optional second `--diagnostics` capture argument adds
+`ajv@6.15.0`. Upgrade the pinned producer, all three recipe files and the npm lockfile
+together once the exact release is available. Use a local tarball for development-build
+verification. The workflow captures ordinary JSON by default. The optional second `--diagnostics` capture argument adds
 scope facts to the JSON artifact; `depvitals-diagnostics.txt` remains stderr and is empty for
 completed scans. Keep `npm run --silent check:dependencies` for direct script enforcement.
 
@@ -446,4 +484,4 @@ Use the [CLI exit table](#cli-and-json-reports) to distinguish completed scans, 
 
 Unreadable mandatory inputs fail the scan. Unusable shapes in the bounded ESLint/Jest hint sources contribute no hints, subject to the strict external ESLint JSON errors above. The optional DepVitals configuration is stricter: invalid shapes or rules fail the scan. Non-literal imports, template-literal specifiers, `require.resolve()` and property calls such as `obj.require()` are not supported evidence.
 
-Unsupported areas include alias and tsconfig resolution, blanket ambient `@types` inference, automatic remediation, vulnerability scanning and dependency upgrades. The CLI and versioned report are the supported interfaces.
+Unsupported areas include alias and inherited tsconfig resolution, blanket ambient `@types` inference, automatic remediation, vulnerability scanning and dependency upgrades. The CLI and versioned report are the supported interfaces.

@@ -57,7 +57,7 @@ Every verify-matrix entry also runs `node scripts/verify-published-npx.mjs` agai
 
 Use the local built CLI for examples under development. Compare stdout, stderr and exit status
 against the documented result, including exit 1 for findings and fatal errors. Check example JSON
-against the [shipped report schema](schemas/report-v1.schema.json) and keep version-specific claims
+against the [v2 report schema](schemas/report-v2.schema.json) and keep version-specific claims
 consistent with the [changelog](CHANGELOG.md).
 
 Test the [fixed-version CI recipe](docs/examples/ci/README.md) before publication with the local
