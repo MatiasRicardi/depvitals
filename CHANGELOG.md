@@ -7,6 +7,25 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Recognize package selectors in the selected root's `tsconfig.json` `extends`. Exact declared
+  packages can gain configuration evidence, including an array index or scalar pointer.
+- Report `tsconfig-skipped` last in completed diagnostic scans when the selected configuration
+  is unusable.
+
+### Fixed
+
+- Preserve real JavaScript and TypeScript package references at regex/division boundaries while
+  keeping regex contents inert. Recognize Unicode JSX tag names in JavaScript source.
+
+### Changed
+
+- Emit JSON report v2 for completed scans and explanations. The fixed-version CI recipe validates
+  the installed v2 schema with pinned Ajv. The exact v0.5.0 pin and its tagged recipe remain
+  available for v1 consumers. See the [v0.6.0 release notes draft](docs/releases/v0.6.0.md)
+  and [six-root comparison](docs/compatibility/v0.6.0.md).
+
 ## [0.5.0]
 
 ### Added

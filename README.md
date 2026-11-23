@@ -146,8 +146,9 @@ For the historical v0.5.0 producer, use its [report v1 schema and guide](https:/
 
 ## CI with a fixed version
 
-For JSON v2, pin the v0.6.0 release or install a tarball built from the current checkout.
-Commit the generated lockfile for your selected install.
+For JSON v2, pin v0.6.0 once it is available on npm. Before publication, use a tarball built
+from the current checkout with a temporary lockfile. Commit the registry-generated lockfile
+for CI when you adopt the published version.
 
 ```sh
 npm install --ignore-scripts --save-dev --save-exact depvitals@0.6.0
@@ -170,7 +171,8 @@ npm run --silent check:dependencies
 
 The [v2 CI recipe](https://github.com/MatiasRicardi/depvitals/blob/main/docs/examples/ci/README.md)
 captures and uploads the report, diagnostics and status, then enforces the result with the
-installed v2 schema and pinned Ajv. Use `--diagnostics` to include scope facts. Notices alone do
+installed v2 schema and pinned Ajv. When upgrading, update the DepVitals pin, the copied recipe
+files and the lockfile in the same change. Use `--diagnostics` to include scope facts. Notices alone do
 not fail a check. For a historical JSON v1 workflow, pair the exact `depvitals@0.5.0` pin with its
 [tagged v1 recipe](https://github.com/MatiasRicardi/depvitals/tree/v0.5.0/docs/examples/ci).
 
@@ -194,7 +196,14 @@ configuration; the CLI rejects unknown keys and still enforces complete literal-
 
 ## Scope and privacy
 
-Scans cover JS/TS, JSX/TSX and declaration files, literal ESM/CommonJS references, supported script commands and bounded ESLint/Jest hints. Only source evidence creates missing findings. There is no workspace aggregation, alias/tsconfig resolution, blanket `@types` inference or automatic fix; see [supported patterns and limits](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md).
+Scans cover JS/TS, JSX/TSX and declaration files, literal ESM/CommonJS references, supported
+script commands and bounded ESLint/Jest hints. The current build also recognizes an explicit
+package selector in the selected root's `tsconfig.json` `extends`. It credits an exact declared
+package and shows the selector in `--explain`. Only source evidence creates missing findings.
+Tsconfig inheritance, path aliases, workspace aggregation, blanket `@types` inference and
+automatic fixes are outside the scope. See the
+[TypeScript configuration rules](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#root-typescript-configuration)
+and [v0.6.0 release notes draft](https://github.com/MatiasRicardi/depvitals/blob/main/docs/releases/v0.6.0.md).
 
 Core analysis is offline and never executes or modifies the project or inspects `node_modules`. After completed interactive scans, an optional update check requests public metadata for **DepVitals itself**, caches it outside the project and uploads no project data. CI, non-TTY, help/version and failed scans skip it. JSON scans and all explanations also skip it before any cache or network access. The `--diagnostics` mode bypasses it in both output formats, including interactive terminals. Set `DEPVITALS_NO_UPDATE_CHECK=1` to disable it; see [privacy and shell examples](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#update-notice-and-privacy).
 

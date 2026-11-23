@@ -3,7 +3,9 @@
 This recipe targets **DepVitals 0.6.0** and report schema v2. It uses Node.js 22 (minimum 22.13.0),
 npm and an Ubuntu Actions runner.
 
-Install the exact version in your project and commit the generated `package-lock.json`:
+Once v0.6.0 is available on npm, install the exact versions in your project and commit the
+generated `package-lock.json`. Before publication, follow the
+[local tarball instructions](#pre-release-local-consumer).
 
 ```sh
 npm install --save-dev --save-exact depvitals@0.6.0 ajv@6.15.0
@@ -62,8 +64,10 @@ no partial scope counts are emitted. See the [report schema](../../../schemas/re
 [diagnostic fields](../../../schemas/README.md) and [scope diagnostics and notice rules](../../reference.md#scan-scope-diagnostics).
 
 The verifier checks the installed Draft 7 schema and the v2 scan's findings, package facts,
-diagnostic counts and recorded status. For v1 workflows, use the exact DepVitals 0.5.0 pin and
-the [v0.5.0 recipe](https://github.com/MatiasRicardi/depvitals/tree/v0.5.0/docs/examples/ci).
+diagnostic counts and recorded status. Upgrade the DepVitals and Ajv pins, all three recipe files
+and the lockfile in one change. The v1 reader rejects v2 reports, and the v2 verifier rejects v1
+reports. For v1 workflows, pin `depvitals@0.5.0` and use the
+[tagged v0.5.0 recipe](https://github.com/MatiasRicardi/depvitals/tree/v0.5.0/docs/examples/ci).
 
 ## Pre-release local consumer
 

@@ -25,7 +25,12 @@ with these additions:
   once, after all other applicable notices. It records a producer observation. Consumers check
   its representation and ordering from the report. The notice leaves exit status and source counts unchanged.
 
-Consumers apply the inherited cross-field and provenance checks alongside v2 schema validation.
+Validate every completed scan and explanation from the v0.6.0 target build with the v2
+schema, then apply the inherited cross-field and provenance checks. Read `schemaVersion` to
+select the wire contract and `tool.version` to identify the producer. The v2 CI verifier accepts
+scan mode only. Upgrade the pinned producer, recipe files and lockfile together. For v1, keep
+the exact `depvitals@0.5.0` pin and its
+[tagged recipe](https://github.com/MatiasRicardi/depvitals/tree/v0.5.0/docs/examples/ci).
 
 ## Report v1 and inherited semantics
 
