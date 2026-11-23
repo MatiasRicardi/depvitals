@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
+const reportDecoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const categories = ['unusedDependencies', 'unusedDevDependencies', 'missingDependencies'];
 const noticeOrder = [
   'no-supported-sources',
@@ -13,7 +14,8 @@ const noticeOrder = [
 function readArtifacts(paths) {
   if (paths.length !== 3) throw new Error('Expected report, diagnostics and status paths.');
   try {
-    return paths.map((path) => readFileSync(path, 'utf8'));
+    const [report, diagnostics, status] = paths;
+    return [readFileSync(report), readFileSync(diagnostics, 'utf8'), readFileSync(status, 'utf8')];
   } catch {
     throw new Error('Required analysis artifact is missing or unreadable.');
   }
@@ -124,7 +126,7 @@ function verifyDiagnostics(diagnostics) {
 function verify(paths) {
   const [stdout, diagnostics, status] = readArtifacts(paths);
   if (status !== '0\n' && status !== '1\n') throw new Error('Invalid scan status.');
-  if (status === '1\n' && stdout === '' && diagnostics.trim() !== '') {
+  if (status === '1\n' && stdout.length === 0 && diagnostics.trim() !== '') {
     console.error('DepVitals analysis failed. See the diagnostics artifact.');
     return 1;
   }
@@ -132,9 +134,9 @@ function verify(paths) {
 
   let report;
   try {
-    report = JSON.parse(stdout);
+    report = JSON.parse(reportDecoder.decode(stdout));
   } catch {
-    throw new Error('Expected one complete JSON report.');
+    throw new Error('Expected one complete UTF-8 JSON report.');
   }
 
   verifySchema(report);
