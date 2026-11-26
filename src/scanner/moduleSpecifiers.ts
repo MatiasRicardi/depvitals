@@ -218,6 +218,10 @@ type LexicalDepth = {
   readonly frameDepth: number;
 };
 
+type VariableStatement = LexicalDepth & {
+  bindingStart: number;
+};
+
 type PendingFuncContext = FuncContext &
   LexicalDepth & {
     parameterDepth: number | undefined;
@@ -458,6 +462,7 @@ function tokenize(
   const expressionFunctionContexts: ExpressionFuncContext[] = [];
   let typeAnnotation: TypeAnnotation | undefined;
   let ambientInitializer: LexicalDepth | undefined;
+  const variableStatements: VariableStatement[] = [];
   const parameterContexts: ParameterContext[] = [];
   let closedParameterSignature: OwnedSignature | undefined;
   let bracketDepth = 0;
@@ -510,6 +515,27 @@ function tokenize(
       ? atLexicalDepth(brace.depth)
       : brace?.role === 'class' && atLexicalDepth(brace.state);
   };
+  const previousWasMemberDot = (): boolean => prevKind === 'punct' && prevPunct === '.';
+  const previousExpressionComplete = (previous: Token | undefined): boolean =>
+    !prevIsExpressionKeyword &&
+    (EXPRESSION_ENDING.has(prevKind) ||
+      (previous !== undefined && isMemberExpressionEnd(previous)));
+  const atVariableStatementStart = (): boolean => {
+    if (prevKind === 'start' || afterControlHead) return true;
+
+    const previous = tokens[tokens.length - 1];
+    if (previous?.kind === 'punct') {
+      if (previous.value === ':' && !colonIsExpression) return true;
+      if (previous.value === '}' && !closedObjectBrace) return true;
+      if (previous.value === ';' || previous.value === '{') return true;
+    }
+    if (previous?.kind === 'identifier' && !previous.propertyName) {
+      if (['export', 'else', 'do'].includes(previous.value)) return true;
+      if (tokenLineBreakBefore && previous.value === 'return') return true;
+    }
+    return tokenLineBreakBefore && previousExpressionComplete(previous);
+  };
+
   const currentClass = (): ClassContext | undefined => {
     const brace = braceContexts[braceContexts.length - 1];
     return brace?.role === 'class' ? brace.state : undefined;
@@ -843,6 +869,35 @@ function tokenize(
           !expressionContinues(ch, identifier?.value))
       ) {
         ambientInitializer = undefined;
+      }
+    }
+    // Only the owning depth can separate declarators or finish the statement. Nested
+    // initializers may open another statement of their own, then resume the outer one.
+    let afterUninitializedVariable = false;
+    const variable = variableStatements[variableStatements.length - 1];
+    if (variable !== undefined && typeAnnotation === undefined && atLexicalDepth(variable)) {
+      const previous = tokens[tokens.length - 1];
+      if (ch === ',') {
+        variable.bindingStart = tokens.length + 1;
+      } else if (';})]'.includes(ch)) {
+        variableStatements.pop();
+      } else if (tokenLineBreakBefore && tokens.length > variable.bindingStart) {
+        if (ch === '/' && endsUninitializedBinding(tokens, variable.bindingStart, typescript)) {
+          afterUninitializedVariable = true;
+          variableStatements.pop();
+        } else if (
+          (tokens.length === variable.bindingStart + 1 &&
+            previous?.kind === 'identifier' &&
+            ch !== '=' &&
+            !(typescript && ch === ':')) ||
+          (ch === '(' && endsUninitializedBinding(tokens, variable.bindingStart, typescript)) ||
+          (previousExpressionComplete(previous) &&
+            (!expressionContinues(ch, identifier?.value) ||
+              (ch === '!' && source[i + 1] !== '=') ||
+              ((ch === '+' || ch === '-') && source[i + 1] === ch)))
+        ) {
+          variableStatements.pop();
+        }
       }
     }
     const expressionOwner = expressionFunctionContexts[expressionFunctionContexts.length - 1];
@@ -1340,6 +1395,7 @@ function tokenize(
           !insideObjectLiteral() &&
           endsTypeScriptImportAssignment(tokens)) ||
         afterRestrictedStatement ||
+        afterUninitializedVariable ||
         isRegexStart(
           prevKind,
           prevPunct,
@@ -1474,7 +1530,7 @@ function tokenize(
         }
       }
       prevIdentifier = value;
-      const isMemberName = prevKind === 'punct' && prevPunct === '.';
+      const isMemberName = previousWasMemberDot();
       if (atRoot && !isMemberName && (value === 'import' || value === 'export')) {
         moduleDeclarationStart = tokens.length;
       }
@@ -1493,6 +1549,25 @@ function tokenize(
           currentClass()?.member?.start,
         ) !== undefined;
       const nextSignificant = skipTrivia(source, i, n);
+      const parameter = parameterContexts[parameterContexts.length - 1];
+      if (
+        (value === 'let' || value === 'var') &&
+        !inType &&
+        !isMemberName &&
+        !insideClassBody() &&
+        !insideObjectLiteral() &&
+        atVariableStatementStart() &&
+        !(parameter?.forPhase !== undefined && atLexicalDepth(parameter.depth)) &&
+        isVariableBindingStart(source, nextSignificant)
+      ) {
+        variableStatements.push({
+          parenDepth,
+          bracketDepth,
+          braceDepth: braceContexts.length,
+          frameDepth: frames.length,
+          bindingStart: tokens.length + 1,
+        });
+      }
       const classPropertyName =
         value === 'class' &&
         (insideObjectLiteral() || insideClassBody()) &&
@@ -4269,6 +4344,57 @@ function opensObjectLiteral(
 
   // Right after `${` an expression is expected, so a `{` opens an object literal.
   return inTemplateExpression && prevKind === 'start';
+}
+
+// Contextual identifiers such as await and yield may still be valid in some scopes.
+const RESERVED_BINDING_WORDS: ReadonlySet<string> = new Set([
+  ...REGEX_PRECEDING_KEYWORDS,
+  ...CONTROL_HEAD_KEYWORDS,
+  'break',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'debugger',
+  'enum',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'function',
+  'import',
+  'null',
+  'super',
+  'switch',
+  'this',
+  'true',
+  'try',
+  'var',
+]);
+
+/** A contextual `let` needs a possible binding, including across line breaks. */
+function isVariableBindingStart(source: string, index: number): boolean {
+  if (source[index] === '[' || source[index] === '{') return true;
+  if (!isIdentifierStartAt(source, index) && !isUnicodeEscapeStart(source, index)) return false;
+  return !RESERVED_BINDING_WORDS.has(readIdentifier(source, index).value);
+}
+
+/** A simple identifier binding can end at its name or at a TypeScript name/array annotation. */
+function endsUninitializedBinding(
+  tokens: readonly Token[],
+  start: number,
+  typescript: boolean,
+): boolean {
+  if (tokens[start]?.kind !== 'identifier') return false;
+  if (tokens.length === start + 1) return true;
+  if (!typescript) return false;
+
+  const colon = isPunct(tokens[start + 1], '!') ? start + 2 : start + 1;
+  if (!isPunct(tokens[colon], ':') || tokens[colon + 1]?.kind !== 'identifier') return false;
+  let end = colon + 2;
+  while (isPunct(tokens[end], '.') && tokens[end + 1]?.kind === 'identifier') end += 2;
+  while (isPunct(tokens[end], '[') && isPunct(tokens[end + 1], ']')) end += 2;
+  return end === tokens.length;
 }
 
 /**

@@ -264,15 +264,61 @@ describe('compiled format/query outcomes', () => {
     expect(await readFile(join(project, 'statement.mjs'), 'utf8')).toBe(statement);
   });
 
-  it('reports an incomplete regex after debugger without emitting a partial report', async () => {
-    const project = await mkdtemp(join(scratch, 'incomplete-statement-regex-'));
-    await writeFile(join(project, 'package.json'), '{}');
-    await writeFile(join(project, 'index.mjs'), 'debugger\n/unterminated\n');
+  it.each([
+    ['index.mjs', 'export let value'],
+    ['index.ts', 'export let value: string'],
+  ])('scans a regex after an uninitialized declaration in %s', async (file, declaration) => {
+    const project = await mkdtemp(join(scratch, 'uninitialized-declaration-'));
+    const manifest = '{"dependencies":{"real-pkg":"1"}}';
+    const source = [
+      declaration,
+      `/['"]|require('decoy')/g.test('x');`,
+      "import 'real-pkg';",
+      '',
+    ].join('\n');
+    await writeFile(join(project, 'package.json'), manifest);
+    await writeFile(join(project, file), source);
+
     const result = child([project, '--format', 'json']);
-    expect(result.status).toBe(1);
-    expect(result.stdout).toBe('');
-    expect(result.stderr).toContain('could not be analyzed: Unterminated regex literal\n');
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    const report = JSON.parse(result.stdout) as JsonReport;
+    expect(report.findings).toEqual({
+      unusedDependencies: [],
+      unusedDevDependencies: [],
+      missingDependencies: [],
+    });
+    expect(report.packages).toEqual([
+      expect.objectContaining({
+        name: 'real-pkg',
+        status: 'used',
+        evidence: [
+          {
+            kind: 'source',
+            file,
+            reference: 'import',
+            specifier: 'real-pkg',
+            position: { offset: source.indexOf("'real-pkg'"), line: 3, column: 8 },
+          },
+        ],
+      }),
+    ]);
+    expect(await readFile(join(project, file), 'utf8')).toBe(source);
+    expect(await readFile(join(project, 'package.json'), 'utf8')).toBe(manifest);
   });
+
+  it.each(['debugger', 'let value'])(
+    'reports an incomplete regex after %s without emitting a partial report',
+    async (statement) => {
+      const project = await mkdtemp(join(scratch, 'incomplete-statement-regex-'));
+      await writeFile(join(project, 'package.json'), '{}');
+      await writeFile(join(project, 'index.mjs'), `${statement}\n/unterminated\n`);
+      const result = child([project, '--format', 'json']);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain('could not be analyzed: Unterminated regex literal\n');
+    },
+  );
 
   it('skips TS declaration regex decoys and reports the real adjacent references', async () => {
     const project = await mkdtemp(join(scratch, 'ts-statement-regex-'));

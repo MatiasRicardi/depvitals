@@ -149,6 +149,85 @@ describe('extractModuleSpecifiers', () => {
     });
   });
 
+  describe('uninitialized variable declaration slash boundaries', () => {
+    it.each([
+      ['bare let', 'let value', false],
+      ['bare var', 'var value', false],
+      ['exported let', 'export let value', false],
+      ['binding after a newline', 'let\nvalue', false],
+      ['last binding in a list', 'let first = [1, 2], last', false],
+      ['binding after destructuring', 'var { first } = { first: 1 }, last', false],
+      ['explicit semicolon', 'let value;', false],
+      ['annotated export', 'export let value: string', true],
+      ['annotated last binding', 'let first: number = 1, last: string', true],
+      ['qualified array annotation', 'let value: Models.Label[]', true],
+      ['inequality in the preceding initializer', 'let first = 1\n!== 2, last', false],
+    ])('skips a regex after %s', (_name, declaration, typescript) => {
+      const source = `${declaration} /*\r\n*/ /require('decoy')/.test('x');\nimport 'real';`;
+      expect(extractModuleSpecifiers(source, { typescript })).toEqual([
+        { specifier: 'real', kind: 'import' },
+      ]);
+    });
+
+    it('tracks declarations in nested statement blocks and after control heads', () => {
+      const source = `
+        let callback = function () {
+          if (ready) var first
+          /require('decoy-first')/.test('x');
+          { let second
+            /require('decoy-second')/.test('x');
+          }
+        }, last
+        /require('decoy-last')/.test('x');
+        let outer = function () {
+          var nested
+          /require('decoy-nested')/.test('x');
+        }, outerLast
+        /require('decoy-outer')/.test('x');
+        require('real');
+      `;
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('ends an initializer at ASI after a JSX element', () => {
+      const source = `let first = <Box />
+        require('real'), value
+          / require('divisor') / 2;`;
+      expect(jsxSpecifiers(source)).toEqual(['real', 'divisor']);
+    });
+
+    it.each([
+      ['initializer', "let value = require('real')\n/ require('divisor') / 2;"],
+      ['typed initializer', "let value: number = require('real')\n/ require('divisor') / 2;"],
+      ['for initializer', "for (let value = require('real')\n/ require('divisor') / 2; false;) {}"],
+      ['for condition', "for (var value; require('real')\n/ require('divisor') / 2;) {}"],
+      ['member named let', "obj.let\nrequire('real'), value\n/ require('divisor') / 2;"],
+      [
+        'contextual let',
+        "let instanceof Object, require('real'), value\n/ require('divisor') / 2;",
+      ],
+      [
+        'bare let before a control statement',
+        "let\nif (ready) {}\nrequire('real'), value\n/ require('divisor') / 2;",
+      ],
+      [
+        'statement after a declaration',
+        "let first = 1\nrequire('real'), value\n/ require('divisor') / 2;",
+      ],
+      [
+        'prefix update in the next statement',
+        "let first = 1\n++value, require('real'), value\n/ require('divisor') / 2;",
+      ],
+    ])('preserves division after %s', (_name, source) => {
+      expect(
+        extractModuleSpecifiers(source, { typescript: _name === 'typed initializer' }),
+      ).toEqual([
+        { specifier: 'real', kind: 'require' },
+        { specifier: 'divisor', kind: 'require' },
+      ]);
+    });
+  });
+
   describe('Step 77 sole literal calls with a trailing comma', () => {
     for (const [callee, kind] of [
       ['require', 'require'],
