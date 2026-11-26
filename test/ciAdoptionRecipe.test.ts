@@ -105,7 +105,7 @@ const usedPackage = {
 const json = (value: object): string => JSON.stringify(value) + '\n';
 
 function verify(
-  report: string | undefined,
+  report: string | Buffer | undefined,
   diagnostics: string,
   status: string,
   legacy = false,
@@ -209,6 +209,18 @@ describe('consumer report verification', () => {
       status: 2,
       stdout: '',
       stderr: 'Invalid DepVitals analysis artifacts. Expected a valid DepVitals v2 report.\n',
+    });
+  });
+
+  it('rejects invalid UTF-8 and preserves a valid replacement character', () => {
+    const document = json({ ...clean, annotation: '\uFFFD' });
+    expect(verify(document, '', '0\n').status).toBe(0);
+
+    const malformed = Buffer.from(document.replace('\uFFFD', '\u00FF'), 'latin1');
+    expect(verify(malformed, '', '0\n')).toEqual({
+      status: 2,
+      stdout: '',
+      stderr: 'Invalid DepVitals analysis artifacts. Expected one complete UTF-8 JSON report.\n',
     });
   });
 
