@@ -94,6 +94,61 @@ describe('extractModuleSpecifiers', () => {
     });
   });
 
+  describe('TypeScript import assignment slash boundaries', () => {
+    it.each([
+      ["import alias = require('assignment')\n", true],
+      ["import type Alias = require('assignment') /*\r\n*/ ", true],
+      ["export import alias = require('assignment')\n", true],
+      ["import type = require('assignment')\n", true],
+      ["import alias = require('assignment'); ", true],
+      [
+        'namespace API { export namespace Nested { export const item = 1; } }\nimport alias = API.Nested.item\n',
+        false,
+      ],
+    ])('skips a regex after %s', (declaration, external) => {
+      const source = `${declaration}/require('decoy')/.test('x');\nimport 'adjacent';`;
+      expect(extractModuleSpecifiers(source, { typescript: true })).toEqual([
+        ...(external ? [{ specifier: 'assignment', kind: 'require' }] : []),
+        { specifier: 'adjacent', kind: 'import' },
+      ]);
+    });
+
+    it('skips a regex after a qualified import assignment inside a namespace', () => {
+      const source = `namespace Example {
+        import alias = globalThis.process
+        /require('decoy')/.test('x');
+      }
+      import 'adjacent';`;
+      expect(extractModuleSpecifiers(source, { typescript: true })).toEqual([
+        { specifier: 'adjacent', kind: 'import' },
+      ]);
+    });
+
+    it('keeps division after a class field preceded by a field named import', () => {
+      const source = `class Example {
+        import
+        alias = require('assignment')
+          / require('divisor') / 2;
+      }`;
+      expect(extractModuleSpecifiers(source, { typescript: true })).toEqual([
+        { specifier: 'assignment', kind: 'require' },
+        { specifier: 'divisor', kind: 'require' },
+      ]);
+    });
+
+    it.each([
+      ["const alias = require('assignment')", [{ specifier: 'assignment', kind: 'require' }]],
+      ['const alias = globalThis.process', []],
+      ['obj.import\nalias = obj.value', []],
+    ])('preserves division after %s', (expression, expected) => {
+      const source = `${expression}\n/ require('divisor') / 2;`;
+      expect(extractModuleSpecifiers(source, { typescript: true })).toEqual([
+        ...expected,
+        { specifier: 'divisor', kind: 'require' },
+      ]);
+    });
+  });
+
   describe('Step 77 sole literal calls with a trailing comma', () => {
     for (const [callee, kind] of [
       ['require', 'require'],

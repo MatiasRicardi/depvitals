@@ -163,6 +163,53 @@ function child(
 }
 
 describe('compiled format/query outcomes', () => {
+  it('scans a regex after a semicolon-free TypeScript import assignment', async () => {
+    const project = await mkdtemp(join(scratch, 'import-assignment-'));
+    const manifest = '{"dependencies":{"assignment":"1","adjacent":"1"}}';
+    const source = [
+      "import alias = require('assignment')",
+      `/['"]|require('decoy')/g.test('x');`,
+      "import 'adjacent';",
+      '',
+    ].join('\n');
+    await writeFile(join(project, 'package.json'), manifest);
+    await writeFile(join(project, 'index.cts'), source);
+
+    const result = child([project, '--format', 'json']);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    const report = JSON.parse(result.stdout) as JsonReport;
+    expect(report.findings).toEqual({
+      unusedDependencies: [],
+      unusedDevDependencies: [],
+      missingDependencies: [],
+    });
+    expect(report.packages).toEqual(
+      [
+        { name: 'adjacent', reference: 'import', line: 3, column: 8 },
+        { name: 'assignment', reference: 'require', line: 1, column: 24 },
+      ].map(({ name, reference, line, column }) => ({
+        name,
+        status: 'used',
+        declaredIn: ['dependencies'],
+        excluded: false,
+        underlyingFindings: [],
+        findings: [],
+        evidence: [
+          {
+            kind: 'source',
+            file: 'index.cts',
+            reference,
+            specifier: name,
+            position: { offset: source.indexOf(`'${name}'`), line, column },
+          },
+        ],
+      })),
+    );
+    expect(await readFile(join(project, 'index.cts'), 'utf8')).toBe(source);
+    expect(await readFile(join(project, 'package.json'), 'utf8')).toBe(manifest);
+  });
+
   it('preserves real evidence after keyword member division and a labeled break', async () => {
     const project = await mkdtemp(join(scratch, 'statement-regex-'));
     const manifest = '{"dependencies":{"real-pkg":"1"}}';
