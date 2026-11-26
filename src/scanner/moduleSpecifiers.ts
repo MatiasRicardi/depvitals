@@ -1330,6 +1330,15 @@ function tokenize(
       if (
         // A static module declaration cannot continue with division after its source literal.
         (tokenLineBreakBefore && moduleDeclarationSource === tokens.length - 1) ||
+        (typescript &&
+          tokenLineBreakBefore &&
+          !inType &&
+          parenDepth === 0 &&
+          bracketDepth === 0 &&
+          frames.length === 0 &&
+          !insideClassBody() &&
+          !insideObjectLiteral() &&
+          endsTypeScriptImportAssignment(tokens)) ||
         afterRestrictedStatement ||
         isRegexStart(
           prevKind,
@@ -4260,6 +4269,42 @@ function opensObjectLiteral(
 
   // Right after `${` an expression is expected, so a `{` opens an object literal.
   return inTemplateExpression && prevKind === 'start';
+}
+
+/**
+ * A completed import assignment ends with require('literal') or a qualified name. Walk only
+ * that suffix: a slash cannot be part of either shape, so successive slash checks cannot rescan it.
+ */
+function endsTypeScriptImportAssignment(tokens: readonly Token[]): boolean {
+  let rhs = tokens.length - 1;
+  const last = tokens[rhs];
+  if (isPunct(last, ')')) {
+    if (
+      tokens[rhs - 1]?.kind !== 'string' ||
+      !isPunct(tokens[rhs - 2], '(') ||
+      !isIdentifier(tokens[rhs - 3], 'require')
+    ) {
+      return false;
+    }
+    rhs -= 3;
+  } else if (last?.kind === 'identifier') {
+    while (isPunct(tokens[rhs - 1], '.') && tokens[rhs - 2]?.kind === 'identifier') {
+      rhs -= 2;
+    }
+  } else {
+    return false;
+  }
+
+  const equals = tokens[rhs - 1];
+  if (
+    equals?.kind !== 'punct' ||
+    equals.operator !== 'assignment' ||
+    tokens[rhs - 2]?.kind !== 'identifier'
+  ) {
+    return false;
+  }
+  const keyword = rhs - (isIdentifier(tokens[rhs - 3], 'type') ? 4 : 3);
+  return isIdentifier(tokens[keyword], 'import') && !isMemberName(tokens, keyword);
 }
 
 /**
