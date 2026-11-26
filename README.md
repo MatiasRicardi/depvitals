@@ -46,7 +46,7 @@ and test the project before removing it.
 See the [CLI reference](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#cli-and-json-reports),
 [JSON schema and examples](https://github.com/MatiasRicardi/depvitals/blob/main/schemas/README.md),
 [Depcheck migration guide](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#manual-migration-from-depcheck)
-and [v0.5.0 release notes](https://github.com/MatiasRicardi/depvitals/blob/main/docs/releases/v0.5.0.md).
+and [v0.6.0 release notes](https://github.com/MatiasRicardi/depvitals/blob/main/docs/releases/v0.6.0.md).
 
 ## Quick start
 
@@ -120,8 +120,8 @@ The JSON command also exits **1** and appends a scope object to the report. A cl
 zero supported sources is possible; supported script/config hints may still contribute evidence.
 Workspace declarations provide context without discovering or aggregating members. See the
 [scope facts and notice examples](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#scan-scope-diagnostics),
-[reviewed six-project comparison](https://github.com/MatiasRicardi/depvitals/blob/main/docs/compatibility/v0.5.0.md)
-and [v0.5.0 release notes](https://github.com/MatiasRicardi/depvitals/blob/main/docs/releases/v0.5.0.md).
+[reviewed six-project comparison](https://github.com/MatiasRicardi/depvitals/blob/main/docs/compatibility/v0.6.0.md)
+and [v0.6.0 release notes](https://github.com/MatiasRicardi/depvitals/blob/main/docs/releases/v0.6.0.md).
 
 ## JSON reports and package explanations
 
@@ -139,7 +139,7 @@ depvitals --format json --explain demo-missing ./project
 ```
 
 An explanation reports one exact package. Its exit status follows that package's result. Use a full
-scan to enforce a project-wide check. The current build emits `schemaVersion: 2` for every completed
+scan to enforce a project-wide check. DepVitals v0.6.0 emits `schemaVersion: 2` for every completed
 JSON scan and explanation. Validate these reports with the [report v2 schema and examples](https://github.com/MatiasRicardi/depvitals/blob/main/schemas/README.md#report-v2-semantic-contract),
 shipped under `schemas/`. `tool.version` identifies the CLI package version.
 For the historical v0.5.0 producer, use its [report v1 schema and guide](https://github.com/MatiasRicardi/depvitals/tree/v0.5.0/schemas).
@@ -197,13 +197,13 @@ configuration; the CLI rejects unknown keys and still enforces complete literal-
 ## Scope and privacy
 
 Scans cover JS/TS, JSX/TSX and declaration files, literal ESM/CommonJS references, supported
-script commands and bounded ESLint/Jest hints. The current build also recognizes an explicit
+script commands and bounded ESLint/Jest hints. DepVitals v0.6.0 also recognizes an explicit
 package selector in the selected root's `tsconfig.json` `extends`. It credits an exact declared
 package and shows the selector in `--explain`. Only source evidence creates missing findings.
 Tsconfig inheritance, path aliases, workspace aggregation, blanket `@types` inference and
 automatic fixes are outside the scope. See the
 [TypeScript configuration rules](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#root-typescript-configuration)
-and [v0.6.0 release notes draft](https://github.com/MatiasRicardi/depvitals/blob/main/docs/releases/v0.6.0.md).
+and [v0.6.0 release notes](https://github.com/MatiasRicardi/depvitals/blob/main/docs/releases/v0.6.0.md).
 
 Core analysis is offline and never executes or modifies the project or inspects `node_modules`. After completed interactive scans, an optional update check requests public metadata for **DepVitals itself**, caches it outside the project and uploads no project data. CI, non-TTY, help/version and failed scans skip it. JSON scans and all explanations also skip it before any cache or network access. The `--diagnostics` mode bypasses it in both output formats, including interactive terminals. Set `DEPVITALS_NO_UPDATE_CHECK=1` to disable it; see [privacy and shell examples](https://github.com/MatiasRicardi/depvitals/blob/main/docs/reference.md#update-notice-and-privacy).
 

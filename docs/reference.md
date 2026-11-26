@@ -1,6 +1,6 @@
 # DepVitals technical reference
 
-This reference describes the current development build targeting DepVitals v0.6.0. See the [README](../README.md) for commands and the [changelog](../CHANGELOG.md) for published release boundaries. DepVitals is a CLI for one project root, not a full JavaScript/TypeScript compiler, module resolver or replacement for reviewing dependency changes.
+This reference describes DepVitals v0.6.0. See the [README](../README.md) for commands and the [changelog](../CHANGELOG.md) for published release boundaries. DepVitals is a CLI for one project root, not a full JavaScript/TypeScript compiler, module resolver or replacement for reviewing dependency changes.
 
 ## Findings and evidence
 
@@ -190,7 +190,7 @@ The [v2 semantic contract](../schemas/README.md#report-v2-semantic-contract) def
 predicate and required notice order. Structural validation and semantic count/notice checks
 are separate.
 
-The [six-root comparison](compatibility/v0.5.0.md) and
+The [six-root comparison](compatibility/v0.6.0.md) and
 [reviewed expectation ledger](../test/fixtures/external-corpus/v0.5.0/review.json) record immutable inputs,
 ordinary-output agreement, explanation samples, diagnostic scope facts and shared-host cost
 observations. They establish behavior on those inputs, not safe-removal or framework-wide claims.
@@ -212,7 +212,7 @@ A leading UTF-8 BOM is accepted; comments/JSON5 are not. Unknown keys, wrong typ
 
 ### Editor validation
 
-The v0.5.0 package includes `schemas/depvitals-config.schema.json`. Install DepVitals in your
+The package includes `schemas/depvitals-config.schema.json` (available since v0.5.0). Install DepVitals in your
 workspace to use the local schema, including while offline.
 
 In VS Code, add this mapping to `.vscode/settings.json` in the workspace root. Merge the entry

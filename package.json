@@ -1,6 +1,6 @@
 {
   "name": "depvitals",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Find unused and undeclared npm dependencies in JavaScript and TypeScript. Inspect the evidence and export JSON for CI.",
   "keywords": [
     "nodejs",

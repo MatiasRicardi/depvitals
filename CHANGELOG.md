@@ -7,6 +7,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0]
+
 ### Added
 
 - Recognize package selectors in the selected root's `tsconfig.json` `extends`. Exact declared
@@ -23,7 +25,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Emit JSON report v2 for completed scans and explanations. The fixed-version CI recipe validates
   the installed v2 schema with pinned Ajv. The exact v0.5.0 pin and its tagged recipe remain
-  available for v1 consumers. See the [v0.6.0 release notes draft](docs/releases/v0.6.0.md)
+  available for v1 consumers. See the [v0.6.0 release notes](docs/releases/v0.6.0.md)
   and [six-root comparison](docs/compatibility/v0.6.0.md).
 
 ## [0.5.0]
@@ -238,7 +240,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Package consumer smoke verification (`verify:package`).
 - Cross-platform CI foundation.
 
-[Unreleased]: https://github.com/MatiasRicardi/depvitals/compare/v0.5.0...main
+[Unreleased]: https://github.com/MatiasRicardi/depvitals/compare/v0.6.0...main
+[0.6.0]: https://github.com/MatiasRicardi/depvitals/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/MatiasRicardi/depvitals/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/MatiasRicardi/depvitals/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/MatiasRicardi/depvitals/compare/v0.3.0...v0.4.0

@@ -3,7 +3,7 @@
 ## Report v2 semantic contract
 
 The [Draft 7 report v2 schema](report-v2.schema.json) and its [examples](examples/v2/README.md)
-describe the v0.6.0 target format. V2 inherits the v1 envelope, counts, status and finding
+describe the v0.6.0 format. V2 inherits the v1 envelope, counts, status and finding
 consistency, ordering, duplicate identity, provenance and diagnostic rules documented below,
 with these additions:
 
@@ -25,7 +25,7 @@ with these additions:
   once, after all other applicable notices. It records a producer observation. Consumers check
   its representation and ordering from the report. The notice leaves exit status and source counts unchanged.
 
-Validate every completed scan and explanation from the v0.6.0 target build with the v2
+Validate every completed scan and explanation from DepVitals v0.6.0 with the v2
 schema, then apply the inherited cross-field and provenance checks. Read `schemaVersion` to
 select the wire contract and `tool.version` to identify the producer. The v2 CI verifier accepts
 scan mode only. Upgrade the pinned producer, recipe files and lockfile together. For v1, keep
@@ -82,7 +82,7 @@ The [normative examples](examples/README.md) illustrate target-release documents
 
 ## Optional scan diagnostics
 
-DepVitals v0.5.0 supports optional scan diagnostics.
+Optional scan diagnostics are available since DepVitals v0.5.0.
 `depvitals ./project --format json --diagnostics` requests the full-scan projection, which appends `diagnostics` with
 `sourceFilesScanned`, `nestedPackageSourceFiles` and `notices`, in that order.
 The counts are integers from 0 through 9007199254740991. They describe successfully processed
@@ -116,7 +116,7 @@ This repairs schema acceptance and does not change runtime queries or findings.
 ## Project configuration editor schema
 
 [depvitals-config.schema.json](depvitals-config.schema.json) describes the two optional
-`depvitals.config.json` exclusion arrays. It is included in the v0.5.0 package.
+`depvitals.config.json` exclusion arrays. It is included in the package since v0.5.0.
 
 With DepVitals installed in the workspace, add this filename association to
 `.vscode/settings.json`. Merge it into an existing `json.schemas` array when applicable.
