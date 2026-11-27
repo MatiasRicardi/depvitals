@@ -517,7 +517,8 @@ function tokenize(
       ? atLexicalDepth(brace.depth)
       : brace?.role === 'class' && atLexicalDepth(brace.state);
   };
-  const previousWasMemberDot = (): boolean => prevKind === 'punct' && prevPunct === '.';
+  const previousWasMemberPrefix = (): boolean =>
+    prevKind === 'punct' && (prevPunct === '.' || prevPunct === '#');
   const previousExpressionComplete = (previous: Token | undefined): boolean =>
     !prevIsExpressionKeyword &&
     (EXPRESSION_ENDING.has(prevKind) ||
@@ -1505,6 +1506,7 @@ function tokenize(
       const start = i;
       i = identifier.end;
       const value = identifier.value;
+      const isMemberName = previousWasMemberPrefix();
 
       if (typeAnnotation !== undefined) {
         if (typeAnnotation.role === 'assertion') {
@@ -1522,7 +1524,7 @@ function tokenize(
             typeAnnotation.phase === 'type' &&
             typeAnnotation.typeOperandExpected &&
             value === 'import' &&
-            !(prevKind === 'punct' && prevPunct === '.');
+            !isMemberName;
         }
         // `as const` completes an assertion, while prefix keywords still expect an operand.
         typeAnnotation.typeOperandExpected =
@@ -1535,7 +1537,7 @@ function tokenize(
         !inType &&
         // TypeScript permits trivia after these operators, but a preceding newline ends them.
         !tokenLineBreakBefore &&
-        !(prevKind === 'punct' && prevPunct === '.') &&
+        !isMemberName &&
         !(
           prevKind === 'punct' &&
           prevPunct === '}' &&
@@ -1571,7 +1573,6 @@ function tokenize(
         }
       }
       prevIdentifier = value;
-      const isMemberName = previousWasMemberDot();
       if (atRoot && !isMemberName && (value === 'import' || value === 'export')) {
         moduleDeclarationStart = tokens.length;
       }
@@ -1633,7 +1634,7 @@ function tokenize(
             !isExportDefault && (previousIdentifier === 'extends' || expressionPosition),
         });
       }
-      // A keyword after `.` is a property name (e.g. `x.return`), not an expression start.
+      // Public and private member names preserve expression grammar even with keyword spellings.
       const forIterationSeparator =
         (value === 'of' || value === 'in') &&
         !isMemberName &&
@@ -1777,7 +1778,6 @@ function tokenize(
         (isJump || value === 'debugger') &&
         !inType &&
         !isMemberName &&
-        !(prevKind === 'punct' && prevPunct === '#') &&
         !insideObjectLiteral() &&
         !insideClassBody()
           ? isJump

@@ -265,6 +265,76 @@ describe('compiled format/query outcomes', () => {
   });
 
   it.each([
+    ['private return field', '#return = 8;', 'this.#return', 70, 35],
+    ['private if method', '#if() { return 8; }', 'this.#if()', 75, 33],
+  ])(
+    'retains the require position after division by a %s',
+    async (_name, member, operand, offset, column) => {
+      const project = await mkdtemp(join(scratch, 'private-member-division-'));
+      const manifest = '{"dependencies":{"demo-pkg":"1","adjacent-pkg":"1"}}';
+      const source = [
+        'class C {',
+        `  ${member}`,
+        '  read() {',
+        `    return ${operand} / require('demo-pkg') / 2;`,
+        '  }',
+        '}',
+        'function matcher(flag) {',
+        "  if (flag) /require('if-decoy')/.test('x');",
+        "  return /require('return-decoy')/;",
+        '}',
+        "require('adjacent-pkg');",
+        '',
+      ].join('\n');
+      await writeFile(join(project, 'package.json'), manifest);
+      await writeFile(join(project, 'index.cjs'), source);
+
+      const result = child([project, '--format', 'json']);
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+      const report = JSON.parse(result.stdout) as JsonReport;
+      expect(report.packages).toEqual([
+        {
+          name: 'adjacent-pkg',
+          status: 'used',
+          declaredIn: ['dependencies'],
+          excluded: false,
+          underlyingFindings: [],
+          findings: [],
+          evidence: [
+            {
+              kind: 'source',
+              file: 'index.cjs',
+              reference: 'require',
+              specifier: 'adjacent-pkg',
+              position: { offset: source.indexOf("'adjacent-pkg'"), line: 11, column: 9 },
+            },
+          ],
+        },
+        {
+          name: 'demo-pkg',
+          status: 'used',
+          declaredIn: ['dependencies'],
+          excluded: false,
+          underlyingFindings: [],
+          findings: [],
+          evidence: [
+            {
+              kind: 'source',
+              file: 'index.cjs',
+              reference: 'require',
+              specifier: 'demo-pkg',
+              position: { offset, line: 4, column },
+            },
+          ],
+        },
+      ]);
+      expect(await readFile(join(project, 'index.cjs'), 'utf8')).toBe(source);
+      expect(await readFile(join(project, 'package.json'), 'utf8')).toBe(manifest);
+    },
+  );
+
+  it.each([
     ['index.mjs', 'export let value'],
     ['index.ts', 'export let value: string'],
   ])('scans a regex after an uninitialized declaration in %s', async (file, declaration) => {
