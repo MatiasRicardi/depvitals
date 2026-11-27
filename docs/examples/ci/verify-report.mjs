@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const reportDecoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+const artifactDecoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+const invalidReport = 'Expected one complete UTF-8 JSON report.';
 const categories = ['unusedDependencies', 'unusedDevDependencies', 'missingDependencies'];
 const declarationOrder = [
   'dependencies',
@@ -24,10 +25,17 @@ const noticeOrder = [
 function readArtifacts(paths) {
   if (paths.length !== 3) throw new Error('Expected report, diagnostics and status paths.');
   try {
-    const [report, diagnostics, status] = paths;
-    return [readFileSync(report), readFileSync(diagnostics, 'utf8'), readFileSync(status, 'utf8')];
+    return paths.map((path) => readFileSync(path));
   } catch {
     throw new Error('Required analysis artifact is missing or unreadable.');
+  }
+}
+
+function decodeArtifact(bytes, message) {
+  try {
+    return artifactDecoder.decode(bytes);
+  } catch {
+    throw new Error(message);
   }
 }
 
@@ -258,7 +266,10 @@ function verifyDiagnostics(diagnostics) {
 }
 
 function verify(paths) {
-  const [stdout, diagnostics, status] = readArtifacts(paths);
+  const [reportBytes, diagnosticsBytes, statusBytes] = readArtifacts(paths);
+  const status = decodeArtifact(statusBytes, 'Invalid scan status.');
+  const diagnostics = decodeArtifact(diagnosticsBytes, 'Expected UTF-8 diagnostics.');
+  const stdout = decodeArtifact(reportBytes, invalidReport);
   if (status !== '0\n' && status !== '1\n') throw new Error('Invalid scan status.');
   if (status === '1\n' && stdout.length === 0 && diagnostics.trim() !== '') {
     console.error('DepVitals analysis failed. See the diagnostics artifact.');
@@ -268,9 +279,9 @@ function verify(paths) {
 
   let report;
   try {
-    report = JSON.parse(reportDecoder.decode(stdout));
+    report = JSON.parse(stdout);
   } catch {
-    throw new Error('Expected one complete UTF-8 JSON report.');
+    throw new Error(invalidReport);
   }
 
   verifySchema(report);
