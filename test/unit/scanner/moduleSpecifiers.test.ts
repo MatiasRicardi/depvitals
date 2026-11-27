@@ -161,6 +161,8 @@ describe('extractModuleSpecifiers', () => {
       ['annotated export', 'export let value: string', true],
       ['annotated last binding', 'let first: number = 1, last: string', true],
       ['qualified array annotation', 'let value: Models.Label[]', true],
+      ['same-line array suffix', 'let value: number[]', true],
+      ['line break inside an array suffix', 'let value: number[/*\n*/]', true],
       ['inequality in the preceding initializer', 'let first = 1\n!== 2, last', false],
     ])('skips a regex after %s', (_name, declaration, typescript) => {
       const source = `${declaration} /*\r\n*/ /require('decoy')/.test('x');\nimport 'real';`;
@@ -229,6 +231,28 @@ describe('extractModuleSpecifiers', () => {
         require('real');
       `;
       expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it.each([
+      ['template expression', '`text`, value'],
+      ['array expression', '[]'],
+      ['array followed by a comma expression', '[], value'],
+    ])('preserves division after an annotated binding followed by %s', (_name, expression) => {
+      const source = `let unused: number\n${expression}\n/ require('real') / 2;`;
+      expect(extractModuleSpecifiers(source, { typescript: true })).toEqual([
+        { specifier: 'real', kind: 'require' },
+      ]);
+    });
+
+    it('keeps a tagged template in the initializer across a newline', () => {
+      const source = [
+        'let initialized: number = tag',
+        "`text ${require('real')}`, last",
+        "/require('decoy')/.test('x');",
+      ].join('\n');
+      expect(extractModuleSpecifiers(source, { typescript: true })).toEqual([
+        { specifier: 'real', kind: 'require' },
+      ]);
     });
 
     it('ends an initializer at ASI after a JSX element', () => {

@@ -307,6 +307,43 @@ describe('compiled format/query outcomes', () => {
     expect(await readFile(join(project, 'package.json'), 'utf8')).toBe(manifest);
   });
 
+  it('preserves division after templates and arrays following annotated bindings', async () => {
+    const project = await mkdtemp(join(scratch, 'typed-declaration-boundaries-'));
+    const source = [
+      'let unused: number',
+      '`text`, value',
+      "/ require('real-pkg') / 2;",
+      'let other: number',
+      '[]',
+      "/ require('real-pkg') / 2;",
+      '',
+    ].join('\n');
+    await writeFile(join(project, 'package.json'), '{"dependencies":{"real-pkg":"1"}}');
+    await writeFile(join(project, 'index.ts'), source);
+
+    const result = child([project, '--format', 'json']);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    const report = JSON.parse(result.stdout) as JsonReport;
+    expect(report.packages).toEqual([
+      expect.objectContaining({
+        name: 'real-pkg',
+        status: 'used',
+        evidence: [
+          { offset: source.indexOf("'real-pkg'"), line: 3, column: 11 },
+          { offset: source.lastIndexOf("'real-pkg'"), line: 6, column: 11 },
+        ].map((position) => ({
+          kind: 'source',
+          file: 'index.ts',
+          reference: 'require',
+          specifier: 'real-pkg',
+          position,
+        })),
+      }),
+    ]);
+    expect(await readFile(join(project, 'index.ts'), 'utf8')).toBe(source);
+  });
+
   it('preserves real evidence at generator and template boundaries', async () => {
     const project = await mkdtemp(join(scratch, 'generator-template-boundaries-'));
     const generator = [

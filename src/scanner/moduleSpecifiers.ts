@@ -891,15 +891,17 @@ function tokenize(
       } else if (';})]'.includes(ch)) {
         variableStatements.pop();
       } else if (tokenLineBreakBefore && tokens.length > variable.bindingStart) {
-        if (ch === '/' && endsUninitializedBinding(tokens, variable.bindingStart, typescript)) {
-          afterUninitializedVariable = true;
+        if (
+          (ch === '/' || ch === '(' || ch === '[' || ch === '`') &&
+          endsUninitializedBinding(tokens, variable.bindingStart, typescript)
+        ) {
+          afterUninitializedVariable = ch === '/';
           variableStatements.pop();
         } else if (
           (tokens.length === variable.bindingStart + 1 &&
             previous?.kind === 'identifier' &&
             ch !== '=' &&
             !(typescript && ch === ':')) ||
-          (ch === '(' && endsUninitializedBinding(tokens, variable.bindingStart, typescript)) ||
           (previousExpressionComplete(previous) &&
             (!expressionContinues(ch, identifier?.value) ||
               (ch === '!' && source[i + 1] !== '=') ||
@@ -4402,7 +4404,13 @@ function endsUninitializedBinding(
   if (!isPunct(tokens[colon], ':') || tokens[colon + 1]?.kind !== 'identifier') return false;
   let end = colon + 2;
   while (isPunct(tokens[end], '.') && tokens[end + 1]?.kind === 'identifier') end += 2;
-  while (isPunct(tokens[end], '[') && isPunct(tokens[end + 1], ']')) end += 2;
+  while (
+    tokens[end]?.lineBreakBefore !== true &&
+    isPunct(tokens[end], '[') &&
+    isPunct(tokens[end + 1], ']')
+  ) {
+    end += 2;
+  }
   return end === tokens.length;
 }
 
