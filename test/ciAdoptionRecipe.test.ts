@@ -106,8 +106,8 @@ const json = (value: object): string => JSON.stringify(value) + '\n';
 
 function verify(
   report: string | Buffer | undefined,
-  diagnostics: string,
-  status: string,
+  diagnostics: string | Buffer,
+  status: string | Buffer,
   legacy = false,
 ): {
   status: number | null;
@@ -399,8 +399,38 @@ describe('consumer report verification', () => {
     });
   });
 
-  it('distinguishes an operational error and leaves raw diagnostics in the artifact', () => {
-    expect(verify('', '::error::untrusted diagnostic\n', '1\n')).toEqual({
+  it.each(['::error::untrusted diagnostic\n', 'Error de análisis \uFFFD\n'])(
+    'classifies valid operational diagnostics without echoing them (%j)',
+    (diagnostics) => {
+      expect(verify('', diagnostics, '1\n')).toEqual({
+        status: 1,
+        stdout: '',
+        stderr: 'DepVitals analysis failed. See the diagnostics artifact.\n',
+      });
+    },
+  );
+
+  it.each([
+    ['invalid byte', Buffer.from([0xff, 0x0a])],
+    ['truncated multibyte sequence', Buffer.from([0xe2, 0x82])],
+  ])('rejects diagnostics with %s as an invalid artifact', (_label, diagnostics) => {
+    expect(verify('', diagnostics, '1\n')).toEqual({
+      status: 2,
+      stdout: '',
+      stderr: 'Invalid DepVitals analysis artifacts. Expected UTF-8 diagnostics.\n',
+    });
+  });
+
+  it('rejects malformed UTF-8 in the status artifact', () => {
+    expect(verify('', 'Error de análisis\n', Buffer.from([0x31, 0xff, 0x0a]))).toEqual({
+      status: 2,
+      stdout: '',
+      stderr: 'Invalid DepVitals analysis artifacts. Invalid scan status.\n',
+    });
+  });
+
+  it('preserves the operational error when diagnostics contain a UTF-8 BOM and text', () => {
+    expect(verify('', '\uFEFFError de análisis\n', '1\n')).toEqual({
       status: 1,
       stdout: '',
       stderr: 'DepVitals analysis failed. See the diagnostics artifact.\n',
@@ -410,6 +440,7 @@ describe('consumer report verification', () => {
   it.each([
     ['missing file', undefined, '', '0\n'],
     ['partial JSON', '{"schemaVersion":1', '', '0\n'],
+    ['report with BOM', '\uFEFF' + json(clean), '', '0\n'],
     ['npm banner', 'npm run\n' + json(clean), '', '0\n'],
     ['trailing content', json(clean) + '{}', '', '0\n'],
     ['wrong schema', json({ ...clean, schemaVersion: 1 }), '', '0\n'],
@@ -432,7 +463,10 @@ describe('consumer report verification', () => {
     ['findings with success status', json(findings), '', '0\n'],
     ['completed report with diagnostics', json(clean), 'unexpected\n', '0\n'],
     ['silent operational failure', '', '', '1\n'],
+    ['blank operational diagnostic', '', '\uFEFF\u00A0\n', '1\n'],
     ['status missing LF', json(clean), '', '0'],
+    ['status with CRLF', json(clean), '', '0\r\n'],
+    ['status with BOM', '', 'Fatal error\n', '\uFEFF1\n'],
     ['terminated process', '', 'terminated\n', '143\n'],
     ['missing executable', '', 'not found\n', '127\n'],
   ] as const)('rejects %s as invalid artifacts', (_name, report, diagnostics, status) => {
