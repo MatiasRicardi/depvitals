@@ -892,7 +892,7 @@ function tokenize(
         variableStatements.pop();
       } else if (tokenLineBreakBefore && tokens.length > variable.bindingStart) {
         if (
-          (ch === '/' || ch === '(' || ch === '[' || ch === '`') &&
+          (ch === '/' || ch === '(' || ch === '[' || ch === '`' || ch === '+' || ch === '-') &&
           endsUninitializedBinding(tokens, variable.bindingStart, typescript)
         ) {
           afterUninitializedVariable = ch === '/';

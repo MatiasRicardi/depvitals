@@ -307,7 +307,7 @@ describe('compiled format/query outcomes', () => {
     expect(await readFile(join(project, 'package.json'), 'utf8')).toBe(manifest);
   });
 
-  it('preserves division after templates and arrays following annotated bindings', async () => {
+  it('preserves division in new expressions following annotated bindings', async () => {
     const project = await mkdtemp(join(scratch, 'typed-declaration-boundaries-'));
     const source = [
       'let unused: number',
@@ -315,6 +315,12 @@ describe('compiled format/query outcomes', () => {
       "/ require('real-pkg') / 2;",
       'let other: number',
       '[]',
+      "/ require('real-pkg') / 2;",
+      'let plus: number',
+      '+value, other',
+      "/ require('real-pkg') / 2;",
+      'let minus: number',
+      '-value, other',
       "/ require('real-pkg') / 2;",
       '',
     ].join('\n');
@@ -329,15 +335,12 @@ describe('compiled format/query outcomes', () => {
       expect.objectContaining({
         name: 'real-pkg',
         status: 'used',
-        evidence: [
-          { offset: source.indexOf("'real-pkg'"), line: 3, column: 11 },
-          { offset: source.lastIndexOf("'real-pkg'"), line: 6, column: 11 },
-        ].map((position) => ({
+        evidence: [...source.matchAll(/'real-pkg'/g)].map(({ index }, occurrence) => ({
           kind: 'source',
           file: 'index.ts',
           reference: 'require',
           specifier: 'real-pkg',
-          position,
+          position: { offset: index, line: (occurrence + 1) * 3, column: 11 },
         })),
       }),
     ]);

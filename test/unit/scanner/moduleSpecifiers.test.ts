@@ -237,8 +237,21 @@ describe('extractModuleSpecifiers', () => {
       ['template expression', '`text`, value'],
       ['array expression', '[]'],
       ['array followed by a comma expression', '[], value'],
+      ['unary plus', '+value, other'],
+      ['unary minus', '-value, other'],
     ])('preserves division after an annotated binding followed by %s', (_name, expression) => {
       const source = `let unused: number\n${expression}\n/ require('real') / 2;`;
+      expect(extractModuleSpecifiers(source, { typescript: true })).toEqual([
+        { specifier: 'real', kind: 'require' },
+      ]);
+    });
+
+    it.each(['+', '-'])('keeps binary %s and division in an annotated initializer', (operator) => {
+      const source = [
+        'let initialized: number = base',
+        `${operator} value / require('real') / 2, last`,
+        "/require('decoy')/.test('x');",
+      ].join('\n');
       expect(extractModuleSpecifiers(source, { typescript: true })).toEqual([
         { specifier: 'real', kind: 'require' },
       ]);
