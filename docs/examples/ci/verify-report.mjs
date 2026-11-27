@@ -4,6 +4,16 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const reportDecoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const categories = ['unusedDependencies', 'unusedDevDependencies', 'missingDependencies'];
+const declarationOrder = [
+  'dependencies',
+  'devDependencies',
+  'peerDependencies',
+  'optionalDependencies',
+];
+const evidenceKindOrder = ['source', 'script', 'config'];
+const referenceOrder = ['import', 'export-from', 'dynamic-import', 'require'];
+const scriptViaOrder = ['direct', 'mapping', 'runner', 'node-preload'];
+const detectorOrder = ['eslint', 'jest', 'typescript'];
 const noticeOrder = [
   'no-supported-sources',
   'nested-package-inputs',
@@ -129,6 +139,104 @@ function verifyPackageFindings(report) {
   }
 }
 
+function requireIncreasing(values, label) {
+  for (let index = 1; index < values.length; index++) {
+    if (values[index - 1] >= values[index]) {
+      throw new Error(`${label} are out of order or contain duplicates.`);
+    }
+  }
+}
+
+// Equal sort keys also identify the same semantic record. Additive properties are ignored.
+function evidenceKey(evidence) {
+  const common = [evidenceKindOrder.indexOf(evidence.kind), evidence.file];
+  switch (evidence.kind) {
+    case 'source': {
+      const { offset, line, column } = evidence.position;
+      return [
+        ...common,
+        offset,
+        referenceOrder.indexOf(evidence.reference),
+        evidence.specifier,
+        line,
+        column,
+      ];
+    }
+    case 'script':
+      return [
+        ...common,
+        evidence.pointer,
+        evidence.occurrence,
+        scriptViaOrder.indexOf(evidence.via),
+        evidence.command,
+      ];
+    case 'config':
+      return [
+        ...common,
+        evidence.pointer,
+        detectorOrder.indexOf(evidence.detector),
+        evidence.value,
+      ];
+  }
+}
+
+function compareEvidenceKeys(left, right) {
+  for (const [index, value] of left.entries()) {
+    const other = right[index];
+    if (value !== other) return value < other ? -1 : 1;
+  }
+  return 0;
+}
+
+function verifyEvidenceSequence(records) {
+  let previous;
+  for (const evidence of records) {
+    if (evidence.file.split('/').some((part) => part === '' || part === '.' || part === '..')) {
+      throw new Error('Evidence file must use a project-relative path.');
+    }
+    const key = evidenceKey(evidence);
+    if (previous !== undefined) {
+      const order = compareEvidenceKeys(previous, key);
+      if (order === 0) throw new Error('Duplicate semantic evidence.');
+      if (order > 0) throw new Error('Package evidence is out of order.');
+    }
+    previous = key;
+  }
+}
+
+function verifyCanonicalSequences(report) {
+  for (const field of [
+    'sourceExtensions',
+    'excludedDirectories',
+    'ignorePaths',
+    'ignoreDependencies',
+  ]) {
+    requireIncreasing(report.scope[field], `Scope ${field} entries`);
+  }
+  for (const category of categories) {
+    requireIncreasing(report.findings[category], `Finding names in ${category}`);
+  }
+  requireIncreasing(
+    report.packages.map(({ name }) => name),
+    'Package names',
+  );
+  for (const pkg of report.packages) {
+    requireIncreasing(
+      pkg.declaredIn.map((group) => declarationOrder.indexOf(group)),
+      'Declaration groups',
+    );
+    requireIncreasing(
+      pkg.underlyingFindings.map((category) => categories.indexOf(category)),
+      'Underlying finding categories',
+    );
+    requireIncreasing(
+      pkg.findings.map((category) => categories.indexOf(category)),
+      'Visible finding categories',
+    );
+    verifyEvidenceSequence(pkg.evidence);
+  }
+}
+
 function verifyDiagnostics(diagnostics) {
   if (diagnostics === undefined) return;
   const { sourceFilesScanned: total, nestedPackageSourceFiles: nested, notices } = diagnostics;
@@ -171,6 +279,7 @@ function verify(paths) {
   }
   verifyPackageFindings(report);
   verifyDiagnostics(report.diagnostics);
+  verifyCanonicalSequences(report);
   const [unused, unusedDev, missing] = categories.map((key) => report.counts[key]);
   const hasFindings = unused > 0 || unusedDev > 0 || missing > 0;
   if (status !== (hasFindings ? '1\n' : '0\n')) {

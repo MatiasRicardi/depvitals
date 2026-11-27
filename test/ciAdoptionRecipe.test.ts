@@ -442,6 +442,182 @@ describe('consumer report verification', () => {
   });
 });
 
+describe('canonical v2 artifact sequences', () => {
+  const source = {
+    kind: 'source',
+    file: 'index.js',
+    reference: 'import',
+    specifier: 'ci-used',
+    position: { offset: 7, line: 3, column: 8 },
+  };
+  const script = {
+    kind: 'script',
+    file: 'package.json',
+    pointer: '/scripts/check',
+    command: 'ci-used',
+    via: 'direct',
+    occurrence: 2,
+  };
+  const config = {
+    kind: 'config',
+    file: 'tsconfig.json',
+    pointer: '/extends/0',
+    detector: 'jest',
+    value: 'z-selector',
+  };
+  const withEvidence = (...records: object[]): string =>
+    json({ ...clean, packages: [{ ...usedPackage, evidence: records }] });
+
+  it.each([
+    '/index.js',
+    '../index.js',
+    'src/../index.js',
+    'src/./index.js',
+    'src//index.js',
+    'src/',
+  ])('rejects invalid relative evidence path %s', (file) => {
+    expect(verify(withEvidence({ ...source, file }), '', '0\n')).toEqual({
+      status: 2,
+      stdout: '',
+      stderr:
+        'Invalid DepVitals analysis artifacts. Evidence file must use a project-relative path.\n',
+    });
+  });
+
+  it('accepts additive data and reordered keys and rejects a duplicate semantic position', () => {
+    const literalPath = { ...source, file: 'src/part\\literal.js' };
+    const reordered = {
+      unusedMetadata: true,
+      position: { column: 8, annotation: 1, offset: 7, line: 3 },
+      specifier: literalPath.specifier,
+      reference: literalPath.reference,
+      file: literalPath.file,
+      kind: literalPath.kind,
+    };
+    expect(verify(withEvidence(reordered), '', '0\n').status).toBe(0);
+    expect(verify(withEvidence(literalPath, reordered), '', '0\n')).toEqual({
+      status: 2,
+      stdout: '',
+      stderr: 'Invalid DepVitals analysis artifacts. Duplicate semantic evidence.\n',
+    });
+  });
+
+  it.each([
+    ['source then script', { ...source, file: 'z.js' }, script],
+    ['script then config', script, { ...config, file: 'a.json' }],
+    ['file order by UTF-16 units', { ...source, file: '😀.js' }, { ...source, file: '\uE000.js' }],
+    ['numeric source offset', source, { ...source, position: { ...source.position, offset: 10 } }],
+    [
+      'reference rank',
+      { ...source, reference: 'export-from' },
+      { ...source, reference: 'dynamic-import' },
+    ],
+    ['source specifier', source, { ...source, specifier: 'ci-used/child' }],
+    ['source line', source, { ...source, position: { ...source.position, line: 4 } }],
+    ['source column', source, { ...source, position: { ...source.position, column: 9 } }],
+    ['script pointer', script, { ...script, pointer: '/scripts/next' }],
+    ['numeric script ordinal', script, { ...script, occurrence: 10 }],
+    ['script via rank', { ...script, via: 'runner' }, { ...script, via: 'node-preload' }],
+    ['script command', script, { ...script, command: 'z-command' }],
+    ['config pointer', config, { ...config, pointer: '/extends/1', value: 'a-selector' }],
+    [
+      'config detector rank',
+      config,
+      { ...config, detector: 'typescript', value: 'ci-used/base.json' },
+    ],
+    ['config selector', { ...config, value: 'a-selector' }, config],
+  ])('accepts canonical %s and rejects its reversal', (_label, first, second) => {
+    expect(verify(withEvidence(first, second), '', '0\n').status).toBe(0);
+    expect(verify(withEvidence(second, first), '', '0\n')).toEqual({
+      status: 2,
+      stdout: '',
+      stderr: 'Invalid DepVitals analysis artifacts. Package evidence is out of order.\n',
+    });
+  });
+
+  it.each([
+    ['sourceExtensions', ['.ts', '.js']],
+    ['excludedDirectories', ['z-dir', 'a-dir']],
+    ['ignorePaths', ['z-path', 'a-path']],
+  ])('rejects unsorted scope %s', (field, values) => {
+    expect(
+      verify(json({ ...clean, scope: { ...clean.scope, [field]: values } }), '', '0\n').status,
+    ).toBe(2);
+  });
+
+  it('orders excluded package names and their scope entries independently', () => {
+    const names = ['Z-name', 'a-name'];
+    const packages = names.map((name) => ({
+      ...usedPackage,
+      name,
+      status: 'excluded',
+      excluded: true,
+      declaredIn: [],
+      evidence: [],
+    }));
+    const scope = { ...clean.scope, ignoreDependencies: names };
+    expect(verify(json({ ...clean, scope, packages }), '', '0\n').status).toBe(0);
+    expect(
+      verify(json({ ...clean, scope, packages: [...packages].reverse() }), '', '0\n').status,
+    ).toBe(2);
+    const reversedScope = { ...scope, ignoreDependencies: [...names].reverse() };
+    expect(verify(json({ ...clean, scope: reversedScope, packages }), '', '0\n').status).toBe(2);
+  });
+
+  it('rejects unsorted finding names with a consistent package projection', () => {
+    const [missing] = findings.packages;
+    const report = {
+      ...findings,
+      counts: { ...findings.counts, missingDependencies: 2 },
+      findings: { ...findings.findings, missingDependencies: ['z-missing', 'ci-missing'] },
+      packages: [
+        missing,
+        {
+          ...missing,
+          name: 'z-missing',
+          evidence: missing?.evidence.map((fact) => ({ ...fact, specifier: 'z-missing' })),
+        },
+      ],
+    };
+    expect(verify(json(report), '', '1\n')).toEqual({
+      status: 2,
+      stdout: '',
+      stderr:
+        'Invalid DepVitals analysis artifacts. Finding names in missingDependencies are out of order or contain duplicates.\n',
+    });
+  });
+
+  it('rejects unsorted declaration groups', () => {
+    const pkg = { ...usedPackage, declaredIn: ['devDependencies', 'dependencies'] };
+    expect(verify(json({ ...clean, packages: [pkg] }), '', '0\n').status).toBe(2);
+  });
+
+  it.each(['findings', 'underlyingFindings'])('rejects unsorted package %s', (field) => {
+    const categories = ['unusedDependencies', 'unusedDevDependencies'];
+    const report = {
+      ...clean,
+      counts: { ...clean.counts, unusedDependencies: 1, unusedDevDependencies: 1 },
+      findings: {
+        ...clean.findings,
+        unusedDependencies: ['ci-used'],
+        unusedDevDependencies: ['ci-used'],
+      },
+      packages: [
+        {
+          ...usedPackage,
+          declaredIn: ['dependencies', 'devDependencies'],
+          status: 'unused',
+          evidence: [],
+          findings: categories,
+          underlyingFindings: categories,
+          [field]: [...categories].reverse(),
+        },
+      ],
+    };
+    expect(verify(json(report), '', '1\n').status).toBe(2);
+  });
+});
+
 it('keeps the example workflow parseable, pinned and enforcing outcomes after upload', async () => {
   const workflow = readFileSync(new URL('check-dependencies.yml', recipe), 'utf8');
   await expect(format(workflow, { parser: 'yaml' })).resolves.toContain('name: Check dependencies');
@@ -493,15 +669,25 @@ it('preserves ownership facts from a real scan across declaration groups and exc
         devDependencies: { 'dual-tool': '1' },
         peerDependencies: { '@Scope/_Peer': '1' },
         optionalDependencies: { 'optional-config': '1' },
-        scripts: { check: 'dual-tool' },
+        scripts: { check: 'dual-tool && dual-tool' },
       }),
     );
     writeFileSync(
       join(scratch, 'tsconfig.json'),
-      JSON.stringify({ extends: ['@Scope/_Peer/config/base.json', 'optional-config'] }),
+      JSON.stringify({
+        extends: [
+          '@Scope/_Peer/config/base.json',
+          'optional-config',
+          'dual-tool/base.json',
+          'dual-tool/base.json',
+        ],
+      }),
     );
     writeFileSync(join(scratch, 'depvitals.config.json'), '{"ignoreDependencies":["ci-ignored"]}');
-    writeFileSync(join(scratch, 'index.mjs'), "import 'ci-missing';\n");
+    writeFileSync(
+      join(scratch, 'index.mjs'),
+      "import 'ci-missing';\nimport 'dual-tool';\nimport 'dual-tool/subpath';\n",
+    );
     const before = snapshotProject(scratch);
 
     const result = spawnSync(process.execPath, [compiledCli, '--format', 'json'], {
@@ -545,7 +731,24 @@ it('preserves ownership facts from a real scan across declaration groups and exc
         name: 'dual-tool',
         status: 'used',
         declaredIn: ['dependencies', 'devDependencies'],
-        evidence: [{ kind: 'script', via: 'direct', command: 'dual-tool' }],
+        evidence: [
+          { kind: 'source', specifier: 'dual-tool' },
+          { kind: 'source', specifier: 'dual-tool/subpath' },
+          { kind: 'script', via: 'direct', command: 'dual-tool', occurrence: 0 },
+          { kind: 'script', via: 'direct', command: 'dual-tool', occurrence: 1 },
+          {
+            kind: 'config',
+            detector: 'typescript',
+            pointer: '/extends/2',
+            value: 'dual-tool/base.json',
+          },
+          {
+            kind: 'config',
+            detector: 'typescript',
+            pointer: '/extends/3',
+            value: 'dual-tool/base.json',
+          },
+        ],
       },
       {
         name: 'optional-config',
