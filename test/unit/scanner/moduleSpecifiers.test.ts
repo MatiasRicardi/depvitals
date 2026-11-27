@@ -1342,11 +1342,26 @@ describe('extractModuleSpecifiers', () => {
       expect(specifiers(`const ratio = ${operand}/ require('real') / 2;`)).toEqual(['real']);
     });
 
-    it('keeps division after a private keyword member', () => {
+    it.each([
+      ['private return field', '#return = 12;', 'this.#return'],
+      ['private if method', '#if() { return 12; }', 'this.#if()'],
+      ['optional private if call', '#if() { return 12; }', 'this?.#if()'],
+      ['private break field', '#break = 12;', 'this.#break'],
+    ])('keeps division after a %s', (_name, member, operand) => {
       expect(
-        specifiers(`class C { #break = 12; f() { return this.#break
+        specifiers(`class C { ${member} read() { return ${operand}
         / require('real') / 2; } }`),
       ).toEqual(['real']);
+    });
+
+    it('keeps regex literals after actual return and if keywords', () => {
+      const source = `function matcher(flag) {
+        if (flag) /require('if-decoy')/.test('x');
+        return /require('return-decoy')/;
+      }
+      const object = { return: 12 };
+      const ratio = object.return / require('real') / 2;`;
+      expect(specifiers(source)).toEqual(['real']);
     });
 
     it.each([
