@@ -218,6 +218,12 @@ type LexicalDepth = {
   readonly frameDepth: number;
 };
 
+type VariableStatement = LexicalDepth & {
+  bindingStart: number;
+  // Undefined before the first probe, null once this binding cannot end as a type reference.
+  annotationArgumentsEnd: number | null | undefined;
+};
+
 type PendingFuncContext = FuncContext &
   LexicalDepth & {
     parameterDepth: number | undefined;
@@ -458,6 +464,7 @@ function tokenize(
   const expressionFunctionContexts: ExpressionFuncContext[] = [];
   let typeAnnotation: TypeAnnotation | undefined;
   let ambientInitializer: LexicalDepth | undefined;
+  const variableStatements: VariableStatement[] = [];
   const parameterContexts: ParameterContext[] = [];
   let closedParameterSignature: OwnedSignature | undefined;
   let bracketDepth = 0;
@@ -510,6 +517,36 @@ function tokenize(
       ? atLexicalDepth(brace.depth)
       : brace?.role === 'class' && atLexicalDepth(brace.state);
   };
+  const previousWasMemberDot = (): boolean => prevKind === 'punct' && prevPunct === '.';
+  const previousExpressionComplete = (previous: Token | undefined): boolean =>
+    !prevIsExpressionKeyword &&
+    (EXPRESSION_ENDING.has(prevKind) ||
+      (previous !== undefined && isMemberExpressionEnd(previous)));
+  const atVariableStatementStart = (frame: Frame | undefined): boolean => {
+    // The container expects an expression until a nested brace opens its own scope.
+    if ((frame?.kind === 'template-expr' || frame?.kind === 'jsx-expr') && frame.depth === 0) {
+      return false;
+    }
+    if (prevKind === 'start' || afterControlHead) return true;
+
+    const previous = tokens[tokens.length - 1];
+    if (previous?.kind === 'punct') {
+      if (previous.value === ':' && !colonIsExpression) return true;
+      if (previous.value === '}' && !closedObjectBrace) return true;
+      if (previous.value === ';' || previous.value === '{') return true;
+    }
+    if (previous?.kind === 'identifier' && !previous.propertyName) {
+      if (['export', 'else', 'do'].includes(previous.value)) return true;
+      if (
+        tokenLineBreakBefore &&
+        (previous.value === 'return' || (previous.value === 'yield' && prevIsExpressionKeyword))
+      ) {
+        return true;
+      }
+    }
+    return tokenLineBreakBefore && previousExpressionComplete(previous);
+  };
+
   const currentClass = (): ClassContext | undefined => {
     const brace = braceContexts[braceContexts.length - 1];
     return brace?.role === 'class' ? brace.state : undefined;
@@ -843,6 +880,65 @@ function tokenize(
           !expressionContinues(ch, identifier?.value))
       ) {
         ambientInitializer = undefined;
+      }
+    }
+    // Only the owning depth can separate declarators or finish the statement. Nested
+    // initializers may open another statement of their own, then resume the outer one.
+    let afterUninitializedVariable = false;
+    const variable = variableStatements[variableStatements.length - 1];
+    if (
+      variable !== undefined &&
+      typeAnnotation === undefined &&
+      atLexicalDepth(variable) &&
+      i >= (variable.annotationArgumentsEnd ?? 0)
+    ) {
+      const previous = tokens[tokens.length - 1];
+      if (
+        typescript &&
+        ch === '<' &&
+        !tokenLineBreakBefore &&
+        variable.annotationArgumentsEnd === undefined
+      ) {
+        variable.annotationArgumentsEnd =
+          uninitializedTypeNameEnd(tokens, variable.bindingStart) === tokens.length
+            ? (typeArgumentListEnd(source, i, n, typeArgumentBounds) ?? null)
+            : null;
+      } else if (ch === '=' && source[i + 1] !== '=' && source[i + 1] !== '>') {
+        variable.annotationArgumentsEnd = null;
+      } else if (ch === ',') {
+        variable.bindingStart = tokens.length + 1;
+        variable.annotationArgumentsEnd = undefined;
+      } else if (';})]'.includes(ch)) {
+        variableStatements.pop();
+      } else if (tokenLineBreakBefore && tokens.length > variable.bindingStart) {
+        // A closing type argument can end the binding even when a runtime > expects an operand.
+        const afterTypeArguments =
+          typeof variable.annotationArgumentsEnd === 'number' &&
+          previous?.endOffset === variable.annotationArgumentsEnd;
+        if (
+          (ch === '/' ||
+            ch === '(' ||
+            ch === '[' ||
+            ch === '`' ||
+            ch === '+' ||
+            ch === '-' ||
+            (afterTypeArguments && !expressionContinues(ch, identifier?.value))) &&
+          endsUninitializedBinding(tokens, variable, typescript)
+        ) {
+          afterUninitializedVariable = ch === '/';
+          variableStatements.pop();
+        } else if (
+          (tokens.length === variable.bindingStart + 1 &&
+            previous?.kind === 'identifier' &&
+            ch !== '=' &&
+            !(typescript && ch === ':')) ||
+          (previousExpressionComplete(previous) &&
+            (!expressionContinues(ch, identifier?.value) ||
+              (ch === '!' && source[i + 1] !== '=') ||
+              ((ch === '+' || ch === '-') && source[i + 1] === ch)))
+        ) {
+          variableStatements.pop();
+        }
       }
     }
     const expressionOwner = expressionFunctionContexts[expressionFunctionContexts.length - 1];
@@ -1340,6 +1436,7 @@ function tokenize(
           !insideObjectLiteral() &&
           endsTypeScriptImportAssignment(tokens)) ||
         afterRestrictedStatement ||
+        afterUninitializedVariable ||
         isRegexStart(
           prevKind,
           prevPunct,
@@ -1474,7 +1571,7 @@ function tokenize(
         }
       }
       prevIdentifier = value;
-      const isMemberName = prevKind === 'punct' && prevPunct === '.';
+      const isMemberName = previousWasMemberDot();
       if (atRoot && !isMemberName && (value === 'import' || value === 'export')) {
         moduleDeclarationStart = tokens.length;
       }
@@ -1493,6 +1590,26 @@ function tokenize(
           currentClass()?.member?.start,
         ) !== undefined;
       const nextSignificant = skipTrivia(source, i, n);
+      const parameter = parameterContexts[parameterContexts.length - 1];
+      if (
+        (value === 'let' || value === 'var') &&
+        !inType &&
+        !isMemberName &&
+        !insideClassBody() &&
+        !insideObjectLiteral() &&
+        atVariableStatementStart(frame) &&
+        !(parameter?.forPhase !== undefined && atLexicalDepth(parameter.depth)) &&
+        isVariableBindingStart(source, nextSignificant)
+      ) {
+        variableStatements.push({
+          parenDepth,
+          bracketDepth,
+          braceDepth: braceContexts.length,
+          frameDepth: frames.length,
+          bindingStart: tokens.length + 1,
+          annotationArgumentsEnd: undefined,
+        });
+      }
       const classPropertyName =
         value === 'class' &&
         (insideObjectLiteral() || insideClassBody()) &&
@@ -2578,13 +2695,12 @@ function arrowFollowsParameters(
   return false;
 }
 
-/** Skip a balanced type-argument list only when its suffix can continue an expression. */
-function expressionTypeArgumentEnd(
+/** Locate a balanced type-argument list without committing to expression or type grammar. */
+function typeArgumentListEnd(
   source: string,
   open: number,
   n: number,
   bounds: Map<number, number | null>,
-  typeAssertion = false,
 ): number | undefined {
   let end = bounds.get(open);
   if (end === undefined) {
@@ -2598,7 +2714,19 @@ function expressionTypeArgumentEnd(
       throw error;
     }
   }
-  if (end === null) return undefined;
+  return end ?? undefined;
+}
+
+/** Skip a balanced type-argument list only when its suffix can continue an expression. */
+function expressionTypeArgumentEnd(
+  source: string,
+  open: number,
+  n: number,
+  bounds: Map<number, number | null>,
+  typeAssertion = false,
+): number | undefined {
+  const end = typeArgumentListEnd(source, open, n, bounds);
+  if (end === undefined) return undefined;
   const next = skipTrivia(source, end, n);
   const ch = source[next];
   if (!typeAssertion) return ch === '(' ? end : undefined;
@@ -4269,6 +4397,80 @@ function opensObjectLiteral(
 
   // Right after `${` an expression is expected, so a `{` opens an object literal.
   return inTemplateExpression && prevKind === 'start';
+}
+
+// Contextual identifiers such as await and yield may still be valid in some scopes.
+const RESERVED_BINDING_WORDS: ReadonlySet<string> = new Set([
+  ...REGEX_PRECEDING_KEYWORDS,
+  ...CONTROL_HEAD_KEYWORDS,
+  'break',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'debugger',
+  'enum',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'function',
+  'import',
+  'null',
+  'super',
+  'switch',
+  'this',
+  'true',
+  'try',
+  'var',
+]);
+
+/** A contextual `let` needs a possible binding, including across line breaks. */
+function isVariableBindingStart(source: string, index: number): boolean {
+  if (source[index] === '[' || source[index] === '{') return true;
+  if (!isIdentifierStartAt(source, index) && !isUnicodeEscapeStart(source, index)) return false;
+  return !RESERVED_BINDING_WORDS.has(readIdentifier(source, index).value);
+}
+
+/** The token index immediately after the name in a simple TypeScript binding annotation. */
+function uninitializedTypeNameEnd(tokens: readonly Token[], start: number): number | undefined {
+  const colon = isPunct(tokens[start + 1], '!') ? start + 2 : start + 1;
+  if (
+    tokens[start]?.kind !== 'identifier' ||
+    !isPunct(tokens[colon], ':') ||
+    tokens[colon + 1]?.kind !== 'identifier'
+  ) {
+    return undefined;
+  }
+  let end = colon + 2;
+  while (isPunct(tokens[end], '.') && tokens[end + 1]?.kind === 'identifier') end += 2;
+  return end;
+}
+
+/** A simple identifier binding can end at its name or at a TypeScript type reference. */
+function endsUninitializedBinding(
+  tokens: readonly Token[],
+  variable: VariableStatement,
+  typescript: boolean,
+): boolean {
+  const { bindingStart, annotationArgumentsEnd } = variable;
+  if (annotationArgumentsEnd === null || tokens[bindingStart]?.kind !== 'identifier') return false;
+  if (tokens.length === bindingStart + 1) return true;
+  if (!typescript) return false;
+
+  let end = uninitializedTypeNameEnd(tokens, bindingStart);
+  if (end === undefined) return false;
+  if (annotationArgumentsEnd !== undefined) {
+    while ((tokens[end]?.offset ?? Infinity) < annotationArgumentsEnd) end++;
+  }
+  while (
+    tokens[end]?.lineBreakBefore !== true &&
+    isPunct(tokens[end], '[') &&
+    isPunct(tokens[end + 1], ']')
+  ) {
+    end += 2;
+  }
+  return end === tokens.length;
 }
 
 /**

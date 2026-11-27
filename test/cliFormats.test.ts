@@ -264,15 +264,157 @@ describe('compiled format/query outcomes', () => {
     expect(await readFile(join(project, 'statement.mjs'), 'utf8')).toBe(statement);
   });
 
-  it('reports an incomplete regex after debugger without emitting a partial report', async () => {
-    const project = await mkdtemp(join(scratch, 'incomplete-statement-regex-'));
-    await writeFile(join(project, 'package.json'), '{}');
-    await writeFile(join(project, 'index.mjs'), 'debugger\n/unterminated\n');
+  it.each([
+    ['index.mjs', 'export let value'],
+    ['index.ts', 'export let value: string'],
+  ])('scans a regex after an uninitialized declaration in %s', async (file, declaration) => {
+    const project = await mkdtemp(join(scratch, 'uninitialized-declaration-'));
+    const manifest = '{"dependencies":{"real-pkg":"1"}}';
+    const source = [
+      declaration,
+      `/['"]|require('decoy')/g.test('x');`,
+      "import 'real-pkg';",
+      '',
+    ].join('\n');
+    await writeFile(join(project, 'package.json'), manifest);
+    await writeFile(join(project, file), source);
+
     const result = child([project, '--format', 'json']);
-    expect(result.status).toBe(1);
-    expect(result.stdout).toBe('');
-    expect(result.stderr).toContain('could not be analyzed: Unterminated regex literal\n');
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    const report = JSON.parse(result.stdout) as JsonReport;
+    expect(report.findings).toEqual({
+      unusedDependencies: [],
+      unusedDevDependencies: [],
+      missingDependencies: [],
+    });
+    expect(report.packages).toEqual([
+      expect.objectContaining({
+        name: 'real-pkg',
+        status: 'used',
+        evidence: [
+          {
+            kind: 'source',
+            file,
+            reference: 'import',
+            specifier: 'real-pkg',
+            position: { offset: source.indexOf("'real-pkg'"), line: 3, column: 8 },
+          },
+        ],
+      }),
+    ]);
+    expect(await readFile(join(project, file), 'utf8')).toBe(source);
+    expect(await readFile(join(project, 'package.json'), 'utf8')).toBe(manifest);
   });
+
+  it('preserves division in new expressions following annotated bindings', async () => {
+    const project = await mkdtemp(join(scratch, 'typed-declaration-boundaries-'));
+    const source = [
+      'let unused: number',
+      '`text`, value',
+      "/ require('real-pkg') / 2;",
+      'let other: number',
+      '[]',
+      "/ require('real-pkg') / 2;",
+      'let plus: number',
+      '+value, other',
+      "/ require('real-pkg') / 2;",
+      'let minus: number',
+      '-value, other',
+      "/ require('real-pkg') / 2;",
+      'let generic: Array<number>',
+      'value, other',
+      "/ require('real-pkg') / 2;",
+      '',
+    ].join('\n');
+    await writeFile(join(project, 'package.json'), '{"dependencies":{"real-pkg":"1"}}');
+    await writeFile(join(project, 'index.ts'), source);
+
+    const result = child([project, '--format', 'json']);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    const report = JSON.parse(result.stdout) as JsonReport;
+    expect(report.packages).toEqual([
+      expect.objectContaining({
+        name: 'real-pkg',
+        status: 'used',
+        evidence: [...source.matchAll(/'real-pkg'/g)].map(({ index }, occurrence) => ({
+          kind: 'source',
+          file: 'index.ts',
+          reference: 'require',
+          specifier: 'real-pkg',
+          position: { offset: index, line: (occurrence + 1) * 3, column: 11 },
+        })),
+      }),
+    ]);
+    expect(await readFile(join(project, 'index.ts'), 'utf8')).toBe(source);
+  });
+
+  it('preserves real evidence at generator and template boundaries', async () => {
+    const project = await mkdtemp(join(scratch, 'generator-template-boundaries-'));
+    const generator = [
+      'function* generate() {',
+      '  yield',
+      '  let value',
+      "  /require('decoy')/.test('x');",
+      '}',
+      "import 'real-pkg';",
+      '',
+    ].join('\n');
+    const interpolation = [
+      'var let = [12], value = 4;',
+      'const output = `${let[0], value',
+      "/ require('real-pkg') / 2}`;",
+      '',
+    ].join('\n');
+    const manifest = '{"dependencies":{"real-pkg":"1"}}';
+    await writeFile(join(project, 'package.json'), manifest);
+    await writeFile(join(project, 'generator.mjs'), generator);
+    await writeFile(join(project, 'template.cjs'), interpolation);
+
+    const result = child([project, '--format', 'json']);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    const report = JSON.parse(result.stdout) as JsonReport;
+    expect(report.packages).toEqual([
+      expect.objectContaining({
+        name: 'real-pkg',
+        status: 'used',
+        evidence: [
+          {
+            kind: 'source',
+            file: 'generator.mjs',
+            reference: 'import',
+            specifier: 'real-pkg',
+            position: { offset: generator.indexOf("'real-pkg'"), line: 6, column: 8 },
+          },
+          {
+            kind: 'source',
+            file: 'template.cjs',
+            reference: 'require',
+            specifier: 'real-pkg',
+            position: { offset: interpolation.indexOf("'real-pkg'"), line: 3, column: 11 },
+          },
+        ],
+      }),
+    ]);
+    expect(await readFile(join(project, 'package.json'), 'utf8')).toBe(manifest);
+    expect(await readFile(join(project, 'generator.mjs'), 'utf8')).toBe(generator);
+    expect(await readFile(join(project, 'template.cjs'), 'utf8')).toBe(interpolation);
+  });
+
+  it.each(['debugger', 'let value'])(
+    'reports an incomplete regex after %s without emitting a partial report',
+    async (statement) => {
+      const project = await mkdtemp(join(scratch, 'incomplete-statement-regex-'));
+      await writeFile(join(project, 'package.json'), '{}');
+      await writeFile(join(project, 'index.mjs'), `${statement}\n/unterminated\n`);
+      const result = child([project, '--format', 'json']);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain('could not be analyzed: Unterminated regex literal\n');
+    },
+  );
 
   it('skips TS declaration regex decoys and reports the real adjacent references', async () => {
     const project = await mkdtemp(join(scratch, 'ts-statement-regex-'));
