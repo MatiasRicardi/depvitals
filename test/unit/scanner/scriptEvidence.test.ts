@@ -141,6 +141,51 @@ describe('script evidence collection', () => {
     },
   );
 
+  it.each([
+    '"FLAG=on" eslint',
+    'FLAG"="on eslint',
+    '"FLAG"=on eslint',
+    'FL""AG=on eslint',
+    '"" eslint',
+    'FLAG=on "" eslint',
+    "npm '' exec eslint",
+    "npm exec '' eslint",
+    "npx '' eslint",
+    "pnpm '' exec eslint",
+    "pnpm exec '' eslint",
+    "pnpm dlx '' eslint",
+    "yarn '' dlx eslint",
+    "yarn dlx '' eslint",
+  ])('preserves shell word roles and the next candidate ordinal after %s', (script) => {
+    const result = collectPackageScriptUsage({ check: `${script} || eslint` }, new Set(['eslint']));
+    expect(result).toEqual([
+      {
+        packageName: 'eslint',
+        evidence: {
+          kind: 'script',
+          file: 'package.json',
+          pointer: '/scripts/check',
+          command: 'eslint',
+          via: 'direct',
+          occurrence: 0,
+        },
+      },
+    ]);
+  });
+
+  it.each(['FLAG="on off"', "FLAG='a=b; c'", 'FLAG=', 'FLAG="" DEBUG=1'])(
+    'keeps a genuine assignment prefix with a quoted command after %s',
+    (assignment) => {
+      const facts = collectPackageScriptUsage(
+        { check: `${assignment} "eslint"` },
+        new Set(['eslint']),
+      );
+      expect(
+        facts.map(({ evidence }) => [evidence.command, evidence.via, evidence.occurrence]),
+      ).toEqual([['eslint', 'direct', 0]]);
+    },
+  );
+
   it('never emits payload or argument text and keeps script-wide ordinals across segments', () => {
     const scripts = {
       test: 'echo "eslint" && node -e "require(\'eslint\')" && MODE=test "eslint" .',
@@ -260,12 +305,17 @@ describe('script evidence collection', () => {
     expect(facts.every(({ packageName }) => packageName === 'preload')).toBe(true);
   });
 
-  it('retains the outer legacy candidate when an empty word precedes node', () => {
+  it('keeps an empty command from consuming Node or preload ordinals', () => {
     const result = collectPackageScriptUsage(
-      { test: `'' node -r preload` },
-      new Set(['node', 'preload']),
+      { test: `'' node -r decoy || FLAG="on off" "node" -r preload app.js` },
+      new Set(['node', 'decoy', 'preload']),
     );
-    expect(result.map(({ packageName }) => packageName)).toEqual(['node']);
+    expect(
+      result.map(({ packageName, evidence }) => [packageName, evidence.via, evidence.occurrence]),
+    ).toEqual([
+      ['node', 'direct', 0],
+      ['preload', 'node-preload', 1],
+    ]);
   });
 
   it.each([

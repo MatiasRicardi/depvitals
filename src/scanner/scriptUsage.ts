@@ -59,9 +59,14 @@ import { classifyPackageSpecifier } from './packageSpecifier.js';
  *
  * `value` is the token content with surrounding quotes removed. A quoted token such as `'prettier'`
  * yields the value `prettier`; an assignment token such as `FOO="a;b"` yields `FOO=a;b`.
+ * `isAssignment` records an unquoted name and equals sign in the original word.
  * `hasParameterExpansion` tracks active simple shell parameter expansion for the Node preload prefix only.
  */
-type Token = { readonly value: string; readonly hasParameterExpansion: boolean };
+type Token = {
+  readonly value: string;
+  readonly isAssignment: boolean;
+  readonly hasParameterExpansion: boolean;
+};
 
 /**
  * One command segment delimited by a supported separator (`&&`, `||`, `;`, `|`, newline).
@@ -87,7 +92,7 @@ const PACKAGE_MANAGER_COMMANDS: ReadonlySet<string> = new Set(['npm', 'pnpm', 'y
 /**
  * Leading POSIX-style environment assignment prefix, e.g. `NODE_ENV=`, `FOO=`.
  *
- * Only the name part is matched; the value (quoted or not) is consumed by the tokenizer.
+ * Match the name and equals sign in the raw word so the value can be quoted independently.
  */
 const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
@@ -464,11 +469,10 @@ function collectScriptCandidates(
       continue;
     }
 
-    // Existing command and runner matching skips empty dequoted words. Node option
-    // parsing needs the original words so an empty module operand cannot disappear.
-    const significant = skipLeadingAssignments(segment.tokens.filter(({ value }) => value !== ''));
-
-    if (significant.length === 0) {
+    // Empty words and quoted assignment text can occupy the command slot without a package selector.
+    const significant = skipLeadingAssignments(segment.tokens);
+    const commandName = significant[0]?.value;
+    if (commandName === undefined || commandName === '' || ASSIGNMENT_PATTERN.test(commandName)) {
       continue;
     }
 
@@ -480,11 +484,6 @@ function collectScriptCandidates(
 
     // A package manager invoked without a supported runner form is never evidence that the manager
     // itself is a used dependency.
-    const commandName = significant[0]?.value;
-    if (commandName === undefined) {
-      continue;
-    }
-
     if (PACKAGE_MANAGER_COMMANDS.has(commandName)) {
       continue;
     }
@@ -514,10 +513,7 @@ function collectScriptCandidates(
     }
 
     if (commandName === 'node') {
-      const node = skipLeadingAssignments(segment.tokens);
-      if (node[0]?.value === 'node') {
-        for (const preload of collectNodePreloads(node)) candidates.push(preload);
-      }
+      for (const preload of collectNodePreloads(significant)) candidates.push(preload);
     }
   }
 
@@ -568,11 +564,7 @@ function collectNodePreloads(tokens: readonly Token[]): readonly ScriptCandidate
 function skipLeadingAssignments(segment: readonly Token[]): readonly Token[] {
   let index = 0;
 
-  while (index < segment.length) {
-    const token = segment[index];
-    if (token === undefined || !ASSIGNMENT_PATTERN.test(token.value)) {
-      break;
-    }
+  while (segment[index]?.isAssignment === true) {
     index += 1;
   }
 
@@ -701,14 +693,11 @@ function splitSegments(script: string): readonly Segment[] {
       continue;
     }
 
-    // Every other character starts an unquoted token. The token scan consumes exactly the characters
-    // of one token, so it always advances at least one position here.
-    const scanned = scanToken(script, i);
-    if (scanned.unsupported) {
-      unsupported = true;
-    }
-    tokens.push({ value: scanned.text, hasParameterExpansion: scanned.hasParameterExpansion });
-    i = scanned.next;
+    // Every other character starts a word, including a quoted empty word.
+    const { next, unsupported: wordUnsupported, ...token } = scanToken(script, i);
+    unsupported ||= wordUnsupported;
+    tokens.push(token);
+    i = next;
   }
 
   segments.push({ tokens, unsupported });
@@ -779,17 +768,15 @@ function skipCommentToEndOfLine(script: string, start: number): number {
 }
 
 /**
- * One unquoted token: its text, the index to continue from, and whether it holds unsupported syntax.
+ * A word and the scanner state needed to resume at the next boundary.
  */
-type ScannedToken = {
-  readonly text: string;
+type ScannedToken = Token & {
   readonly next: number;
   readonly unsupported: boolean;
-  readonly hasParameterExpansion: boolean;
 };
 
 /**
- * Scan a single unquoted token starting at `start`.
+ * Scan a single shell word starting at `start`.
  *
  * Quoted runs inside the token are consumed with their content kept verbatim, so `"eslint"`,
  * `FOO="a;b"` and `echo "a && b"` tokenize safely. Redirection and shell expansion are reported as
@@ -844,7 +831,13 @@ function scanToken(script: string, start: number): ScannedToken {
       const run = scanQuoted(script, i + 1, ch);
       if (run.open) {
         // EOF before the quote closes: the segment is invalid and the partial token is dropped.
-        return { text: '', next: run.next, unsupported: true, hasParameterExpansion };
+        return {
+          value: '',
+          next: run.next,
+          unsupported: true,
+          isAssignment: false,
+          hasParameterExpansion,
+        };
       }
       if (run.expands) {
         unsupported = true;
@@ -860,7 +853,13 @@ function scanToken(script: string, start: number): ScannedToken {
     i += 1;
   }
 
-  return { text: value, next: i, unsupported, hasParameterExpansion };
+  return {
+    value,
+    next: i,
+    unsupported,
+    isAssignment: ASSIGNMENT_PATTERN.test(script.slice(start, i)),
+    hasParameterExpansion,
+  };
 }
 
 /**

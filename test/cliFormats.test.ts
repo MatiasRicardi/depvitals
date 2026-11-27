@@ -210,6 +210,55 @@ describe('compiled format/query outcomes', () => {
     expect(await readFile(join(project, 'package.json'), 'utf8')).toBe(manifest);
   });
 
+  it.each([
+    ['"FLAG=on" eslint', undefined],
+    ['FLAG"="on eslint', undefined],
+    ['"" eslint', undefined],
+    ["npm '' exec eslint", undefined],
+    ['FLAG="on off" eslint', 'direct'],
+    ['"" eslint || eslint', 'direct'],
+    ['"eslint"', 'direct'],
+    ['npm exec eslint', 'runner'],
+  ] as const)('reports the original command and argument slots for %s', async (script, via) => {
+    const project = await mkdtemp(join(scratch, 'shell-word-slots-'));
+    const manifest = JSON.stringify({
+      devDependencies: { eslint: '1' },
+      scripts: { check: script },
+    });
+    await writeFile(join(project, 'package.json'), manifest);
+
+    const result = child([project, '--format', 'json']);
+    expect(result.status).toBe(via === undefined ? 1 : 0);
+    expect(result.stderr).toBe('');
+    const report = JSON.parse(result.stdout) as JsonReport;
+    expect(report.findings.unusedDevDependencies).toEqual(via === undefined ? ['eslint'] : []);
+    const findings = via === undefined ? ['unusedDevDependencies'] : [];
+    expect(report.packages).toEqual([
+      {
+        name: 'eslint',
+        status: via === undefined ? 'unused' : 'used',
+        declaredIn: ['devDependencies'],
+        excluded: false,
+        underlyingFindings: findings,
+        findings,
+        evidence:
+          via === undefined
+            ? []
+            : [
+                {
+                  kind: 'script',
+                  file: 'package.json',
+                  pointer: '/scripts/check',
+                  command: 'eslint',
+                  via,
+                  occurrence: 0,
+                },
+              ],
+      },
+    ]);
+    expect(await readFile(join(project, 'package.json'), 'utf8')).toBe(manifest);
+  });
+
   it('preserves real evidence after keyword member division and a labeled break', async () => {
     const project = await mkdtemp(join(scratch, 'statement-regex-'));
     const manifest = '{"dependencies":{"real-pkg":"1"}}';
