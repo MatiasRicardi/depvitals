@@ -520,7 +520,11 @@ function tokenize(
     !prevIsExpressionKeyword &&
     (EXPRESSION_ENDING.has(prevKind) ||
       (previous !== undefined && isMemberExpressionEnd(previous)));
-  const atVariableStatementStart = (): boolean => {
+  const atVariableStatementStart = (frame: Frame | undefined): boolean => {
+    // The container expects an expression until a nested brace opens its own scope.
+    if ((frame?.kind === 'template-expr' || frame?.kind === 'jsx-expr') && frame.depth === 0) {
+      return false;
+    }
     if (prevKind === 'start' || afterControlHead) return true;
 
     const previous = tokens[tokens.length - 1];
@@ -531,7 +535,12 @@ function tokenize(
     }
     if (previous?.kind === 'identifier' && !previous.propertyName) {
       if (['export', 'else', 'do'].includes(previous.value)) return true;
-      if (tokenLineBreakBefore && previous.value === 'return') return true;
+      if (
+        tokenLineBreakBefore &&
+        (previous.value === 'return' || (previous.value === 'yield' && prevIsExpressionKeyword))
+      ) {
+        return true;
+      }
     }
     return tokenLineBreakBefore && previousExpressionComplete(previous);
   };
@@ -1556,7 +1565,7 @@ function tokenize(
         !isMemberName &&
         !insideClassBody() &&
         !insideObjectLiteral() &&
-        atVariableStatementStart() &&
+        atVariableStatementStart(frame) &&
         !(parameter?.forPhase !== undefined && atLexicalDepth(parameter.depth)) &&
         isVariableBindingStart(source, nextSignificant)
       ) {

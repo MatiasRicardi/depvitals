@@ -307,6 +307,59 @@ describe('compiled format/query outcomes', () => {
     expect(await readFile(join(project, 'package.json'), 'utf8')).toBe(manifest);
   });
 
+  it('preserves real evidence at generator and template boundaries', async () => {
+    const project = await mkdtemp(join(scratch, 'generator-template-boundaries-'));
+    const generator = [
+      'function* generate() {',
+      '  yield',
+      '  let value',
+      "  /require('decoy')/.test('x');",
+      '}',
+      "import 'real-pkg';",
+      '',
+    ].join('\n');
+    const interpolation = [
+      'var let = [12], value = 4;',
+      'const output = `${let[0], value',
+      "/ require('real-pkg') / 2}`;",
+      '',
+    ].join('\n');
+    const manifest = '{"dependencies":{"real-pkg":"1"}}';
+    await writeFile(join(project, 'package.json'), manifest);
+    await writeFile(join(project, 'generator.mjs'), generator);
+    await writeFile(join(project, 'template.cjs'), interpolation);
+
+    const result = child([project, '--format', 'json']);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    const report = JSON.parse(result.stdout) as JsonReport;
+    expect(report.packages).toEqual([
+      expect.objectContaining({
+        name: 'real-pkg',
+        status: 'used',
+        evidence: [
+          {
+            kind: 'source',
+            file: 'generator.mjs',
+            reference: 'import',
+            specifier: 'real-pkg',
+            position: { offset: generator.indexOf("'real-pkg'"), line: 6, column: 8 },
+          },
+          {
+            kind: 'source',
+            file: 'template.cjs',
+            reference: 'require',
+            specifier: 'real-pkg',
+            position: { offset: interpolation.indexOf("'real-pkg'"), line: 3, column: 11 },
+          },
+        ],
+      }),
+    ]);
+    expect(await readFile(join(project, 'package.json'), 'utf8')).toBe(manifest);
+    expect(await readFile(join(project, 'generator.mjs'), 'utf8')).toBe(generator);
+    expect(await readFile(join(project, 'template.cjs'), 'utf8')).toBe(interpolation);
+  });
+
   it.each(['debugger', 'let value'])(
     'reports an incomplete regex after %s without emitting a partial report',
     async (statement) => {

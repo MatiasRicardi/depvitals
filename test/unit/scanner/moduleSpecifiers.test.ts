@@ -169,6 +169,48 @@ describe('extractModuleSpecifiers', () => {
       ]);
     });
 
+    it.each(['\n', ' /*\r\n*/ '])(
+      'recognizes a declaration after a newline-terminated generator yield (%j)',
+      (lineBreak) => {
+        const source = `function* generate() {
+          yield${lineBreak}let value
+          /require('decoy')/.test('x');
+        }
+        import 'real';`;
+        expect(specifiers(source)).toEqual(['real']);
+      },
+    );
+
+    it('preserves division after yield outside generator grammar', () => {
+      const source = `function* generate() {
+        function ordinary(yield) {
+          return yield
+          / require('real') / 2;
+        }
+      }`;
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it('preserves division at the top level of a template interpolation', () => {
+      const source =
+        'var let = [12], value = 4; const output = `${let[0], value\n' + "/ require('real') / 2}`;";
+      expect(specifiers(source)).toEqual(['real']);
+    });
+
+    it.each([
+      ['template', 'const output = `${(() => {', '})()}`;', false],
+      ['JSX', 'const output = <Box>{(() => {', '})()}</Box>;', true],
+    ])('recognizes declarations in a function inside a %s expression', (_name, open, end, jsx) => {
+      const source = `${open}
+        let value
+        /require('decoy')/.test('x');
+        return require('real');
+      ${end}`;
+      expect(extractModuleSpecifiers(source, { jsx })).toEqual([
+        { specifier: 'real', kind: 'require' },
+      ]);
+    });
+
     it('tracks declarations in nested statement blocks and after control heads', () => {
       const source = `
         let callback = function () {
