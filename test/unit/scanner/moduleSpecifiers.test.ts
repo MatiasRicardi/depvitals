@@ -163,6 +163,7 @@ describe('extractModuleSpecifiers', () => {
       ['qualified array annotation', 'let value: Models.Label[]', true],
       ['same-line array suffix', 'let value: number[]', true],
       ['line break inside an array suffix', 'let value: number[/*\n*/]', true],
+      ['nested generic array annotation', 'let value: Map<string, Array<number>>[]', true],
       ['inequality in the preceding initializer', 'let first = 1\n!== 2, last', false],
     ])('skips a regex after %s', (_name, declaration, typescript) => {
       const source = `${declaration} /*\r\n*/ /require('decoy')/.test('x');\nimport 'real';`;
@@ -234,13 +235,29 @@ describe('extractModuleSpecifiers', () => {
     });
 
     it.each([
-      ['template expression', '`text`, value'],
-      ['array expression', '[]'],
-      ['array followed by a comma expression', '[], value'],
-      ['unary plus', '+value, other'],
-      ['unary minus', '-value, other'],
-    ])('preserves division after an annotated binding followed by %s', (_name, expression) => {
-      const source = `let unused: number\n${expression}\n/ require('real') / 2;`;
+      ['template expression', 'number', '`text`, value'],
+      ['array expression', 'number', '[]'],
+      ['array followed by a comma expression', 'number', '[], value'],
+      ['unary plus', 'number', '+value, other'],
+      ['unary minus', 'number', '-value, other'],
+      ['expression after a generic type', 'Array<number>', 'value, other'],
+      ['expression after a nested generic type', 'Map<string, Array<number>>', 'value, other'],
+    ])(
+      'preserves division after an annotated binding followed by %s',
+      (_name, type, expression) => {
+        const source = `let unused: ${type}\n${expression}\n/ require('real') / 2;`;
+        expect(extractModuleSpecifiers(source, { typescript: true })).toEqual([
+          { specifier: 'real', kind: 'require' },
+        ]);
+      },
+    );
+
+    it('keeps greater-than and division in an annotated initializer', () => {
+      const source = [
+        'let initialized: boolean = base >',
+        "value / require('real') / 2, last",
+        "/require('decoy')/.test('x');",
+      ].join('\n');
       expect(extractModuleSpecifiers(source, { typescript: true })).toEqual([
         { specifier: 'real', kind: 'require' },
       ]);

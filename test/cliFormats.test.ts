@@ -322,6 +322,9 @@ describe('compiled format/query outcomes', () => {
       'let minus: number',
       '-value, other',
       "/ require('real-pkg') / 2;",
+      'let generic: Array<number>',
+      'value, other',
+      "/ require('real-pkg') / 2;",
       '',
     ].join('\n');
     await writeFile(join(project, 'package.json'), '{"dependencies":{"real-pkg":"1"}}');

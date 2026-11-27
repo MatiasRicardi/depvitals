@@ -220,6 +220,8 @@ type LexicalDepth = {
 
 type VariableStatement = LexicalDepth & {
   bindingStart: number;
+  // Undefined before the first probe, null once this binding cannot end as a type reference.
+  annotationArgumentsEnd: number | null | undefined;
 };
 
 type PendingFuncContext = FuncContext &
@@ -884,16 +886,44 @@ function tokenize(
     // initializers may open another statement of their own, then resume the outer one.
     let afterUninitializedVariable = false;
     const variable = variableStatements[variableStatements.length - 1];
-    if (variable !== undefined && typeAnnotation === undefined && atLexicalDepth(variable)) {
+    if (
+      variable !== undefined &&
+      typeAnnotation === undefined &&
+      atLexicalDepth(variable) &&
+      i >= (variable.annotationArgumentsEnd ?? 0)
+    ) {
       const previous = tokens[tokens.length - 1];
-      if (ch === ',') {
+      if (
+        typescript &&
+        ch === '<' &&
+        !tokenLineBreakBefore &&
+        variable.annotationArgumentsEnd === undefined
+      ) {
+        variable.annotationArgumentsEnd =
+          uninitializedTypeNameEnd(tokens, variable.bindingStart) === tokens.length
+            ? (typeArgumentListEnd(source, i, n, typeArgumentBounds) ?? null)
+            : null;
+      } else if (ch === '=' && source[i + 1] !== '=' && source[i + 1] !== '>') {
+        variable.annotationArgumentsEnd = null;
+      } else if (ch === ',') {
         variable.bindingStart = tokens.length + 1;
+        variable.annotationArgumentsEnd = undefined;
       } else if (';})]'.includes(ch)) {
         variableStatements.pop();
       } else if (tokenLineBreakBefore && tokens.length > variable.bindingStart) {
+        // A closing type argument can end the binding even when a runtime > expects an operand.
+        const afterTypeArguments =
+          typeof variable.annotationArgumentsEnd === 'number' &&
+          previous?.endOffset === variable.annotationArgumentsEnd;
         if (
-          (ch === '/' || ch === '(' || ch === '[' || ch === '`' || ch === '+' || ch === '-') &&
-          endsUninitializedBinding(tokens, variable.bindingStart, typescript)
+          (ch === '/' ||
+            ch === '(' ||
+            ch === '[' ||
+            ch === '`' ||
+            ch === '+' ||
+            ch === '-' ||
+            (afterTypeArguments && !expressionContinues(ch, identifier?.value))) &&
+          endsUninitializedBinding(tokens, variable, typescript)
         ) {
           afterUninitializedVariable = ch === '/';
           variableStatements.pop();
@@ -1577,6 +1607,7 @@ function tokenize(
           braceDepth: braceContexts.length,
           frameDepth: frames.length,
           bindingStart: tokens.length + 1,
+          annotationArgumentsEnd: undefined,
         });
       }
       const classPropertyName =
@@ -2664,13 +2695,12 @@ function arrowFollowsParameters(
   return false;
 }
 
-/** Skip a balanced type-argument list only when its suffix can continue an expression. */
-function expressionTypeArgumentEnd(
+/** Locate a balanced type-argument list without committing to expression or type grammar. */
+function typeArgumentListEnd(
   source: string,
   open: number,
   n: number,
   bounds: Map<number, number | null>,
-  typeAssertion = false,
 ): number | undefined {
   let end = bounds.get(open);
   if (end === undefined) {
@@ -2684,7 +2714,19 @@ function expressionTypeArgumentEnd(
       throw error;
     }
   }
-  if (end === null) return undefined;
+  return end ?? undefined;
+}
+
+/** Skip a balanced type-argument list only when its suffix can continue an expression. */
+function expressionTypeArgumentEnd(
+  source: string,
+  open: number,
+  n: number,
+  bounds: Map<number, number | null>,
+  typeAssertion = false,
+): number | undefined {
+  const end = typeArgumentListEnd(source, open, n, bounds);
+  if (end === undefined) return undefined;
   const next = skipTrivia(source, end, n);
   const ch = source[next];
   if (!typeAssertion) return ch === '(' ? end : undefined;
@@ -4390,20 +4432,37 @@ function isVariableBindingStart(source: string, index: number): boolean {
   return !RESERVED_BINDING_WORDS.has(readIdentifier(source, index).value);
 }
 
-/** A simple identifier binding can end at its name or at a TypeScript name/array annotation. */
-function endsUninitializedBinding(
-  tokens: readonly Token[],
-  start: number,
-  typescript: boolean,
-): boolean {
-  if (tokens[start]?.kind !== 'identifier') return false;
-  if (tokens.length === start + 1) return true;
-  if (!typescript) return false;
-
+/** The token index immediately after the name in a simple TypeScript binding annotation. */
+function uninitializedTypeNameEnd(tokens: readonly Token[], start: number): number | undefined {
   const colon = isPunct(tokens[start + 1], '!') ? start + 2 : start + 1;
-  if (!isPunct(tokens[colon], ':') || tokens[colon + 1]?.kind !== 'identifier') return false;
+  if (
+    tokens[start]?.kind !== 'identifier' ||
+    !isPunct(tokens[colon], ':') ||
+    tokens[colon + 1]?.kind !== 'identifier'
+  ) {
+    return undefined;
+  }
   let end = colon + 2;
   while (isPunct(tokens[end], '.') && tokens[end + 1]?.kind === 'identifier') end += 2;
+  return end;
+}
+
+/** A simple identifier binding can end at its name or at a TypeScript type reference. */
+function endsUninitializedBinding(
+  tokens: readonly Token[],
+  variable: VariableStatement,
+  typescript: boolean,
+): boolean {
+  const { bindingStart, annotationArgumentsEnd } = variable;
+  if (annotationArgumentsEnd === null || tokens[bindingStart]?.kind !== 'identifier') return false;
+  if (tokens.length === bindingStart + 1) return true;
+  if (!typescript) return false;
+
+  let end = uninitializedTypeNameEnd(tokens, bindingStart);
+  if (end === undefined) return false;
+  if (annotationArgumentsEnd !== undefined) {
+    while ((tokens[end]?.offset ?? Infinity) < annotationArgumentsEnd) end++;
+  }
   while (
     tokens[end]?.lineBreakBefore !== true &&
     isPunct(tokens[end], '[') &&
