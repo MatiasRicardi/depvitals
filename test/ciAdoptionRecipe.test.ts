@@ -212,6 +212,79 @@ describe('consumer report verification', () => {
     });
   });
 
+  const scriptEvidence = {
+    kind: 'script',
+    file: 'package.json',
+    pointer: '/scripts/check',
+    command: 'ci-used',
+    via: 'direct',
+    occurrence: 0,
+  };
+  const typescriptEvidence = {
+    kind: 'config',
+    detector: 'typescript',
+    file: 'tsconfig.json',
+    pointer: '/extends',
+    value: 'different-pkg/base.json',
+  };
+
+  it.each([
+    {
+      label: 'config evidence on an undeclared package',
+      overrides: {
+        declaredIn: [],
+        evidence: [
+          {
+            kind: 'config',
+            detector: 'eslint',
+            file: '.eslintrc.json',
+            pointer: '/extends',
+            value: 'ci-used',
+          },
+        ],
+      },
+      error: 'Config evidence requires a package declaration.',
+    },
+    {
+      label: 'script evidence on a peer-only package',
+      overrides: { declaredIn: ['peerDependencies'], evidence: [scriptEvidence] },
+      error: 'Script evidence requires a dependency or devDependency declaration.',
+    },
+    {
+      label: 'script evidence on an optional-only package',
+      overrides: { declaredIn: ['optionalDependencies'], evidence: [scriptEvidence] },
+      error: 'Script evidence requires a dependency or devDependency declaration.',
+    },
+    {
+      label: 'a record without a declaration, source or exclusion',
+      overrides: { status: 'declared', declaredIn: [], evidence: [] },
+      error: 'Package record requires a declaration, source evidence or exclusion.',
+    },
+    {
+      label: 'a TypeScript selector pointing to another package',
+      overrides: { evidence: [typescriptEvidence] },
+      error: 'TypeScript config selector disagrees with its owning package.',
+    },
+    {
+      label: 'a TypeScript selector with different root casing',
+      overrides: {
+        name: '@Scope/_Config',
+        evidence: [
+          { ...typescriptEvidence, pointer: '/extends/1', value: '@scope/_Config/base.json' },
+        ],
+      },
+      error: 'TypeScript config selector disagrees with its owning package.',
+    },
+  ])('rejects $label', ({ overrides, error }) => {
+    const report = { ...clean, packages: [{ ...usedPackage, ...overrides }] };
+    expect(validateReport(report), JSON.stringify(validateReport.errors)).toBe(true);
+    expect(verify(json(report), '', '0\n')).toEqual({
+      status: 2,
+      stdout: '',
+      stderr: `Invalid DepVitals analysis artifacts. ${error}\n`,
+    });
+  });
+
   it('rejects invalid UTF-8 and preserves a valid replacement character', () => {
     const document = json({ ...clean, annotation: '\uFFFD' });
     expect(verify(document, '', '0\n').status).toBe(0);
@@ -409,6 +482,95 @@ function snapshotProject(root: string): unknown {
     .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 const quoteShell = (value: string): string => "'" + value.replaceAll("'", "'\\''") + "'";
+
+it('preserves ownership facts from a real scan across declaration groups and exclusions', () => {
+  const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'depvitals-ci-ownership-')));
+  try {
+    writeFileSync(
+      join(scratch, 'package.json'),
+      JSON.stringify({
+        dependencies: { 'dual-tool': '1' },
+        devDependencies: { 'dual-tool': '1' },
+        peerDependencies: { '@Scope/_Peer': '1' },
+        optionalDependencies: { 'optional-config': '1' },
+        scripts: { check: 'dual-tool' },
+      }),
+    );
+    writeFileSync(
+      join(scratch, 'tsconfig.json'),
+      JSON.stringify({ extends: ['@Scope/_Peer/config/base.json', 'optional-config'] }),
+    );
+    writeFileSync(join(scratch, 'depvitals.config.json'), '{"ignoreDependencies":["ci-ignored"]}');
+    writeFileSync(join(scratch, 'index.mjs'), "import 'ci-missing';\n");
+    const before = snapshotProject(scratch);
+
+    const result = spawnSync(process.execPath, [compiledCli, '--format', 'json'], {
+      cwd: scratch,
+      env: { ...process.env, DEPVITALS_NO_UPDATE_CHECK: '1' },
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toBe('');
+    const report = JSON.parse(result.stdout) as JsonReport;
+    expect(report.packages).toMatchObject([
+      {
+        name: '@Scope/_Peer',
+        status: 'used',
+        declaredIn: ['peerDependencies'],
+        evidence: [
+          {
+            kind: 'config',
+            detector: 'typescript',
+            pointer: '/extends/0',
+            value: '@Scope/_Peer/config/base.json',
+          },
+        ],
+      },
+      {
+        name: 'ci-ignored',
+        status: 'excluded',
+        excluded: true,
+        declaredIn: [],
+        evidence: [],
+      },
+      {
+        name: 'ci-missing',
+        status: 'missing',
+        declaredIn: [],
+        evidence: [{ kind: 'source', reference: 'import', specifier: 'ci-missing' }],
+      },
+      {
+        name: 'dual-tool',
+        status: 'used',
+        declaredIn: ['dependencies', 'devDependencies'],
+        evidence: [{ kind: 'script', via: 'direct', command: 'dual-tool' }],
+      },
+      {
+        name: 'optional-config',
+        status: 'used',
+        declaredIn: ['optionalDependencies'],
+        evidence: [
+          {
+            kind: 'config',
+            detector: 'typescript',
+            pointer: '/extends/1',
+            value: 'optional-config',
+          },
+        ],
+      },
+    ]);
+    expect(verify(result.stdout, result.stderr, '1\n')).toEqual({
+      status: 1,
+      stdout: '',
+      stderr: 'DepVitals findings: 0 unused, 0 unused dev, 1 missing.\n',
+    });
+    expect(snapshotProject(scratch)).toEqual(before);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
 
 // The package smoke separately runs these capture modes against an actual npm-ci-installed tarball.
 describe.skipIf(process.platform === 'win32')('real CLI capture recipe', () => {

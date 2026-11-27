@@ -41,6 +41,31 @@ function verifySchema(report) {
   if (!validate(report)) throw new Error('Expected a valid DepVitals v2 report.');
 }
 
+function verifyEvidenceOwnership(pkg) {
+  const declared = pkg.declaredIn.length > 0;
+  const acceptsScriptEvidence =
+    pkg.declaredIn.includes('dependencies') || pkg.declaredIn.includes('devDependencies');
+  let hasSourceEvidence = false;
+  for (const evidence of pkg.evidence) {
+    if (evidence.kind === 'source') hasSourceEvidence = true;
+    if (evidence.kind === 'script' && !acceptsScriptEvidence) {
+      throw new Error('Script evidence requires a dependency or devDependency declaration.');
+    }
+    if (evidence.kind !== 'config') continue;
+    if (!declared) throw new Error('Config evidence requires a package declaration.');
+    if (evidence.detector === 'typescript') {
+      // Draft 7 has already checked the selector grammar, including scoped names and subpaths.
+      const root = evidence.value.split('/', evidence.value.startsWith('@') ? 2 : 1).join('/');
+      if (root !== pkg.name) {
+        throw new Error('TypeScript config selector disagrees with its owning package.');
+      }
+    }
+  }
+  if (!declared && !hasSourceEvidence && !pkg.excluded) {
+    throw new Error('Package record requires a declaration, source evidence or exclusion.');
+  }
+}
+
 function verifyPackageFindings(report) {
   const remaining = new Map(categories.map((key) => [key, new Set(report.findings[key])]));
   for (const [key, names] of remaining) {
@@ -93,6 +118,7 @@ function verifyPackageFindings(report) {
             ? 'used'
             : 'declared';
     if (pkg.status !== expectedStatus) throw new Error('Package status disagrees with findings.');
+    verifyEvidenceOwnership(pkg);
   }
 
   if ([...excludedNames].some((name) => !seen.has(name))) {
